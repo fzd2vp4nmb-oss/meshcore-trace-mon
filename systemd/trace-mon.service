@@ -1,0 +1,44 @@
+[Unit]
+Description=Trace-Mon MeshCore Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+#
+# Esegue il servizio come utente meshcore
+#
+User=meshcore
+Group=meshcore
+
+#
+# Root del progetto
+#
+WorkingDirectory=/home/meshcore/trace-mon
+
+#
+# Avvio del daemon
+#
+ExecStart=/home/meshcore/trace-mon/services/daemon.py
+
+#
+# Riavvio automatico
+#
+Restart=always
+RestartSec=5
+
+#
+# Arresto pulito
+#
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+#
+# Hardening
+#
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

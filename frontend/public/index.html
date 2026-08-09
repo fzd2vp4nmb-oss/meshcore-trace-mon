@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>MeshCore Path Explorer - Node v2.0</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+<div class="headerBar">
+    <h2>MeshCore Path Explorer - Node v2.0</h2>
+    <button id="themeButton">
+        🌙 Dark Mode
+    </button>
+</div>
+
+<div class="tabBar">
+    <button class="tabButton active" data-tab="tracePage">
+        Trace
+    </button>
+    <button class="tabButton" data-tab="nodesPage">
+        Nodes
+    </button>
+    <button class="tabButton" data-tab="neighborsPage">
+        Repeaters
+    </button>
+</div>
+
+<div id="tracePage" class="tabPage">
+
+<span><b>Data Source:</b></span>
+<select id="dataSourceSelector">
+    <option value="live">
+        Live
+    </option>
+</select>
+<br><br>
+
+<span><b>Path:</b></span>
+<select id="pathSelector"></select>
+<br><br>
+
+<div class="rangeBar">
+    <span><b>Time Range:</b></span>
+    <button class="rangeButton" data-range="24h">
+        24h
+    </button>
+    <button class="rangeButton" data-range="3d">
+        3 Days
+    </button>
+    <button class="rangeButton" data-range="7d">
+        7 Days
+    </button>
+    <button class="rangeButton" data-range="all">
+        Last Month
+    </button>
+
+    &nbsp;&nbsp;&nbsp;
+
+    <span><b>Auto Refresh:</b></span>
+    <select id="autoRefreshSelect">
+        <option value="off">
+            OFF
+        </option>
+        <option value="on">
+            5 min
+        </option>
+    </select>
+    &nbsp;&nbsp;&nbsp;
+    <span id="rangeInfo"></span>
+</div>
+
+<h3>Trace-Path Chart</h3>
+
+<div id="chartContainer">
+    <canvas id="snrChart"></canvas>
+</div>
+
+<h3>Stats</h3>
+<table id="statsTable"></table>
+
+<h3>Scheduled Trace-Path</h3>
+<table id="pathTable"></table>
+
+</div>
+
+<div id="nodesPage" class="tabPage" style="display:none">
+
+<h3 id="nodesTabHeading">Known Nodes</h3>
+
+<div class="nodesFilterBar">
+
+    <div class="filterGroup">
+        <label for="nodeNameFilterInput">Name / Public Key</label>
+        <div class="filterControl">
+            <input type="text" id="nodeNameFilterInput" placeholder="e.g. repeater-1 or a1b2">
+            <button id="nodeNameFilterClearBtn">Clear</button>
+        </div>
+    </div>
+
+    <div class="filterGroup">
+        <label for="nodePathFilterInput">Path contains</label>
+        <div class="filterControl">
+            <input type="text" id="nodePathFilterInput" placeholder="e.g. 0d28">
+            <button id="nodePathFilterClearBtn">Clear</button>
+        </div>
+    </div>
+
+    <div class="filterGroup">
+        <label for="nodeTypeFilter">Type</label>
+        <select id="nodeTypeFilter">
+            <option value="all">All</option>
+            <option value="1">chat</option>
+            <option value="2">repeater</option>
+            <option value="3">room server</option>
+        </select>
+    </div>
+
+    <div class="filterGroup">
+        <label for="nodePathLengthFilter">Path length</label>
+        <select id="nodePathLengthFilter">
+            <option value="all">All</option>
+            <option value="1">1 byte (2 hex chars)</option>
+            <option value="2">2 byte (4 hex chars)</option>
+            <option value="3">3 byte (6 hex chars)</option>
+        </select>
+    </div>
+
+</div>
+<br>
+
+<table id="nodesTable"></table>
+
+</div>
+
+<div id="nodeDetailPage" class="tabPage" style="display:none">
+
+<p><a href="#" id="backToNodesLink">&larr; Back to list</a></p>
+
+<h3 id="nodeDetailName"></h3>
+<table id="nodeDetailInfoTable"></table>
+
+<br>
+<span><b>Period:</b></span>
+<select id="nodeDetailArchiveSelector"></select>
+<br><br>
+
+<h4>Observation History (RSSI / SNR)</h4>
+<div id="nodeDetailChartContainer">
+    <canvas id="nodeDetailChart"></canvas>
+</div>
+
+<h4>Observations</h4>
+<table id="nodeDetailObsTable"></table>
+
+</div>
+
+<div id="neighborsPage" class="tabPage" style="display:none">
+
+<span><b>Repeater:</b></span>
+<select id="neighborRepeaterSelector"></select>
+
+<h3 id="neighborRepeaterName"></h3>
+
+<h4>Status</h4>
+<table id="neighborStatusTable"></table>
+
+<h4>Telemetry</h4>
+<table id="neighborTelemetryTable"></table>
+
+<h4>Config</h4>
+<table id="neighborConfigTable"></table>
+
+<h4>Region</h4>
+<pre id="neighborRegionDump"></pre>
+
+<h4>Neighbours</h4>
+<table id="neighborsTable"></table>
+
+</div>
+
+<script src="app.js"></script>
+
+<script>
+const btn =
+    document.getElementById(
+        "themeButton"
+    );
+
+/* =========================
+   RESTORE THEME
+========================= */
+
+const savedTheme =
+    localStorage.getItem(
+        "theme"
+    );
+
+if (
+    savedTheme === "dark"
+) {
+
+    document.body.classList.add(
+        "dark"
+    );
+
+    btn.textContent =
+        "☀️ Light Mode";
+}
+
+/* =========================
+   THEME BUTTON
+========================= */
+
+btn.addEventListener(
+    "click",
+    () => {
+
+        document.body.classList.toggle(
+            "dark"
+        );
+
+        localStorage.setItem(
+            "theme",
+            document.body.classList.contains(
+                "dark"
+            )
+                ? "dark"
+                : "light"
+        );
+
+        if (
+            document.body.classList.contains(
+                "dark"
+            )
+        ) {
+
+            btn.textContent =
+                "☀️ Light Mode";
+        }
+        else {
+
+            btn.textContent =
+                "🌙 Dark Mode";
+        }
+
+        setTimeout(
+            updateView,
+            50
+        );
+    }
+);
+
+/* =========================
+   TAB SWITCHING
+========================= */
+
+document.querySelectorAll(
+    ".tabButton"
+).forEach(
+    tabBtn => {
+
+        tabBtn.addEventListener(
+            "click",
+            () => {
+
+                document.querySelectorAll(
+                    ".tabButton"
+                ).forEach(
+                    b => b.classList.remove("active")
+                );
+
+                tabBtn.classList.add(
+                    "active"
+                );
+
+                document.querySelectorAll(
+                    ".tabPage"
+                ).forEach(
+                    p => p.style.display = "none"
+                );
+
+                document.getElementById(
+                    tabBtn.dataset.tab
+                ).style.display = "block";
+
+                //
+                // Persistenza della tab attiva — stessa logica già
+                // usata per gli altri selettori (dataSource,
+                // chartRange, ecc.), così un refresh del browser
+                // resta sulla tab in cui eri.
+                //
+                localStorage.setItem(
+                    "activeTab",
+                    tabBtn.dataset.tab
+                );
+
+                if (
+                    tabBtn.dataset.tab === "nodesPage"
+                ) {
+
+                    if (
+                        typeof loadNodesTab === "function"
+                    ) {
+
+                        loadNodesTab();
+                    }
+
+                    if (
+                        typeof startNodesAutoRefresh === "function"
+                    ) {
+
+                        startNodesAutoRefresh();
+                    }
+                }
+
+                else if (
+                    tabBtn.dataset.tab === "neighborsPage"
+                ) {
+
+                    if (
+                        typeof stopNodesAutoRefresh === "function"
+                    ) {
+
+                        stopNodesAutoRefresh();
+                    }
+
+                    if (
+                        typeof loadNeighborsTab === "function"
+                    ) {
+
+                        loadNeighborsTab();
+                    }
+                }
+
+                else {
+
+                    if (
+                        typeof stopNodesAutoRefresh === "function"
+                    ) {
+
+                        stopNodesAutoRefresh();
+                    }
+                }
+            }
+        );
+    }
+);
+
+/* =========================
+   RESTORE ACTIVE TAB
+========================= */
+
+const savedTab =
+    localStorage.getItem(
+        "activeTab"
+    ) ||
+    "tracePage";
+
+const savedTabBtn =
+    document.querySelector(
+        `.tabButton[data-tab="${savedTab}"]`
+    );
+
+if (
+    savedTabBtn
+) {
+
+    savedTabBtn.click();
+}
+
+/* =========================
+   NODE DETAIL: BACK LINK
+========================= */
+
+document.getElementById(
+    "backToNodesLink"
+).addEventListener(
+    "click",
+    (e) => {
+
+        e.preventDefault();
+
+        document.querySelectorAll(
+            ".tabPage"
+        ).forEach(
+            p => p.style.display = "none"
+        );
+
+        document.getElementById(
+            "nodesPage"
+        ).style.display = "block";
+
+        document.querySelectorAll(
+            ".tabButton"
+        ).forEach(
+            b => b.classList.remove("active")
+        );
+
+        document
+            .querySelector(
+                '.tabButton[data-tab="nodesPage"]'
+            )
+            .classList.add(
+                "active"
+            );
+
+        localStorage.setItem(
+            "activeTab",
+            "nodesPage"
+        );
+
+        if (
+            typeof loadNodesTab === "function"
+        ) {
+
+            loadNodesTab();
+        }
+
+        if (
+            typeof startNodesAutoRefresh === "function"
+        ) {
+
+            startNodesAutoRefresh();
+        }
+    }
+);
+</script>
+
+</body>
+</html>

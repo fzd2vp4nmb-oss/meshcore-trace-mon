@@ -1,0 +1,16 @@
+[Unit]
+Description=MeshCore Trace-Path Web Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meshcore
+Group=meshcore
+WorkingDirectory=/home/meshcore/trace-mon
+ExecStart=/home/meshcore/.nvm/versions/node/v26.6.0/bin/node /home/meshcore/trace-mon/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

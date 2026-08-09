@@ -1,0 +1,86 @@
+connection:
+  type: tcp
+  max_reconnect_attempts: 5
+  recovery_retry_interval: 30
+  heartbeat_interval: 15   # secondi tra un health-check attivo e l'altro
+  heartbeat_timeout: 5     # timeout del singolo get_bat() di verifica
+
+  tcp:
+    host: <connection-tcp-host>
+    port: 5000
+
+  serial:
+    device: /dev/ttyUSB0
+    baudrate: 115200
+
+  ble:
+    address: AA:BB:CC:DD:EE:FF
+
+trace:
+  enabled: true
+  output_file: data/trace.json
+  interval: 10
+  timeout: 15
+  backup: true
+
+  paths:
+    - "0001,0002,0001"
+
+bot:
+  enabled: true
+  channel_name: "#bot"
+  max_reply_length: 152
+  known_regions:
+    - "europe"
+    - "it"
+
+logging:
+  level: INFO
+  file: logs/trace-mon.log
+  console: false
+
+contacts:
+  enabled: true
+  db_file: data/contacts.db
+  sync_interval: 3600
+
+neighbor_monitoring:
+  # Nessun parametro di cadenza qui: la cadenza è quella dell'unica
+  # entry di crontab che lancia main_neighbor_monitor.py — coerente
+  # col pattern già usato per trace/advert (vedi
+  # docs/NEIGHBOR_MONITORING.md §4/§6).
+  interval: 5   # secondi di attesa tra un repeater e il successivo, se più di uno
+
+  repeaters:
+    - name: "TUO-RPT-NAME"
+
+services:
+  - name: system
+    enabled: true
+    module: system.service
+    class: SystemService
+
+  - name: trace
+    enabled: true
+    module: trace.service
+    class: TraceService
+
+  - name: advert
+    enabled: true
+    module: advert.service
+    class: AdvertService
+
+  - name: bot
+    enabled: true
+    module: bot.service
+    class: BotService
+
+  - name: contact_sync
+    enabled: true
+    module: contact_sync.service
+    class: ContactSyncService
+
+  - name: neighbor_monitor
+    enabled: true
+    module: neighbor_monitor.service
+    class: NeighborMonitorService

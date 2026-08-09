@@ -1,0 +1,25 @@
+# Ambienti rigenerabili — non tracciare, si ricreano da requirements.txt/package.json
+.venv/
+__pycache__/
+*.pyc
+frontend/node_modules/
+
+# Dati runtime — ogni installazione ha i propri
+data/*
+!data/.gitkeep
+backup/*
+!backup/.gitkeep
+logs/*
+!logs/.gitkeep
+run/*
+!run/.gitkeep
+
+# Configurazione reale — mai committare, solo config.yaml.example va nel repo
+config/config.yaml
+
+# Mai in questo repo, nemmeno per errore — vive solo nel mirror privato
+experiments/
+
+# File temporanei editor
+*.swp
+*~

@@ -487,6 +487,33 @@ class BotModule:
         tag = _tag(sender_timestamp)
 
         #
+        # Le risposte a login/comandi CLI di neighbor_monitor
+        # arrivano come CONTACT_MSG_RECV — stesso evento delle DM
+        # vere, indistinguibile a livello di protocollo. Un repeater
+        # non avvia mai una DM legittima verso il bot di sua
+        # iniziativa (solo i device chat lo fanno): se il mittente è
+        # una chiave verso cui è in corso una sessione CLI, la
+        # risposta è certamente per neighbor_monitor, non per il bot
+        # — usciamo subito, prima del dedup e di qualunque altra
+        # elaborazione (incluso il refresh get_contacts() più sotto,
+        # che altrimenti scatterebbe inutilmente ad ogni risposta).
+        # Vedi Engine.active_cli_sessions.
+        #
+        if any(
+            full_key.startswith(pubkey_prefix)
+            for full_key in self.engine.active_cli_sessions
+        ):
+
+            log.info(
+                "BOT: %s ignorato, risposta CLI attesa da "
+                "neighbor_monitor (non una DM) da %s.",
+                tag,
+                pubkey_prefix
+            )
+
+            return
+
+        #
         # Dedup: i retry del mittente prima dell'ACK condividono lo
         # stesso sender_timestamp.
         #

@@ -260,73 +260,89 @@ class NeighborMonitorModule:
 
         Ritorna None solo se il login stesso fallisce — senza una
         sessione attiva nessun comando ha senso di essere tentato.
+
+        Per tutta la durata della funzione, public_key resta
+        registrata in Engine.active_cli_sessions (try/finally, così
+        la rimozione avviene sempre, anche sulle uscite anticipate) —
+        le risposte a login/comandi arrivano come CONTACT_MSG_RECV,
+        lo stesso evento delle DM vere: senza questo registro
+        BotModule non avrebbe modo di distinguerle (vedi
+        BotModule._on_contact_message()).
         """
 
+        self.engine.mark_cli_session_active(public_key)
+
         try:
-            login_result = await self.engine.mesh.commands.send_login_sync(
-                public_key,
-                "",
-                timeout=CLI_RESPONSE_TIMEOUT
-            )
 
-        except Exception:
+            try:
+                login_result = await self.engine.mesh.commands.send_login_sync(
+                    public_key,
+                    "",
+                    timeout=CLI_RESPONSE_TIMEOUT
+                )
 
-            log.exception(
-                "NEIGHBOR_MONITOR: %s send_login_sync() fallita.",
-                tag
-            )
+            except Exception:
 
-            return None
+                log.exception(
+                    "NEIGHBOR_MONITOR: %s send_login_sync() fallita.",
+                    tag
+                )
 
-        if login_result is None:
+                return None
 
-            log.warning(
-                "NEIGHBOR_MONITOR: %s login fallito (nessuna "
-                "risposta — timeout radio, o il richiedente non ha "
-                "il bit admin nell'ACL: indistinguibili a questo "
-                "livello). Comandi CLI saltati.",
-                tag
-            )
+            if login_result is None:
 
-            return None
+                log.warning(
+                    "NEIGHBOR_MONITOR: %s login fallito (nessuna "
+                    "risposta — timeout radio, o il richiedente non ha "
+                    "il bit admin nell'ACL: indistinguibili a questo "
+                    "livello). Comandi CLI saltati.",
+                    tag
+                )
 
-        log.info(
-            "NEIGHBOR_MONITOR: %s login riuscito (permissions=%s).",
-            tag,
-            login_result.payload.get("permissions")
-        )
+                return None
 
-        result = {}
-
-        for key, cmd_text, value_type in CLI_QUERIES:
-
-            result[key] = await self._send_cli_command(
-                public_key,
+            log.info(
+                "NEIGHBOR_MONITOR: %s login riuscito (permissions=%s).",
                 tag,
-                key,
-                cmd_text,
-                value_type
+                login_result.payload.get("permissions")
             )
 
-        try:
-            await self.engine.mesh.commands.send_logout(
-                public_key
-            )
+            result = {}
 
-        except Exception:
+            for key, cmd_text, value_type in CLI_QUERIES:
 
-            #
-            # Non blocca il risultato già ottenuto — il logout è
-            # igiene della sessione, non condiziona la validità dei
-            # dati appena raccolti.
-            #
-            log.exception(
-                "NEIGHBOR_MONITOR: %s send_logout() fallita (dati "
-                "comunque validi).",
-                tag
-            )
+                result[key] = await self._send_cli_command(
+                    public_key,
+                    tag,
+                    key,
+                    cmd_text,
+                    value_type
+                )
 
-        return result
+            try:
+                await self.engine.mesh.commands.send_logout(
+                    public_key
+                )
+
+            except Exception:
+
+                #
+                # Non blocca il risultato già ottenuto — il logout è
+                # igiene della sessione, non condiziona la validità dei
+                # dati appena raccolti.
+                #
+                log.exception(
+                    "NEIGHBOR_MONITOR: %s send_logout() fallita (dati "
+                    "comunque validi).",
+                    tag
+                )
+
+            return result
+
+        finally:
+
+            self.engine.mark_cli_session_done(public_key)
 
     async def _send_cli_command(
         self,

@@ -20,6 +20,19 @@ if [ $? -ne 0 ]; then
 fi
 
 #
+# Stessa logica per repeater_neighbours (docs/NEIGHBOR_MONITORING.md
+# §13) — unica tra le tabelle di neighbor_monitor a rappresentare
+# stato accumulato in RAM dal repeater, azzerato ad ogni suo reboot e
+# non recuperabile da nessun'altra fonte una volta perso.
+#
+./tools/rotate_repeater_neighbours.py
+
+if [ $? -ne 0 ]; then
+    echo "Errore durante la rotazione di repeater_neighbours"
+    exit 1
+fi
+
+#
 # Se non è stato prodotto alcun archivio (es. nessuna osservazione
 # nel mese appena concluso), non c'è nulla da inviare — esce senza
 # errore.
@@ -35,12 +48,16 @@ fi
 
 MONTH=$(printf "%02d" "$MONTH")
 FILEOUTZIP="path_observations-$YEAR-$MONTH.json.gz"
-
-if [ ! -f "backup/$FILEOUTZIP" ]; then
-    exit 0
-fi
+FILEOUTZIP2="repeater_neighbours-$YEAR-$MONTH.json.gz"
 
 cd /home/meshcore/trace-mon/backup
-scp -P 15450 $FILEOUTZIP trace-mon@IP_SERVER:/home/trace-mon/backup/$NODE
+
+if [ -f "$FILEOUTZIP" ]; then
+    scp -P 15450 $FILEOUTZIP trace-mon@IP_SERVER:/home/trace-mon/backup/$NODE
+fi
+
+if [ -f "$FILEOUTZIP2" ]; then
+    scp -P 15450 $FILEOUTZIP2 trace-mon@IP_SERVER:/home/trace-mon/backup/$NODE
+fi
 
 exit 0

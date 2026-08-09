@@ -11,6 +11,26 @@ const {
 
 const app = express();
 
+//
+// Solo per etichettare gli snapshot storici dei neighbours
+// (/api/neighbors/:publicKey/archive/snapshots) — formato leggibile,
+// non serve altrove lato server (il resto della formattazione data
+// vive lato client in app.js).
+//
+function formatUnixTimeServer(
+    unixSeconds
+) {
+
+    const d = new Date(unixSeconds * 1000);
+
+    const pad = n => String(n).padStart(2, "0");
+
+    return (
+        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+        `${pad(d.getHours())}:${pad(d.getMinutes())}`
+    );
+}
+
 /* =========================
    FILE PATH
 ========================= */
@@ -1089,6 +1109,357 @@ app.get(
                     error:
                         err.message
                 });
+        }
+    }
+);
+
+/* =========================
+   NEIGHBOURS ARCHIVE LIST API
+
+   Elenco mesi disponibili per lo storico dei neighbours — stesso
+   pattern di /api/nodes/archive/list, file diversi
+   (repeater_neighbours-YYYY-MM.json.gz, da
+   tools/rotate_repeater_neighbours.py). Vedi
+   docs/NEIGHBOR_MONITORING.md §13 sul perché solo questa tabella tra
+   le cinque di neighbor_monitor ha uno storico.
+========================= */
+
+app.get(
+    "/api/neighbors/archive/list",
+    (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const months = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ];
+
+            const result = [
+                { id: "live", label: "Live" }
+            ];
+
+            if (
+                fs.existsSync(
+                    BACKUP_DIR
+                )
+            ) {
+
+                const files =
+                    fs
+                        .readdirSync(
+                            BACKUP_DIR
+                        )
+                        .filter(
+                            f =>
+                                /^repeater_neighbours-\d{4}-\d{2}\.json\.gz$/.test(
+                                    f
+                                )
+                        )
+                        .sort();
+
+                files.forEach(
+                    file => {
+
+                        const match =
+                            file.match(
+                                /^repeater_neighbours-(\d{4})-(\d{2})\.json\.gz$/
+                            );
+
+                        if (
+                            match
+                        ) {
+
+                            const year = match[1];
+                            const month = parseInt(match[2]);
+
+                            result.push({
+                                id: file,
+                                label: `${months[month - 1]} ${year}`
+                            });
+                        }
+                    }
+                );
+            }
+
+            res.json(
+                result
+            );
+        }
+
+        catch (
+            err
+        ) {
+
+            console.error(
+                "API ERROR (/api/neighbors/archive/list):",
+                err
+            );
+
+            res
+                .status(500)
+                .json({ error: err.message });
+        }
+    }
+);
+
+/* =========================
+   NEIGHBOURS ARCHIVE SNAPSHOTS API
+
+   A differenza di path_observations (flusso continuo), un archivio
+   mensile di repeater_neighbours contiene più "scatti" distinti (uno
+   per ogni giro di cron) — questo endpoint elenca i queried_at
+   disponibili per un repeater specifico in un dato file, così il
+   frontend può farne scegliere uno preciso invece di mostrarli
+   mescolati insieme.
+========================= */
+
+app.get(
+    "/api/neighbors/:publicKey/archive/snapshots",
+    (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const file = req.query.file;
+
+            if (
+                !file
+            ) {
+
+                return res
+                    .status(400)
+                    .json({ error: "Missing file parameter" });
+            }
+
+            const fullPath =
+                path.join(
+                    BACKUP_DIR,
+                    file
+                );
+
+            if (
+                !fs.existsSync(
+                    fullPath
+                )
+            ) {
+
+                return res
+                    .status(404)
+                    .json({ error: "Archive not found" });
+            }
+
+            const compressed = fs.readFileSync(fullPath);
+
+            const content =
+                zlib
+                    .gunzipSync(compressed)
+                    .toString("utf8");
+
+            const allRows = JSON.parse(content);
+
+            const publicKey = req.params.publicKey;
+
+            //
+            // Un Map preserva l'ordine di inserimento e ci risparmia
+            // un secondo giro per contare le righe per queried_at.
+            //
+            const counts = new Map();
+
+            allRows
+                .filter(r => r.public_key === publicKey)
+                .forEach(
+                    r => {
+
+                        counts.set(
+                            r.queried_at,
+                            (counts.get(r.queried_at) || 0) + 1
+                        );
+                    }
+                );
+
+            const snapshots =
+                Array.from(counts.entries())
+                    .map(
+                        ([queried_at, count]) => (
+                            {
+                                queried_at: queried_at,
+                                label: `${formatUnixTimeServer(queried_at)} (${count})`
+                            }
+                        )
+                    )
+                    .sort(
+                        (a, b) => b.queried_at - a.queried_at
+                    );
+
+            res.json(
+                snapshots
+            );
+        }
+
+        catch (
+            err
+        ) {
+
+            console.error(
+                "API ERROR (/api/neighbors/:publicKey/archive/snapshots):",
+                err
+            );
+
+            res
+                .status(500)
+                .json({ error: err.message });
+        }
+    }
+);
+
+/* =========================
+   NEIGHBOURS ARCHIVE LOAD API
+
+   Carica un singolo snapshot storico, risolvendo i nomi per
+   prefisso contro la tabella nodes LIVE (i nomi noti oggi, non
+   quelli disponibili al momento dell'archiviazione — coerente con
+   la stessa scelta implicita già fatta per path_observations, che
+   non congela alcuna risoluzione al momento dell'archiviazione).
+========================= */
+
+app.get(
+    "/api/neighbors/:publicKey/archive/load",
+    (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const file = req.query.file;
+            const queriedAt = parseInt(req.query.queried_at);
+
+            if (
+                !file || !queriedAt
+            ) {
+
+                return res
+                    .status(400)
+                    .json({ error: "Missing file or queried_at parameter" });
+            }
+
+            const fullPath =
+                path.join(
+                    BACKUP_DIR,
+                    file
+                );
+
+            if (
+                !fs.existsSync(
+                    fullPath
+                )
+            ) {
+
+                return res
+                    .status(404)
+                    .json({ error: "Archive not found" });
+            }
+
+            const compressed = fs.readFileSync(fullPath);
+
+            const content =
+                zlib
+                    .gunzipSync(compressed)
+                    .toString("utf8");
+
+            const allRows = JSON.parse(content);
+
+            const publicKey = req.params.publicKey;
+
+            const snapshotRows =
+                allRows.filter(
+                    r =>
+                        r.public_key === publicKey &&
+                        r.queried_at === queriedAt
+                );
+
+            if (
+                !fs.existsSync(
+                    CONTACTS_DB_FILE
+                )
+            ) {
+
+                return res.json(
+                    snapshotRows.map(
+                        r => (
+                            {
+                                neighbour_prefix: r.neighbour_prefix,
+                                secs_ago: r.secs_ago,
+                                snr: r.snr,
+                                matched_names: null,
+                                match_count: 0
+                            }
+                        )
+                    )
+                );
+            }
+
+            const db =
+                new DatabaseSync(
+                    CONTACTS_DB_FILE,
+                    { readOnly: true }
+                );
+
+            const nodeRows =
+                db.prepare(
+                    "SELECT public_key, adv_name FROM nodes"
+                ).all();
+
+            db.close();
+
+            const neighbours =
+                snapshotRows.map(
+                    r => {
+
+                        const matches =
+                            nodeRows.filter(
+                                n =>
+                                    n.public_key.startsWith(
+                                        r.neighbour_prefix
+                                    )
+                            );
+
+                        return {
+                            neighbour_prefix: r.neighbour_prefix,
+                            secs_ago: r.secs_ago,
+                            snr: r.snr,
+                            matched_names:
+                                matches.length > 0
+                                    ? matches.map(m => m.adv_name).join(",")
+                                    : null,
+                            match_count: matches.length
+                        };
+                    }
+                );
+
+            res.json(
+                neighbours
+            );
+        }
+
+        catch (
+            err
+        ) {
+
+            console.error(
+                "API ERROR (/api/neighbors/:publicKey/archive/load):",
+                err
+            );
+
+            res
+                .status(500)
+                .json({ error: err.message });
         }
     }
 );

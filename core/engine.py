@@ -76,6 +76,25 @@ class Engine:
 
         self._rebind_callbacks = []
 
+        #
+        # Chiavi pubbliche verso cui è in corso una sessione CLI
+        # (login+comandi, vedi NeighborMonitorModule._query_cli_config).
+        # Le risposte in arrivo da queste chiavi condividono lo stesso
+        # evento CONTACT_MSG_RECV delle DM vere — non c'è modo di
+        # distinguerle a livello di protocollo. Un repeater non avvia
+        # mai una DM legittima verso il bot di sua iniziativa (solo i
+        # device chat lo fanno): se la chiave è qui dentro, la
+        # risposta è certamente per neighbor_monitor, non per il bot.
+        # Vedi BotModule._on_contact_message().
+        #
+        self.active_cli_sessions = set()
+
+    def mark_cli_session_active(self, public_key):
+        self.active_cli_sessions.add(public_key)
+
+    def mark_cli_session_done(self, public_key):
+        self.active_cli_sessions.discard(public_key)
+
     @property
     def connected(self):
         return (

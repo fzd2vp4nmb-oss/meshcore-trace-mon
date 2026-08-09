@@ -2,6 +2,7 @@ let dataCache = null;
 let chart = null;
 let autoRefreshTimer = null;
 let meshNodes = {};
+let currentRepeaterPublicKey = null;
 let nodeDetailChart = null;
 let nodesDataCache = [];
 
@@ -1157,6 +1158,36 @@ if (
                 neighborRepeaterSelector.value
             );
         }
+    );
+}
+
+const neighborsArchiveSelector =
+    document.getElementById(
+        "neighborsArchiveSelector"
+    );
+
+if (
+    neighborsArchiveSelector
+) {
+
+    neighborsArchiveSelector.addEventListener(
+        "change",
+        onNeighboursArchiveChange
+    );
+}
+
+const neighborsSnapshotSelector =
+    document.getElementById(
+        "neighborsSnapshotSelector"
+    );
+
+if (
+    neighborsSnapshotSelector
+) {
+
+    neighborsSnapshotSelector.addEventListener(
+        "change",
+        onNeighboursSnapshotChange
     );
 }
 
@@ -2524,6 +2555,33 @@ async function loadNeighborsTab() {
             "neighborsTable"
         ).innerHTML = "";
 
+        currentRepeaterPublicKey = null;
+
+        const archiveSelector =
+            document.getElementById(
+                "neighborsArchiveSelector"
+            );
+
+        if (
+            archiveSelector
+        ) {
+
+            archiveSelector.innerHTML = "";
+        }
+
+        const snapshotSelector =
+            document.getElementById(
+                "neighborsSnapshotSelector"
+            );
+
+        if (
+            snapshotSelector
+        ) {
+
+            snapshotSelector.innerHTML = "";
+            snapshotSelector.style.display = "none";
+        }
+
         return;
     }
 
@@ -2715,6 +2773,11 @@ function renderNeighborData(
     data
 ) {
 
+    currentRepeaterPublicKey =
+        data.public_key;
+
+    resetNeighboursArchiveSelectors();
+
     document.getElementById(
         "neighborRepeaterName"
     ).textContent =
@@ -2825,13 +2888,19 @@ function renderNeighborData(
     ).textContent =
         data.region || "No region data available.";
 
+    renderNeighboursTable(
+        data.neighbours || []
+    );
+}
+
+function renderNeighboursTable(
+    neighbours
+) {
+
     const neighborsTable =
         document.getElementById(
             "neighborsTable"
         );
-
-    const neighbours =
-        data.neighbours || [];
 
     let html =
         "<tr><th>Name</th><th>Prefix</th><th>SNR</th><th>Last Seen</th></tr>";
@@ -2881,4 +2950,316 @@ function renderNeighborData(
 
     neighborsTable.innerHTML =
         html;
+}
+
+/* =========================
+   NEIGHBOURS ARCHIVE (mese + scatto)
+
+   A differenza dello storico dei Nodi (flusso continuo), un mese
+   archiviato di neighbours contiene più "scatti" distinti — uno per
+   ogni giro di cron. Due selettori: mese (o Live) e, quando non è
+   Live, lo scatto specifico all'interno di quel mese. Vedi
+   docs/NEIGHBOR_MONITORING.md §13.
+========================= */
+
+function resetNeighboursArchiveSelectors() {
+
+    const snapshotSelector =
+        document.getElementById(
+            "neighborsSnapshotSelector"
+        );
+
+    if (
+        snapshotSelector
+    ) {
+
+        snapshotSelector.innerHTML = "";
+        snapshotSelector.style.display = "none";
+    }
+
+    loadNeighboursArchiveList();
+}
+
+async function loadNeighboursArchiveList() {
+
+    const selector =
+        document.getElementById(
+            "neighborsArchiveSelector"
+        );
+
+    if (
+        !selector
+    ) {
+
+        return;
+    }
+
+    try {
+
+        const node =
+            typeof currentSelectedNode === "function"
+                ? currentSelectedNode()
+                : null;
+
+        const url =
+            node
+                ? `/api/neighbors/archive/list?node=${encodeURIComponent(node)}`
+                : "/api/neighbors/archive/list";
+
+        const res =
+            await fetch(
+                url
+            );
+
+        const months =
+            await res.json();
+
+        selector.innerHTML = "";
+
+        months.forEach(
+            m => {
+
+                const opt =
+                    document.createElement(
+                        "option"
+                    );
+
+                opt.value = m.id;
+                opt.textContent = m.label;
+
+                selector.appendChild(
+                    opt
+                );
+            }
+        );
+
+        selector.value = "live";
+    }
+
+    catch (
+        err
+    ) {
+
+        console.error(
+            "Error loading neighbours archive list:",
+            err
+        );
+    }
+}
+
+async function onNeighboursArchiveChange() {
+
+    const archiveSelector =
+        document.getElementById(
+            "neighborsArchiveSelector"
+        );
+
+    const snapshotSelector =
+        document.getElementById(
+            "neighborsSnapshotSelector"
+        );
+
+    if (
+        !archiveSelector ||
+        !currentRepeaterPublicKey
+    ) {
+
+        return;
+    }
+
+    const selectedFile =
+        archiveSelector.value;
+
+    if (
+        selectedFile === "live" ||
+        !selectedFile
+    ) {
+
+        snapshotSelector.innerHTML = "";
+        snapshotSelector.style.display = "none";
+
+        //
+        // Ricarica tutto il repeater (Status/Telemetry/Config/Region
+        // inclusi) — più semplice e sempre corretto che tenere una
+        // cache separata dei soli dati live, a costo di una
+        // richiesta in più su un'interazione poco frequente.
+        //
+        await loadNeighborData(
+            currentRepeaterPublicKey
+        );
+
+        return;
+    }
+
+    try {
+
+        const node =
+            typeof currentSelectedNode === "function"
+                ? currentSelectedNode()
+                : null;
+
+        let url =
+            `/api/neighbors/${encodeURIComponent(currentRepeaterPublicKey)}` +
+            `/archive/snapshots?file=${encodeURIComponent(selectedFile)}`;
+
+        if (
+            node
+        ) {
+
+            url += `&node=${encodeURIComponent(node)}`;
+        }
+
+        const res =
+            await fetch(
+                url
+            );
+
+        const snapshots =
+            await res.json();
+
+        snapshotSelector.innerHTML = "";
+
+        snapshots.forEach(
+            s => {
+
+                const opt =
+                    document.createElement(
+                        "option"
+                    );
+
+                opt.value = s.queried_at;
+                opt.textContent = s.label;
+
+                snapshotSelector.appendChild(
+                    opt
+                );
+            }
+        );
+
+        if (
+            snapshots.length > 0
+        ) {
+
+            snapshotSelector.style.display = "";
+            snapshotSelector.value = snapshots[0].queried_at;
+
+            await loadNeighboursSnapshot(
+                selectedFile,
+                snapshots[0].queried_at
+            );
+        }
+
+        else {
+
+            snapshotSelector.style.display = "none";
+
+            renderNeighboursTable(
+                []
+            );
+        }
+    }
+
+    catch (
+        err
+    ) {
+
+        console.error(
+            "Error loading neighbours snapshots:",
+            err
+        );
+    }
+}
+
+async function onNeighboursSnapshotChange() {
+
+    const archiveSelector =
+        document.getElementById(
+            "neighborsArchiveSelector"
+        );
+
+    const snapshotSelector =
+        document.getElementById(
+            "neighborsSnapshotSelector"
+        );
+
+    if (
+        !archiveSelector ||
+        !snapshotSelector ||
+        !currentRepeaterPublicKey
+    ) {
+
+        return;
+    }
+
+    const selectedFile =
+        archiveSelector.value;
+
+    const queriedAt =
+        snapshotSelector.value;
+
+    if (
+        !selectedFile ||
+        selectedFile === "live" ||
+        !queriedAt
+    ) {
+
+        return;
+    }
+
+    await loadNeighboursSnapshot(
+        selectedFile,
+        queriedAt
+    );
+}
+
+async function loadNeighboursSnapshot(
+    file,
+    queriedAt
+) {
+
+    try {
+
+        const node =
+            typeof currentSelectedNode === "function"
+                ? currentSelectedNode()
+                : null;
+
+        let url =
+            `/api/neighbors/${encodeURIComponent(currentRepeaterPublicKey)}` +
+            `/archive/load?file=${encodeURIComponent(file)}` +
+            `&queried_at=${encodeURIComponent(queriedAt)}`;
+
+        if (
+            node
+        ) {
+
+            url += `&node=${encodeURIComponent(node)}`;
+        }
+
+        const res =
+            await fetch(
+                url
+            );
+
+        const neighbours =
+            await res.json();
+
+        renderNeighboursTable(
+            neighbours
+        );
+    }
+
+    catch (
+        err
+    ) {
+
+        console.error(
+            "Error loading neighbours archive snapshot:",
+            err
+        );
+
+        renderNeighboursTable(
+            []
+        );
+    }
 }

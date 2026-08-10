@@ -9,6 +9,8 @@ data/*
 !data/.gitkeep
 backup/*
 !backup/.gitkeep
+config/backup/*
+!config/backup/.gitkeep
 logs/*
 !logs/.gitkeep
 run/*

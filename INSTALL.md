@@ -544,5 +544,23 @@ praticamente sempre.
 
 ---
 
+## 12. Modificare la configurazione in seguito (`config.sh`)
+
+Per cambiare `config.yaml` dopo l'installazione — connessione, path
+tracciati, canale/regioni del bot, repeater interrogati, quali
+servizi sono attivi — non serve un editor di testo:
+
+```bash
+cd ~/trace-mon
+./config.sh
+```
+
+Un menu guida la modifica in modo puntuale e sicuro: ogni salvataggio
+crea automaticamente un backup del file precedente e verifica che il
+risultato sia valido prima di considerarlo definitivo. Al termine,
+propone di riavviare `trace-mon.service` per applicare le modifiche.
+
+---
+
 *(sezioni su risoluzione problemi comuni e aggiornamento
 dell'installazione potranno essere aggiunte in futuro)*

@@ -31,7 +31,7 @@ dall'inizio, nell'ordine indicato.
 - Python 3.9+
 - Node.js 22.5+
 - Un companion MeshCore configurato secondo i criteri descritti in
-  [INSTALL.md](INSTALL.md#11-configurazione-del-companion-meshcore)
+  [INSTALL.md](INSTALL.md#1-configurazione-del-companion-meshcore)
 
 ## Licenza
 

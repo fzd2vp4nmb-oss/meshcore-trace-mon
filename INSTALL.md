@@ -6,18 +6,103 @@ equivalente). Ogni passaggio include: come verificare se è già a
 posto, e cosa fare se non lo è — pensata per chi non ha molta
 familiarità con Linux.
 
-**Stato di questa guida**: copre prerequisiti di sistema, strumenti
-di base (Python, Node.js, git) e la prima inizializzazione del
-progetto (clone + ambienti Python/Node). La configurazione vera e
-propria (file `config.yaml`, script di manutenzione, servizio
-systemd) è oggetto di una sezione successiva, non ancora presente in
-questa guida.
+Copre: configurazione del companion MeshCore, prerequisiti di
+sistema, Python, Node.js, git, il clone del progetto, generazione
+guidata dei file di configurazione (`setup.sh`), attivazione dei
+servizi e crontab.
 
 ---
 
-## 1. Prerequisiti di sistema
+## 1. Configurazione del companion MeshCore
 
-### 1.1 Un utente dedicato
+`trace-mon` richiede un device con firmware caricato per il ruolo
+**Companion** — non gira su repeater né su room server.
+
+Prima di collegare il companion a `trace-mon`, alcune impostazioni
+vanno fatte **dall'app MeshCore stessa**, sul companion che userai —
+`trace-mon` non può impostarle da remoto, sono passaggi manuali da
+fare una tantum in fase di setup del device.
+
+### 1.1 Default region
+
+In **Experimental settings**, imposta la **default region** su `it`
+— evita di trasmettere traffico di tipo *unscoped* sulla mesh.
+
+### 1.2 Path hash size
+
+Sempre in **Experimental settings**, imposta l'**hash path size** ad
+almeno **2 byte**.
+
+### 1.3 Canale del bot
+
+Perché il modulo BOT possa rispondere ai comandi, il canale su cui
+opera deve esistere come canale hashtag a cui il companion è
+iscritto. Di default `trace-mon` usa `#bot` — crea questo canale
+nell'app se non esiste già.
+
+Se preferisci usare un canale diverso da `#bot`, crealo comunque
+nell'app **e** aggiorna di conseguenza `bot.channel_name` in
+`config/config.yaml` (generato da `setup.sh`, §9) — i due devono
+corrispondere.
+
+### 1.4 Impostazioni contatti (per il servizio Nodes)
+
+Perché `trace-mon` possa ricevere tutti i tipi di nodo (necessario
+per il servizio Nodes), vai nelle impostazioni contatti dell'app e
+imposta:
+
+- **Auto Add Selected**: attivo
+- **Auto Add Chat Users**: attivo
+- **Auto Add Repeaters**: attivo
+- **Auto Add Room Servers**: attivo
+- **Overwrite oldest**: attivo
+
+Salva le impostazioni prima di procedere.
+
+Con questa configurazione la lista contatti resta sempre piena e i
+contatti più vecchi vengono cancellati automaticamente per fare
+posto ai nuovi. Se un contatto ti serve stabilmente (ad esempio per
+usare il BOT in DM con un utente specifico), impostalo come
+**preferito** — i preferiti non vengono cancellati dalla pulizia
+automatica.
+
+### 1.5 Invio messaggi
+
+Nelle impostazioni di invio messaggi:
+
+- **Auto Retry**: selezionato
+- **Auto Reset Path**: selezionato
+- **Direct Message Acks**: `2`
+
+### 1.6 Permessi ACL sul repeater (per il servizio Repeaters)
+
+Per interrogare un repeater dalla tab Repeaters (status, neighbours,
+telemetria, regioni, configurazione — vedi
+`docs/NEIGHBOR_MONITORING.md` se hai accesso alla documentazione di
+sviluppo più approfondita), il companion collegato a `trace-mon` deve
+avere **permessi admin** nell'access list (ACL) di quel repeater.
+
+Non puoi impostarlo dal companion che userai con `trace-mon` stesso
+— serve un **secondo companion**, che abbia già accesso al repeater,
+per aggiungere il primo:
+
+1. Collegati al repeater con un companion diverso da quello che
+   userai per `trace-mon` (purché abbia già accesso al repeater
+   stesso).
+2. Vai in **Settings → Access Control**.
+3. Aggiungi il nodo che userai con `trace-mon`.
+4. Assegnagli i permessi **admin**.
+
+Senza questo passaggio, i dati di status/neighbours/telemetria
+restano comunque parzialmente accessibili (alcuni non richiedono
+ACL affatto), ma la tab Repeaters funzionerà solo in parte — vedi la
+documentazione di sviluppo per il dettaglio di quali dati richiedono
+quale livello di permesso.
+
+---
+## 2. Prerequisiti di sistema
+
+### 2.1 Un utente dedicato
 
 trace-mon gira sotto un utente Linux dedicato, chiamato `meshcore`
 in tutta questa guida e nella documentazione del progetto — non
@@ -30,7 +115,7 @@ id meshcore
 ```
 
 Se risponde con qualcosa come `uid=1000(meshcore) gid=1000(meshcore) ...`,
-l'utente esiste già — salta al paragrafo 1.2.
+l'utente esiste già — salta al paragrafo 2.2.
 
 Se invece risponde `id: 'meshcore': no such user`, va creato. Serve
 un utente con permessi di amministrazione (root, o un altro utente
@@ -55,7 +140,7 @@ su - meshcore
 (oppure disconnettiti e riconnettiti via SSH direttamente come
 `meshcore`)
 
-### 1.2 Permessi sudo per l'utente meshcore
+### 2.2 Permessi sudo per l'utente meshcore
 
 Alcuni passaggi di questa guida (installazione di pacchetti di
 sistema) richiedono che `meshcore` possa usare `sudo`.
@@ -80,7 +165,7 @@ Dopo questo comando, disconnettiti e riconnettiti come `meshcore`
 perché il cambiamento abbia effetto (l'appartenenza ai gruppi si
 legge al login, non si aggiorna su una sessione già aperta).
 
-### 1.3 Accesso alle porte seriali (solo se userai una connessione seriale/USB)
+### 2.3 Accesso alle porte seriali (solo se userai una connessione seriale/USB)
 
 Se il tuo companion MeshCore si collega via TCP (il caso più comune,
 e quello di default in questo progetto), **puoi saltare questo
@@ -105,20 +190,20 @@ abbia effetto.
 
 ---
 
-## 2. Python
+## 3. Python
 
 Il daemon principale è scritto in Python.
 
-### 2.1 Verifica
+### 3.1 Verifica
 
 ```bash
 python3 --version
 ```
 
 Serve **Python 3.9 o superiore**. Se la versione mostrata è già
-`3.9.x` o più recente, salta al paragrafo 2.3.
+`3.9.x` o più recente, salta al paragrafo 3.3.
 
-### 2.2 Installazione (solo se mancante o troppo vecchio)
+### 3.2 Installazione (solo se mancante o troppo vecchio)
 
 ```bash
 sudo apt update
@@ -127,7 +212,7 @@ sudo apt install -y python3 python3-pip python3-venv
 
 Rilancia `python3 --version` per confermare.
 
-### 2.3 Il modulo `venv`
+### 3.3 Il modulo `venv`
 
 ```bash
 python3 -m venv --help
@@ -141,16 +226,16 @@ sudo apt install -y python3-venv
 ```
 
 **Nota**: la creazione effettiva dell'ambiente virtuale (`.venv`)
-avviene più avanti (paragrafo 5), dentro la cartella del progetto —
-che esiste solo dopo il clone (paragrafo 4).
+avviene più avanti (paragrafo 7), dentro la cartella del progetto —
+che esiste solo dopo il clone (paragrafo 6).
 
 ---
 
-## 3. Node.js e npm
+## 4. Node.js e npm
 
 Il frontend web è un server Node.js/Express.
 
-### 3.1 Verifica
+### 4.1 Verifica
 
 ```bash
 node --version
@@ -159,9 +244,9 @@ npm --version
 
 Serve **Node.js 22.5 o superiore** (usa `node:sqlite` per interrogare
 il database). Se `node --version` mostra già `v22.5.0` o superiore
-(idealmente `v24.x`), salta al paragrafo 4 — `npm` è già incluso.
+(idealmente `v24.x`), salta al paragrafo 5 — `npm` è già incluso.
 
-### 3.2 Installazione (solo se mancante o troppo vecchio)
+### 4.2 Installazione (solo se mancante o troppo vecchio)
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -191,18 +276,18 @@ dovrebbe puntare a `/usr/bin/node`.
 
 ---
 
-## 4. git
+## 5. git
 
-### 4.1 Verifica
+### 5.1 Verifica
 
 ```bash
 git --version
 ```
 
 Se stampa un numero di versione, sei già a posto — salta al
-paragrafo 5.
+paragrafo 6.
 
-### 4.2 Installazione (solo se mancante)
+### 5.2 Installazione (solo se mancante)
 
 ```bash
 sudo apt update
@@ -211,7 +296,7 @@ sudo apt install -y git
 
 ---
 
-## 5. Scaricare il progetto (git clone)
+## 6. Scaricare il progetto (git clone)
 
 ```bash
 cd ~
@@ -225,9 +310,9 @@ indicato diversamente.
 
 ---
 
-## 6. Ambiente virtuale Python e dipendenze
+## 7. Ambiente virtuale Python e dipendenze
 
-### 6.1 Creazione dell'ambiente virtuale
+### 7.1 Creazione dell'ambiente virtuale
 
 Un ambiente virtuale (`venv`) è una copia isolata di Python dove
 installare le librerie del progetto senza toccare l'installazione di
@@ -242,7 +327,7 @@ python3 -m venv .venv
 Questo crea la cartella `.venv/` dentro il progetto (non serve
 crearla a mano, il comando la genera da solo).
 
-### 6.2 Attivazione e installazione delle dipendenze
+### 7.2 Attivazione e installazione delle dipendenze
 
 ```bash
 source .venv/bin/activate
@@ -260,9 +345,9 @@ progetto richiede:
 - `PyYAML` — per leggere `config.yaml`
 - `aiohttp` — usata dal comando bot `!meteo`
 
-### 6.3 Verifica
+### 7.3 Verifica
 
-Controlla che il prompt mostri ancora `(.venv)` all'inizio (§6.2) —
+Controlla che il prompt mostri ancora `(.venv)` all'inizio (§7.2) —
 se manca, `source .venv/bin/activate` prima di continuare: i comandi
 seguenti, eseguiti fuori dall'ambiente virtuale, mostrerebbero i
 pacchetti del Python di sistema invece di quelli del progetto, senza
@@ -294,7 +379,7 @@ necessario attivare nulla a mano.
 
 ---
 
-## 7. Dipendenze Node.js del frontend
+## 8. Dipendenze Node.js del frontend
 
 ```bash
 cd ~/trace-mon/frontend
@@ -316,7 +401,7 @@ andata a buon fine.
 
 ---
 
-## 8. Generare i file specifici della tua installazione (`setup.sh`)
+## 9. Generare i file specifici della tua installazione (`setup.sh`)
 
 Per completare l'installazione esegui `setup.sh`, un breve
 questionario interattivo:
@@ -368,7 +453,7 @@ sempre con tutti accesi.
 
 ---
 
-## 9. Attivare i servizi systemd
+## 10. Attivare i servizi systemd
 
 ```bash
 sudo cp systemd/trace-mon.service systemd/trace-web.service /etc/systemd/system/
@@ -397,7 +482,7 @@ journalctl -u trace-web -n 50
 
 ---
 
-## 10. Crontab
+## 11. Crontab
 
 Alcune attività (tracciamento, monitoraggio repeater, manutenzione)
 non girano come parte del servizio systemd continuo, ma vengono
@@ -459,91 +544,5 @@ praticamente sempre.
 
 ---
 
-## 11. Configurazione del companion MeshCore
-
-Prima di collegare il companion a `trace-mon`, alcune impostazioni
-vanno fatte **dall'app MeshCore stessa**, sul companion che userai —
-`trace-mon` non può impostarle da remoto, sono passaggi manuali da
-fare una tantum in fase di setup del device.
-
-### 11.1 Default region
-
-In **Experimental settings**, imposta la **default region** su `it`
-— evita di trasmettere traffico di tipo *unscoped* sulla mesh.
-
-### 11.2 Path hash size
-
-Sempre in **Experimental settings**, imposta l'**hash path size** ad
-almeno **2 byte**.
-
-### 11.3 Canale del bot
-
-Perché il modulo BOT possa rispondere ai comandi, il canale su cui
-opera deve esistere come canale hashtag a cui il companion è
-iscritto. Di default `trace-mon` usa `#bot` — crea questo canale
-nell'app se non esiste già.
-
-Se preferisci usare un canale diverso da `#bot`, crealo comunque
-nell'app **e** aggiorna di conseguenza `bot.channel_name` in
-`config/config.yaml` (generato da `setup.sh`, §8) — i due devono
-corrispondere.
-
-### 11.4 Impostazioni contatti (per il servizio Nodes)
-
-Perché `trace-mon` possa ricevere tutti i tipi di nodo (necessario
-per il servizio Nodes), vai nelle impostazioni contatti dell'app e
-imposta:
-
-- **Auto Add Selected**: attivo
-- **Auto Add Chat Users**: attivo
-- **Auto Add Repeaters**: attivo
-- **Auto Add Room Servers**: attivo
-- **Overwrite oldest**: attivo
-
-Salva le impostazioni prima di procedere.
-
-Con questa configurazione la lista contatti resta sempre piena e i
-contatti più vecchi vengono cancellati automaticamente per fare
-posto ai nuovi. Se un contatto ti serve stabilmente (ad esempio per
-usare il BOT in DM con un utente specifico), impostalo come
-**preferito** — i preferiti non vengono cancellati dalla pulizia
-automatica.
-
-### 11.5 Invio messaggi
-
-Nelle impostazioni di invio messaggi:
-
-- **Auto Retry**: selezionato
-- **Auto Reset Path**: selezionato
-- **Direct Message Acks**: `2`
-
-### 11.6 Permessi ACL sul repeater (per il servizio Repeaters)
-
-Per interrogare un repeater dalla tab Repeaters (status, neighbours,
-telemetria, regioni, configurazione — vedi
-`docs/NEIGHBOR_MONITORING.md` se hai accesso alla documentazione di
-sviluppo più approfondita), il companion collegato a `trace-mon` deve
-avere **permessi admin** nell'access list (ACL) di quel repeater.
-
-Non puoi impostarlo dal companion che userai con `trace-mon` stesso
-— serve un **secondo companion**, che abbia già accesso al repeater,
-per aggiungere il primo:
-
-1. Collegati al repeater con un companion diverso da quello che
-   userai per `trace-mon` (purché abbia già accesso al repeater
-   stesso).
-2. Vai in **Settings → Access Control**.
-3. Aggiungi il nodo che userai con `trace-mon`.
-4. Assegnagli i permessi **admin**.
-
-Senza questo passaggio, i dati di status/neighbours/telemetria
-restano comunque parzialmente accessibili (alcuni non richiedono
-ACL affatto), ma la tab Repeaters funzionerà solo in parte — vedi la
-documentazione di sviluppo per il dettaglio di quali dati richiedono
-quale livello di permesso.
-
----
-
-*(fine della guida attuale — sezioni su risoluzione problemi comuni
-e aggiornamento dell'installazione potranno essere aggiunte in
-futuro)*
+*(sezioni su risoluzione problemi comuni e aggiornamento
+dell'installazione potranno essere aggiunte in futuro)*

@@ -168,7 +168,26 @@ curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
 
-Rilancia `node --version` e `npm --version` per confermare.
+Rilancia `node --version` e `npm --version` per confermare. Se dopo
+questo comando `node --version` mostra ancora una versione vecchia,
+probabilmente esiste un'altra installazione di Node.js (es. tramite
+`nvm`) che ha priorità nel `PATH`:
+
+```bash
+which node
+```
+
+Se il percorso mostrato contiene `.nvm` (installazione tramite
+`nvm`, il caso più comune), rimuovilo:
+
+```bash
+rm -rf ~/.nvm
+```
+
+Poi apri `~/.bashrc` con un editor di testo, rimuovi le righe che
+menzionano `NVM_DIR` o `nvm.sh`, e apri una nuova sessione di
+terminale (o esegui `source ~/.bashrc`). Ripeti `which node`: ora
+dovrebbe puntare a `/usr/bin/node`.
 
 ---
 
@@ -243,6 +262,12 @@ progetto richiede:
 
 ### 6.3 Verifica
 
+Controlla che il prompt mostri ancora `(.venv)` all'inizio (§6.2) —
+se manca, `source .venv/bin/activate` prima di continuare: i comandi
+seguenti, eseguiti fuori dall'ambiente virtuale, mostrerebbero i
+pacchetti del Python di sistema invece di quelli del progetto, senza
+alcun avviso.
+
 ```bash
 pip list
 ```
@@ -250,6 +275,15 @@ pip list
 Dovresti vedere `meshcore`, `PyYAML` e `aiohttp` nell'elenco. Se
 manca qualcosa, ripeti `pip install -r requirements.txt` e controlla
 eventuali messaggi di errore mostrati durante l'installazione.
+
+Se invece `.venv` esisteva già da un'installazione precedente,
+controlla che le dipendenze siano aggiornate (sempre con `(.venv)`
+visibile nel prompt):
+
+```bash
+pip list --outdated
+pip install --upgrade -r requirements.txt
+```
 
 **Nota**: l'ambiente virtuale va riattivato (`source .venv/bin/activate`)
 ogni volta che apri una nuova sessione di terminale e vuoi eseguire

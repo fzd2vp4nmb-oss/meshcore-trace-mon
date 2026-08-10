@@ -2,9 +2,9 @@
 
 Questa guida ti accompagna passo passo nell'installazione di
 trace-mon su un Raspberry Pi (o qualunque macchina Linux Debian-based
-equivalente). Ogni passaggio include: perché serve, come verificare
-se è già a posto, e cosa fare se non lo è — pensata per chi non ha
-molta familiarità con Linux.
+equivalente). Ogni passaggio include: come verificare se è già a
+posto, e cosa fare se non lo è — pensata per chi non ha molta
+familiarità con Linux.
 
 **Stato di questa guida**: copre prerequisiti di sistema, strumenti
 di base (Python, Node.js, git) e la prima inizializzazione del
@@ -107,106 +107,66 @@ abbia effetto.
 
 ## 2. Python
 
-### 2.1 Perché serve
+Il daemon principale è scritto in Python.
 
-Il daemon principale di trace-mon (connessione al companion MeshCore,
-i vari moduli di acquisizione dati) è scritto in Python, usando
-`asyncio` in modo estensivo.
-
-### 2.2 Verifica
+### 2.1 Verifica
 
 ```bash
 python3 --version
 ```
 
 Serve **Python 3.9 o superiore**. Se la versione mostrata è già
-`3.9.x` o più recente, salta al paragrafo 2.4 (creazione
-dell'ambiente virtuale) — non serve installare nulla.
+`3.9.x` o più recente, salta al paragrafo 2.3.
 
-Su Raspberry Pi OS in una versione recente (Bookworm o successive),
-Python 3 è già preinstallato con una versione adeguata: è molto
-probabile che questo passaggio sia già a posto.
-
-### 2.3 Installazione (solo se mancante o troppo vecchio)
+### 2.2 Installazione (solo se mancante o troppo vecchio)
 
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-pip python3-venv
 ```
 
-`python3-venv` è il pacchetto che permette di creare ambienti
-virtuali isolati (paragrafo 2.4) — su alcune distribuzioni non è
-incluso di default nell'installazione base di Python, va richiesto
-esplicitamente.
-
 Rilancia `python3 --version` per confermare.
 
-### 2.4 Il modulo `venv`
-
-Anche se Python era già installato, verifica che il modulo `venv`
-sia disponibile (potrebbe non esserlo anche con Python già presente,
-se `python3-venv` non era mai stato installato):
+### 2.3 Il modulo `venv`
 
 ```bash
 python3 -m venv --help
 ```
 
 Se stampa un messaggio d'aiuto, sei a posto. Se dà errore
-(`No module named venv`), installa il pacchetto come sopra:
+(`No module named venv`):
 
 ```bash
 sudo apt install -y python3-venv
 ```
 
 **Nota**: la creazione effettiva dell'ambiente virtuale (`.venv`)
-avviene più avanti (paragrafo 5), perché va creata *dentro* la
-cartella del progetto — che a sua volta esiste solo dopo aver
-clonato il repository (paragrafo 4). Per ora basta aver verificato
-che gli strumenti necessari ci siano.
+avviene più avanti (paragrafo 5), dentro la cartella del progetto —
+che esiste solo dopo il clone (paragrafo 4).
 
 ---
 
 ## 3. Node.js e npm
 
-### 3.1 Perché serve
+Il frontend web è un server Node.js/Express.
 
-Il frontend web (l'interfaccia che vedi nel browser) è un piccolo
-server Node.js/Express, con una libreria nativa (`node:sqlite`) per
-leggere il database SQLite del progetto.
-
-### 3.2 Verifica
+### 3.1 Verifica
 
 ```bash
 node --version
 npm --version
 ```
 
-Serve **Node.js 22.5 o superiore** — è la versione minima in cui
-`node:sqlite` (usata dal frontend per interrogare il database) è
-comparsa. Su versioni intermedie potrebbe servire un'opzione
-sperimentale che questo progetto non imposta: per evitare complicazioni,
-questa guida installa direttamente una versione recente (24, LTS
-attuale al momento della stesura), che include il supporto completo
-senza flag aggiuntivi.
+Serve **Node.js 22.5 o superiore** (usa `node:sqlite` per interrogare
+il database). Se `node --version` mostra già `v22.5.0` o superiore
+(idealmente `v24.x`), salta al paragrafo 4 — `npm` è già incluso.
 
-Se `node --version` mostra già `v22.5.0` o superiore (idealmente
-`v24.x`), puoi saltare al paragrafo 4. `npm` viene installato insieme
-a Node.js, non richiede un passaggio separato.
-
-### 3.3 Installazione (solo se mancante o troppo vecchio)
-
-Il modo più affidabile per avere una versione recente su Raspberry
-Pi OS (che nei repository di sistema standard spesso ha una versione
-di Node.js più vecchia) è tramite il repository ufficiale NodeSource:
+### 3.2 Installazione (solo se mancante o troppo vecchio)
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
-
-Il primo comando aggiunge il repository NodeSource al sistema (serve
-`sudo` perché modifica la configurazione di `apt`), il secondo
-installa effettivamente Node.js e npm da quel repository.
 
 Rilancia `node --version` e `npm --version` per confermare.
 
@@ -214,13 +174,7 @@ Rilancia `node --version` e `npm --version` per confermare.
 
 ## 4. git
 
-### 4.1 Perché serve
-
-L'intero progetto è distribuito tramite un repository git su GitHub
-— serve per scaricarlo (`git clone`) e per ricevere eventuali
-aggiornamenti futuri (`git pull`).
-
-### 4.2 Verifica
+### 4.1 Verifica
 
 ```bash
 git --version
@@ -229,7 +183,7 @@ git --version
 Se stampa un numero di versione, sei già a posto — salta al
 paragrafo 5.
 
-### 4.3 Installazione (solo se mancante)
+### 4.2 Installazione (solo se mancante)
 
 ```bash
 sudo apt update
@@ -240,20 +194,11 @@ sudo apt install -y git
 
 ## 5. Scaricare il progetto (git clone)
 
-Con tutti gli strumenti di base pronti, puoi scaricare il codice.
-Questo passaggio crea la struttura di cartelle del progetto (incluse
-`frontend/`, dove al paragrafo 7 installeremo le dipendenze Node) —
-è per questo che viene prima degli ultimi due passaggi di questa
-guida, non dopo.
-
 ```bash
 cd ~
-git clone https://github.com/<utente>/meshcore-trace-mon.git trace-mon
+git clone https://github.com/fzd2vp4nmb-oss/meshcore-trace-mon.git trace-mon
 cd trace-mon
 ```
-
-(sostituisci `<utente>` con il nome utente/organizzazione GitHub del
-repository — te lo forniamo insieme al link di questa guida)
 
 Da qui in avanti, tutti i comandi di questa guida assumono che tu sia
 dentro `~/trace-mon` (cioè `/home/meshcore/trace-mon`), salvo dove
@@ -339,12 +284,7 @@ andata a buon fine.
 
 ## 8. Generare i file specifici della tua installazione (`setup.sh`)
 
-Il repository, così come lo scarichi con `git clone`, **non contiene**
-gli script di manutenzione (`backup.sh`, `trace.sh`, ecc.), il file
-`config.yaml`, né `systemd/trace-web.service` — sono tutti specifici
-della tua installazione (IP del server a cui inviare i backup, host
-del companion MeshCore, ecc.) e non hanno senso distribuiti con
-valori di qualcun altro. Li genera `setup.sh`, con un breve
+Per completare l'installazione esegui `setup.sh`, un breve
 questionario interattivo:
 
 ```bash
@@ -494,12 +434,13 @@ fare una tantum in fase di setup del device.
 
 ### 11.1 Default region
 
-Nell'app, imposta la **default region** su `it` — evita di
-trasmettere traffico di tipo *unscoped* sulla mesh.
+In **Experimental settings**, imposta la **default region** su `it`
+— evita di trasmettere traffico di tipo *unscoped* sulla mesh.
 
 ### 11.2 Path hash size
 
-Imposta l'**hash path size** ad almeno **2 byte**.
+Sempre in **Experimental settings**, imposta l'**hash path size** ad
+almeno **2 byte**.
 
 ### 11.3 Canale del bot
 
@@ -527,7 +468,22 @@ imposta:
 
 Salva le impostazioni prima di procedere.
 
-### 11.5 Permessi ACL sul repeater (per il servizio Repeaters)
+Con questa configurazione la lista contatti resta sempre piena e i
+contatti più vecchi vengono cancellati automaticamente per fare
+posto ai nuovi. Se un contatto ti serve stabilmente (ad esempio per
+usare il BOT in DM con un utente specifico), impostalo come
+**preferito** — i preferiti non vengono cancellati dalla pulizia
+automatica.
+
+### 11.5 Invio messaggi
+
+Nelle impostazioni di invio messaggi:
+
+- **Auto Retry**: selezionato
+- **Auto Reset Path**: selezionato
+- **Direct Message Acks**: `2`
+
+### 11.6 Permessi ACL sul repeater (per il servizio Repeaters)
 
 Per interrogare un repeater dalla tab Repeaters (status, neighbours,
 telemetria, regioni, configurazione — vedi
@@ -553,3 +509,7 @@ documentazione di sviluppo per il dettaglio di quali dati richiedono
 quale livello di permesso.
 
 ---
+
+*(fine della guida attuale — sezioni su risoluzione problemi comuni
+e aggiornamento dell'installazione potranno essere aggiunte in
+futuro)*

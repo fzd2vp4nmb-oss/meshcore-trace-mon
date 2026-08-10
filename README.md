@@ -22,21 +22,9 @@ localmente dal Raspberry stesso.
 
 ## Installazione
 
-Guida completa, passo per passo (prerequisiti di sistema, Python,
-Node.js, configurazione del companion MeshCore, avvio dei servizi):
-**[INSTALL.md](INSTALL.md)**.
-
-In breve, dopo aver seguito i prerequisiti:
-
-```bash
-git clone https://github.com/<utente>/meshcore-trace-mon.git ~/trace-mon
-cd ~/trace-mon
-./setup.sh
-```
-
-`setup.sh` genera in modo interattivo tutti i file specifici della
-tua installazione (script di manutenzione, `config.yaml`, servizio
-web) — nessun dato reale è mai distribuito con questo repository.
+Prerequisiti di sistema, Python, Node.js, configurazione del
+companion MeshCore e avvio dei servizi: segui **[INSTALL.md](INSTALL.md)**
+dall'inizio, nell'ordine indicato.
 
 ## Requisiti
 

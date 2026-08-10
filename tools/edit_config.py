@@ -46,6 +46,8 @@ bootstrap()
 
 import yaml
 
+from core.trace_paths import parse_path_entry, format_path_entry
+
 
 CONFIG_PATH = Path("config/config.yaml")
 BACKUP_DIR = Path("config/backup")
@@ -73,7 +75,9 @@ HEADER_COMMENT = """\
 #
 # trace:
 #   paths — elenco di path da tracciare, uno per riga, formato
-#     "aaaa,bbbb,aaaa" (prefissi esadecimali separati da virgola)
+#     "aaaa,bbbb,aaaa" (prefissi esadecimali separati da virgola).
+#     Un suffisso ,true/,false abilita o disabilita il path senza
+#     rimuoverlo — nessun suffisso equivale a ,true.
 #
 # bot:
 #   known_regions — regioni note al bot per la risoluzione flood-scope
@@ -286,6 +290,106 @@ def cmd_list_remove(args):
     save_config(data, backup_path)
 
 
+def cmd_trace_path_list(args):
+
+    data = load_config()
+    entries = get_path(data, "trace.paths") or []
+
+    for i, entry in enumerate(entries):
+
+        path, enabled = parse_path_entry(entry)
+        status = "abilitato" if enabled else "disabilitato"
+
+        print(f"{i}: {path} — {status}")
+
+
+def cmd_trace_path_add(args):
+
+    if not args.path.strip():
+        print("ERRORE: il path non può essere vuoto.", file=sys.stderr)
+        sys.exit(1)
+
+    enabled = parse_bool(args.enabled)
+
+    data = load_config()
+    entries = get_path(data, "trace.paths")
+
+    if entries is None:
+        entries = []
+        set_path(data, "trace.paths", entries)
+
+    #
+    # Confronto sul path "nudo" (senza suffisso), non sulla entry
+    # grezza — altrimenti "X,true" e "X,false" sarebbero considerate
+    # due path diversi invece di due stati dello stesso path.
+    #
+    if any(parse_path_entry(e)[0] == args.path for e in entries):
+        print(f"'{args.path}' è già presente, nessuna modifica.")
+        return
+
+    entries.append(
+        format_path_entry(args.path, enabled)
+    )
+
+    backup_path = backup_config()
+    save_config(data, backup_path)
+
+
+def cmd_trace_path_remove(args):
+
+    data = load_config()
+    entries = get_path(data, "trace.paths") or []
+
+    matching = [e for e in entries if parse_path_entry(e)[0] == args.path]
+
+    if not matching:
+        print(f"'{args.path}' non trovato, nessuna modifica.")
+        return
+
+    if len(entries) <= 1:
+
+        print(
+            "ERRORE: non posso rimuovere l'ultimo path rimasto — "
+            "la lista non può restare vuota.",
+            file=sys.stderr
+        )
+
+        sys.exit(1)
+
+    entries[:] = [e for e in entries if parse_path_entry(e)[0] != args.path]
+
+    backup_path = backup_config()
+    set_path(data, "trace.paths", entries)
+    save_config(data, backup_path)
+
+
+def cmd_trace_path_set_enabled(args):
+
+    enabled = parse_bool(args.enabled)
+
+    data = load_config()
+    entries = get_path(data, "trace.paths") or []
+
+    found = False
+
+    for i, entry in enumerate(entries):
+
+        path, _ = parse_path_entry(entry)
+
+        if path == args.path:
+            entries[i] = format_path_entry(path, enabled)
+            found = True
+            break
+
+    if not found:
+        print(f"'{args.path}' non trovato, nessuna modifica.")
+        return
+
+    backup_path = backup_config()
+    set_path(data, "trace.paths", entries)
+    save_config(data, backup_path)
+
+
 def cmd_repeater_list(args):
 
     data = load_config()
@@ -450,6 +554,23 @@ def main():
     p.add_argument("path")
     p.add_argument("value")
     p.set_defaults(func=cmd_list_remove)
+
+    p = sub.add_parser("trace-path-list")
+    p.set_defaults(func=cmd_trace_path_list)
+
+    p = sub.add_parser("trace-path-add")
+    p.add_argument("path")
+    p.add_argument("enabled")
+    p.set_defaults(func=cmd_trace_path_add)
+
+    p = sub.add_parser("trace-path-remove")
+    p.add_argument("path")
+    p.set_defaults(func=cmd_trace_path_remove)
+
+    p = sub.add_parser("trace-path-set-enabled")
+    p.add_argument("path")
+    p.add_argument("enabled")
+    p.set_defaults(func=cmd_trace_path_set_enabled)
 
     p = sub.add_parser("repeater-list")
     p.set_defaults(func=cmd_repeater_list)

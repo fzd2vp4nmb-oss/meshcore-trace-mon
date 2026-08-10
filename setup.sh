@@ -388,8 +388,13 @@ trace:
   timeout: 15
   backup: true
 
+  # Ogni entry può portare un suffisso ,true/,false per abilitare o
+  # disabilitare il path senza rimuoverlo (utile se una tratta radio
+  # diventa temporaneamente non disponibile) — nessun suffisso
+  # equivale a ,true. Aggiungi/rimuovi/attiva altri path con
+  # config.sh dopo l'installazione, invece di editare qui a mano.
   paths:
-    - "$TRACE_PATH"
+    - "$TRACE_PATH,true"
 
 bot:
   enabled: true

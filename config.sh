@@ -103,12 +103,13 @@ menu_trace() {
 
         echo
         echo "--- Trace (abilitato: $current_enabled) ---"
-        echo "  1) Attiva/disattiva"
+        echo "  1) Attiva/disattiva trace (l'intero modulo)"
         echo "  2) Elenca path configurati"
         echo "  3) Aggiungi un path"
         echo "  4) Rimuovi un path"
+        echo "  5) Attiva/disattiva un path esistente"
         echo "  0) Torna indietro"
-        read -p "Scelta: " choice
+        read -p "Scelta: " choice || { echo; return; }
 
         case "$choice" in
 
@@ -123,21 +124,39 @@ menu_trace() {
                 ;;
 
             2)
-                engine list-show trace.paths
+                engine trace-path-list
                 pause
                 ;;
 
             3)
                 echo "Formato path: aaaa,bbbb,aaaa (prefissi esadecimali separati da virgola)"
                 read -p "Nuovo path: " path
-                engine list-add trace.paths "$path"
+                read -p "Abilitarlo subito? [Y/n]: " yn
+                if [[ "$yn" =~ ^[Nn]$ ]]; then
+                    enabled="false"
+                else
+                    enabled="true"
+                fi
+                engine trace-path-add "$path" "$enabled"
                 CHANGES_MADE=1
                 ;;
 
             4)
-                engine list-show trace.paths
-                read -p "Path da rimuovere (testo esatto come mostrato sopra): " path
-                engine list-remove trace.paths "$path"
+                engine trace-path-list
+                read -p "Path da rimuovere (solo il path, senza indicare lo stato): " path
+                engine trace-path-remove "$path"
+                CHANGES_MADE=1
+                ;;
+
+            5)
+                engine trace-path-list
+                read -p "Path da attivare/disattivare (solo il path, senza indicare lo stato): " path
+                read -p "Abilitarlo? [y/N]: " yn
+                if [[ "$yn" =~ ^[Yy]$ ]]; then
+                    engine trace-path-set-enabled "$path" true
+                else
+                    engine trace-path-set-enabled "$path" false
+                fi
                 CHANGES_MADE=1
                 ;;
 
@@ -168,7 +187,7 @@ menu_bot() {
         echo "  3) Aggiungi una regione"
         echo "  4) Rimuovi una regione"
         echo "  0) Torna indietro"
-        read -p "Scelta: " choice
+        read -p "Scelta: " choice || { echo; return; }
 
         case "$choice" in
 
@@ -246,7 +265,7 @@ menu_repeaters() {
         echo "  2) Rimuovi un repeater"
         echo "  3) Rinomina un repeater"
         echo "  0) Torna indietro"
-        read -p "Scelta: " choice
+        read -p "Scelta: " choice || { echo; return; }
 
         case "$choice" in
 
@@ -295,7 +314,7 @@ menu_services() {
         echo "  1) Attiva un servizio"
         echo "  2) Disattiva un servizio"
         echo "  0) Torna indietro"
-        read -p "Scelta: " choice
+        read -p "Scelta: " choice || { echo; return; }
 
         case "$choice" in
 
@@ -336,7 +355,7 @@ while true; do
     echo "  5) Repeater interrogati"
     echo "  6) Servizi"
     echo "  0) Esci"
-    read -p "Scelta: " main_choice
+    read -p "Scelta: " main_choice || { echo; break; }
 
     case "$main_choice" in
         1) menu_connection ;;

@@ -17,6 +17,12 @@ a un Raspberry Pi (o altra macchina Linux equivalente).
 - **Bot** — risponde a comandi su un canale dedicato o via messaggio
   diretto (`!status`, `!path`, `!meteo`, `!ping`, ecc.).
 
+Il Nodo locale può inoltre inviare periodicamente i propri dati a un
+server centrale (Collector) che li aggrega con quelli di altri nodi
+della rete. Per configurare il Nodo perché acceda al server serve
+contattare l'admin del servizio — vedi
+[INSTALL.md](INSTALL.md#14-collegarsi-al-server-collector).
+
 Tutto accessibile da un'interfaccia web semplice, servita
 localmente dal Raspberry stesso.
 

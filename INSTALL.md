@@ -436,12 +436,13 @@ cd ~/trace-mon
 
 Lo script è diviso in tre parti, in quest'ordine:
 
-1. **Script di manutenzione** — ti chiede il **Node ID** (es.
-   `node_01`, `node_02`, `node_03` — l'identificativo di questa
-   installazione lato Collettore) e l'**IP del server** a cui gli
-   script inviano backup/sincronizzazioni via `scp`. Genera
-   `backup.sh`, `contact_sync.sh`, `rotate_contacts.sh`,
-   `sync-meshnode.sh`, `trace.sh`, tutti già eseguibili.
+1. **Script di manutenzione** — ti chiede il **Node ID** e l'**IP del
+   server** a cui gli script inviano backup/sincronizzazioni via
+   `scp`. Questi due valori non li scegli tu: te li assegna l'admin
+   del server Collector — contattalo prima di arrivare a questo
+   punto (§14.2) se non li hai già. Genera `backup.sh`,
+   `contact_sync.sh`, `rotate_contacts.sh`, `sync-meshnode.sh`,
+   `trace.sh`, tutti già eseguibili.
 2. **`config.yaml`** — ti chiede il tipo di connessione al companion
    MeshCore (TCP, Seriale o BLE) e i dettagli coerenti con la scelta
    (host+porta per TCP, device+baudrate per Seriale, indirizzo per
@@ -585,5 +586,55 @@ propone di riavviare `trace-mon.service` per applicare le modifiche.
 
 ---
 
-*(sezioni su risoluzione problemi comuni e aggiornamento
-dell'installazione potranno essere aggiunte in futuro)*
+## 14. Collegarsi al server Collector
+
+Il Nodo locale può inviare periodicamente i propri dati (trace,
+contatti, repeater monitorati) a un server centrale (Collector) che
+li aggrega con quelli di altri nodi della rete. Questo passaggio non
+fa parte del setup di base di trace-mon — il Nodo funziona
+autonomamente anche senza — ma estende ciò che puoi vedere
+aggregando le tue rilevazioni con quelle di altri.
+
+### 14.1 Genera una chiave SSH
+
+```bash
+ssh-keygen -t ed25519 -C "etichetta"
+```
+
+Sostituisci `etichetta` con un nome che ti aiuti a riconoscere questa
+chiave in futuro (es. il nome del tuo companion nell'app MeshCore) —
+serve solo a te e all'admin per distinguerla da altre chiavi, **non**
+è il `node_XX` che userai nel resto di questa guida: quello lo
+assegna l'admin al passo successivo. Lascia vuota la passphrase se
+prevedi di usare la chiave da script automatici.
+
+### 14.2 Contatta l'admin del servizio
+
+Scrivi a:
+
+```
+fzd2vp4nmb [at] privaterelay [dot] appleid [dot] com
+```
+
+allegando la chiave pubblica generata al passo precedente
+(`~/.ssh/id_ed25519.pub`). L'admin ti risponderà con le istruzioni
+per completare l'accesso, il **Node ID** (`node_XX`) da usare per
+questa installazione, e l'IP del server da usare al passo
+successivo — sono entrambi assegnati dall'admin, non vanno decisi
+autonomamente.
+
+### 14.3 Configura Node ID e IP del server
+
+Il Node ID e l'IP del server (`IP_SERVER`) vengono impostati dal
+questionario di `setup.sh` (§10) — rilancialo:
+
+```bash
+cd ~/trace-mon
+./setup.sh
+```
+
+Ti chiederà conferma prima di sovrascrivere gli script di
+manutenzione già generati (`backup.sh`, `contact_sync.sh`,
+`rotate_contacts.sh`, `sync-meshnode.sh`, `trace.sh`) — rispondi
+di sì. Quando richiesto, inserisci esattamente il Node ID e l'IP
+del server comunicati dall'admin al passo 14.2.

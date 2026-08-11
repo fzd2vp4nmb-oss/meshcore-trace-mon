@@ -1,5 +1,6 @@
 import asyncio
 
+from core.config import config
 from core.logger import log
 
 from meshcore.events import EventType
@@ -55,6 +56,84 @@ class NeighborMonitorModule:
     def __init__(self, engine):
         self.engine = engine
 
+        #
+        # Tentativi totali per singola interrogazione radio (1 =
+        # nessun retry, comportamento precedente). Globale per tutte
+        # le richieste (status/neighbours/telemetry/region/login/CLI)
+        # — vedi neighbor_monitoring.max_retries in config.yaml.
+        #
+        self.max_retries = max(
+            1,
+            int(config.get("neighbor_monitoring.max_retries", 3))
+        )
+
+    async def _call_with_retries(self, tag, label, factory):
+        """
+        Esegue factory() (una funzione richiamabile più volte, che
+        ritorna una nuova coroutine ad ogni chiamata — necessario per
+        poter rilanciare la STESSA richiesta) fino a self.max_retries
+        tentativi, fermandosi al primo risultato diverso da None.
+
+        Un'eccezione durante un tentativo è trattata come fallimento
+        di quel solo tentativo (stesso principio già in uso in questo
+        modulo: un'eccezione o un timeout su LoRa non provano che la
+        richiesta non esista, vanno ritentati come un timeout
+        qualunque) — non propaga, non interrompe il ciclo.
+
+        Ritorna l'ultimo risultato ottenuto, quindi None se anche
+        l'ultimo tentativo è fallito. Il chiamante resta responsabile
+        del log finale specifico (stesso messaggio "nessuna risposta
+        a X" di prima) quando il risultato è None.
+        """
+
+        result = None
+
+        for attempt in range(1, self.max_retries + 1):
+
+            try:
+                result = await factory()
+
+            except Exception:
+
+                log.exception(
+                    "NEIGHBOR_MONITOR: %s %s fallita (tentativo "
+                    "%d/%d).",
+                    tag,
+                    label,
+                    attempt,
+                    self.max_retries
+                )
+
+                result = None
+
+            if result is not None:
+
+                if attempt > 1:
+
+                    log.info(
+                        "NEIGHBOR_MONITOR: %s %s riuscita al "
+                        "tentativo %d/%d.",
+                        tag,
+                        label,
+                        attempt,
+                        self.max_retries
+                    )
+
+                return result
+
+            if attempt < self.max_retries:
+
+                log.info(
+                    "NEIGHBOR_MONITOR: %s %s nessuna risposta "
+                    "(tentativo %d/%d), riprovo subito.",
+                    tag,
+                    label,
+                    attempt,
+                    self.max_retries
+                )
+
+        return result
+
     async def query(self, repeater_name):
         """
         Risolve repeater_name in chiave pubblica via get_contacts(),
@@ -90,14 +169,51 @@ class NeighborMonitorModule:
 
             return None
 
-        try:
-            await self.engine.mesh.commands.get_contacts()
+        contacts_ok = False
 
-        except Exception:
+        for attempt in range(1, self.max_retries + 1):
 
-            log.exception(
-                "NEIGHBOR_MONITOR: %s get_contacts() fallito.",
-                tag
+            try:
+                await self.engine.mesh.commands.get_contacts()
+                contacts_ok = True
+
+                if attempt > 1:
+
+                    log.info(
+                        "NEIGHBOR_MONITOR: %s get_contacts() riuscita "
+                        "al tentativo %d/%d.",
+                        tag,
+                        attempt,
+                        self.max_retries
+                    )
+
+                break
+
+            except Exception:
+
+                log.exception(
+                    "NEIGHBOR_MONITOR: %s get_contacts() fallita "
+                    "(tentativo %d/%d).",
+                    tag,
+                    attempt,
+                    self.max_retries
+                )
+
+                if attempt < self.max_retries:
+
+                    log.info(
+                        "NEIGHBOR_MONITOR: %s get_contacts() riprovo "
+                        "subito.",
+                        tag
+                    )
+
+        if not contacts_ok:
+
+            log.warning(
+                "NEIGHBOR_MONITOR: %s get_contacts() fallita dopo %d "
+                "tentativi, query annullata.",
+                tag,
+                self.max_retries
             )
 
             return None
@@ -122,90 +238,72 @@ class NeighborMonitorModule:
         telemetry = None
         region = None
 
-        try:
-            status = await self.engine.mesh.commands.req_status_sync(
-                public_key
-            )
-
-        except Exception:
-
-            log.exception(
-                "NEIGHBOR_MONITOR: %s req_status_sync() fallita.",
-                tag
-            )
+        status = await self._call_with_retries(
+            tag,
+            "req_status_sync",
+            lambda: self.engine.mesh.commands.req_status_sync(public_key)
+        )
 
         if status is None:
 
             log.warning(
                 "NEIGHBOR_MONITOR: %s nessuna risposta a req_status "
-                "(timeout, o permesso ACL mancante — indistinguibili "
-                "a questo livello).",
-                tag
+                "dopo %d tentativi (timeout, o permesso ACL mancante "
+                "— indistinguibili a questo livello).",
+                tag,
+                self.max_retries
             )
 
-        try:
-            neighbours = await self.engine.mesh.commands.fetch_all_neighbours(
-                public_key
-            )
-
-        except Exception:
-
-            log.exception(
-                "NEIGHBOR_MONITOR: %s fetch_all_neighbours() fallita.",
-                tag
-            )
+        neighbours = await self._call_with_retries(
+            tag,
+            "fetch_all_neighbours",
+            lambda: self.engine.mesh.commands.fetch_all_neighbours(public_key)
+        )
 
         if neighbours is None:
 
             log.warning(
                 "NEIGHBOR_MONITOR: %s nessuna risposta a "
-                "req_neighbours (timeout, o permesso ACL mancante — "
-                "indistinguibili a questo livello).",
-                tag
+                "req_neighbours dopo %d tentativi (timeout, o "
+                "permesso ACL mancante — indistinguibili a questo "
+                "livello).",
+                tag,
+                self.max_retries
             )
 
-        try:
-            telemetry = await self.engine.mesh.commands.req_telemetry_sync(
-                public_key
-            )
-
-        except Exception:
-
-            log.exception(
-                "NEIGHBOR_MONITOR: %s req_telemetry_sync() fallita.",
-                tag
-            )
+        telemetry = await self._call_with_retries(
+            tag,
+            "req_telemetry_sync",
+            lambda: self.engine.mesh.commands.req_telemetry_sync(public_key)
+        )
 
         if telemetry is None:
 
             log.warning(
                 "NEIGHBOR_MONITOR: %s nessuna risposta a "
-                "req_telemetry (timeout, o permesso ACL mancante — "
-                "indistinguibili a questo livello).",
-                tag
+                "req_telemetry dopo %d tentativi (timeout, o "
+                "permesso ACL mancante — indistinguibili a questo "
+                "livello).",
+                tag,
+                self.max_retries
             )
 
-        try:
-            region = await self.engine.mesh.commands.req_regions_sync(
-                public_key
-            )
-
-        except Exception:
-
-            log.exception(
-                "NEIGHBOR_MONITOR: %s req_regions_sync() fallita.",
-                tag
-            )
+        region = await self._call_with_retries(
+            tag,
+            "req_regions_sync",
+            lambda: self.engine.mesh.commands.req_regions_sync(public_key)
+        )
 
         if region is None:
 
             log.warning(
-                "NEIGHBOR_MONITOR: %s nessuna risposta a "
-                "req_regions (nessun ACL richiesto per questa "
+                "NEIGHBOR_MONITOR: %s nessuna risposta a req_regions "
+                "dopo %d tentativi (nessun ACL richiesto per questa "
                 "richiesta — un fallimento qui è più probabilmente "
                 "un timeout radio genuino che un problema di "
                 "permessi).",
-                tag
+                tag,
+                self.max_retries
             )
 
         config = await self._query_cli_config(
@@ -274,30 +372,26 @@ class NeighborMonitorModule:
 
         try:
 
-            try:
-                login_result = await self.engine.mesh.commands.send_login_sync(
+            login_result = await self._call_with_retries(
+                tag,
+                "send_login_sync",
+                lambda: self.engine.mesh.commands.send_login_sync(
                     public_key,
                     "",
                     timeout=CLI_RESPONSE_TIMEOUT
                 )
-
-            except Exception:
-
-                log.exception(
-                    "NEIGHBOR_MONITOR: %s send_login_sync() fallita.",
-                    tag
-                )
-
-                return None
+            )
 
             if login_result is None:
 
                 log.warning(
-                    "NEIGHBOR_MONITOR: %s login fallito (nessuna "
-                    "risposta — timeout radio, o il richiedente non ha "
-                    "il bit admin nell'ACL: indistinguibili a questo "
-                    "livello). Comandi CLI saltati.",
-                    tag
+                    "NEIGHBOR_MONITOR: %s login fallito dopo %d "
+                    "tentativi (nessuna risposta — timeout radio, o "
+                    "il richiedente non ha il bit admin nell'ACL: "
+                    "indistinguibili a questo livello). Comandi CLI "
+                    "saltati.",
+                    tag,
+                    self.max_retries
                 )
 
                 return None
@@ -355,71 +449,132 @@ class NeighborMonitorModule:
         """
         Un singolo comando CLI: invio + attesa della risposta con lo
         stesso schema validato empiricamente (wait_for_event
-        MESSAGES_WAITING poi get_msg()). None su qualunque esito non
-        riuscito — mai un'eccezione che risalga a _query_cli_config(),
-        un comando fallito non deve impedire i successivi.
+        MESSAGES_WAITING poi get_msg()). Rieseguito fino a
+        self.max_retries tentativi in caso di fallimento (invio
+        locale, timeout, o errore di parsing) — None solo se anche
+        l'ultimo tentativo fallisce. Mai un'eccezione che risalga a
+        _query_cli_config(), un comando fallito non deve impedire i
+        successivi.
+
+        La coda messaggi in ingresso non è isolata per contatto: un
+        qualunque traffico mesh non correlato (advert, DM di altri
+        nodi, elenco neighbours di terzi) può arrivare nella stessa
+        finestra e viene scartato da _wait_for_own_response() tramite
+        il confronto su pubkey_prefix — stesso campo già usato da
+        BotModule._on_contact_message() per il filtro complementare
+        (vedi Engine.active_cli_sessions). Scoperto da un caso reale
+        sul campo: 'get flood.max.advert' falliva il parsing perché
+        get_msg() restituiva testo di un advert/neighbours estraneo,
+        non la risposta al comando appena inviato.
         """
 
-        try:
-            send_result = await self.engine.mesh.commands.send_cmd(
-                public_key,
-                cmd_text
-            )
+        async def _wait_for_own_response():
 
-            if send_result.type == EventType.ERROR:
+            while True:
+
+                await self.engine.mesh.wait_for_event(
+                    EventType.MESSAGES_WAITING
+                )
+
+                msg_event = await self.engine.mesh.commands.get_msg()
+
+                sender_prefix = msg_event.payload.get("pubkey_prefix")
+
+                if sender_prefix and public_key.startswith(sender_prefix):
+                    return msg_event
+
+                log.info(
+                    "NEIGHBOR_MONITOR: %s '%s' messaggio spurio "
+                    "scartato (da %s, non dal repeater interrogato) "
+                    "durante l'attesa della risposta.",
+                    tag,
+                    cmd_text,
+                    sender_prefix or "mittente sconosciuto"
+                )
+
+        for attempt in range(1, self.max_retries + 1):
+
+            try:
+                send_result = await self.engine.mesh.commands.send_cmd(
+                    public_key,
+                    cmd_text
+                )
+
+                if send_result.type == EventType.ERROR:
+
+                    log.warning(
+                        "NEIGHBOR_MONITOR: %s invio '%s' fallito "
+                        "localmente (tentativo %d/%d).",
+                        tag,
+                        cmd_text,
+                        attempt,
+                        self.max_retries
+                    )
+
+                else:
+
+                    msg_event = await asyncio.wait_for(
+                        _wait_for_own_response(),
+                        timeout=CLI_RESPONSE_TIMEOUT
+                    )
+
+                    raw_text = msg_event.payload.get("text", "")
+
+                    #
+                    # Le risposte numeriche arrivano con un prefisso
+                    # "> " (echo in stile CLI) — la versione firmware
+                    # no. Confermato nel test reale (exp09).
+                    #
+                    cleaned = raw_text.lstrip(">").strip()
+
+                    value = value_type(cleaned)
+
+                    if attempt > 1:
+
+                        log.info(
+                            "NEIGHBOR_MONITOR: %s '%s' riuscita al "
+                            "tentativo %d/%d.",
+                            tag,
+                            cmd_text,
+                            attempt,
+                            self.max_retries
+                        )
+
+                    return value
+
+            except asyncio.TimeoutError:
 
                 log.warning(
-                    "NEIGHBOR_MONITOR: %s invio '%s' fallito "
-                    "localmente.",
+                    "NEIGHBOR_MONITOR: %s '%s' nessuna risposta entro "
+                    "%ss (tentativo %d/%d) — normale su LoRa, non "
+                    "implica che il comando non esista.",
+                    tag,
+                    cmd_text,
+                    CLI_RESPONSE_TIMEOUT,
+                    attempt,
+                    self.max_retries
+                )
+
+            except Exception:
+
+                log.exception(
+                    "NEIGHBOR_MONITOR: %s '%s' fallito durante il "
+                    "parsing della risposta (tentativo %d/%d).",
+                    tag,
+                    cmd_text,
+                    attempt,
+                    self.max_retries
+                )
+
+            if attempt < self.max_retries:
+
+                log.info(
+                    "NEIGHBOR_MONITOR: %s '%s' riprovo subito.",
                     tag,
                     cmd_text
                 )
 
-                return None
-
-            await asyncio.wait_for(
-                self.engine.mesh.wait_for_event(
-                    EventType.MESSAGES_WAITING
-                ),
-                timeout=CLI_RESPONSE_TIMEOUT
-            )
-
-            msg_event = await self.engine.mesh.commands.get_msg()
-
-            raw_text = msg_event.payload.get("text", "")
-
-            #
-            # Le risposte numeriche arrivano con un prefisso "> "
-            # (echo in stile CLI) — la versione firmware no.
-            # Confermato nel test reale (exp09).
-            #
-            cleaned = raw_text.lstrip(">").strip()
-
-            return value_type(cleaned)
-
-        except asyncio.TimeoutError:
-
-            log.warning(
-                "NEIGHBOR_MONITOR: %s '%s' nessuna risposta entro "
-                "%ss — normale su LoRa, non implica che il comando "
-                "non esista.",
-                tag,
-                cmd_text,
-                CLI_RESPONSE_TIMEOUT
-            )
-
-            return None
-
-        except Exception:
-
-            log.exception(
-                "NEIGHBOR_MONITOR: %s '%s' fallito durante il "
-                "parsing della risposta.",
-                tag,
-                cmd_text
-            )
-
-            return None
+        return None
 
     def _resolve_contact(self, repeater_name):
         """

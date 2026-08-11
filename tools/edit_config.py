@@ -86,6 +86,9 @@ HEADER_COMMENT = """\
 #   Nessun parametro di cadenza qui — la cadenza è quella dell'unica
 #   entry di crontab che lancia main_neighbor_monitor.py.
 #   repeaters — elenco dei repeater da interrogare (tab Repeaters)
+#   max_retries — tentativi totali per singola interrogazione radio
+#     (status/neighbours/telemetry/region/login/comandi CLI) prima di
+#     rinunciare e passare alla successiva. 1 = nessun retry.
 #
 # services:
 #   Ciascun servizio del daemon può essere disattivato singolarmente
@@ -215,13 +218,21 @@ def cmd_set(args):
     if args.path.endswith(".enabled") or args.path == "enabled":
         value = parse_bool(value)
 
-    elif args.path.endswith(".port") or args.path.endswith(".baudrate"):
+    elif (
+        args.path.endswith(".port")
+        or args.path.endswith(".baudrate")
+        or args.path.endswith(".max_retries")
+    ):
 
         try:
             value = int(value)
 
         except ValueError:
             print(f"ERRORE: valore numerico non valido: '{value}'", file=sys.stderr)
+            sys.exit(1)
+
+        if args.path.endswith(".max_retries") and value < 1:
+            print("ERRORE: max_retries deve essere almeno 1.", file=sys.stderr)
             sys.exit(1)
 
     if not str(value).strip() and not isinstance(value, bool):

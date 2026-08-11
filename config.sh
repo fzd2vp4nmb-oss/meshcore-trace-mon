@@ -257,13 +257,16 @@ menu_repeaters() {
 
     while true; do
 
+        current_retries=$(engine get neighbor_monitoring.max_retries)
+
         echo
-        echo "--- Repeater interrogati (tab Repeaters) ---"
+        echo "--- Repeater interrogati (tab Repeaters) — tentativi per interrogazione fallita: $current_retries ---"
         engine repeater-list
         echo
         echo "  1) Aggiungi un repeater"
         echo "  2) Rimuovi un repeater"
         echo "  3) Rinomina un repeater"
+        echo "  4) Imposta tentativi per interrogazione fallita"
         echo "  0) Torna indietro"
         read -p "Scelta: " choice || { echo; return; }
 
@@ -285,6 +288,16 @@ menu_repeaters() {
                 read -p "Nome attuale: " old_name
                 read -p "Nuovo nome: " new_name
                 engine repeater-rename "$old_name" "$new_name"
+                CHANGES_MADE=1
+                ;;
+
+            4)
+                echo "Numero di volte che una singola interrogazione radio"
+                echo "(status/neighbours/telemetry/region/login/comandi CLI)"
+                echo "viene ritentata subito prima di passare oltre. 1 = nessun retry."
+                read -p "Tentativi [$current_retries]: " retries
+                retries="${retries:-$current_retries}"
+                engine set neighbor_monitoring.max_retries "$retries"
                 CHANGES_MADE=1
                 ;;
 

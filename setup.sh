@@ -420,6 +420,7 @@ neighbor_monitoring:
   # col pattern già usato per trace/advert (vedi
   # docs/NEIGHBOR_MONITORING.md §4/§6).
   interval: 5   # secondi di attesa tra un repeater e il successivo, se più di uno
+  max_retries: 3   # tentativi per singola interrogazione radio fallita, prima di passare oltre
 
   repeaters:
     - name: "$REPEATER_NAME"

@@ -456,24 +456,14 @@ Se rilanci `setup.sh` in un secondo momento, ti chiede conferma
 prima di sovrascrivere qualunque file già generato — puoi rilanciarlo
 in sicurezza anche solo per rigenerare un pezzo specifico.
 
-### Un solo path, un solo repeater — e dopo?
-
-Il questionario chiede **un solo path** da tracciare e **un solo
-repeater** da interrogare — sono gli scenari di partenza più comuni.
-Se in seguito vuoi tracciare più path o interrogare più repeater,
-non serve rilanciare `setup.sh`: apri `config/config.yaml` con un
-editor di testo e aggiungi altre righe agli elenchi `trace.paths` e
-`neighbor_monitoring.repeaters`, seguendo lo stesso formato di quella
-già presente.
-
 ### Tutti i servizi sono abilitati di default
 
 La sezione `services:` di `config.yaml` (generata da `setup.sh` con
 tutti e sei i servizi — system, trace, advert, bot, contact_sync,
-neighbor_monitor — impostati su `enabled: true`) va modificata a
-mano se vuoi disattivarne qualcuno: cambia il relativo `enabled` in
-`false`. Il questionario non chiede quali servizi attivare, parte
-sempre con tutti accesi.
+neighbor_monitor — impostati su `enabled: true`) si disattiva voce
+per voce con `config.sh` (§13), non serve editarla a mano. Il
+questionario non chiede quali servizi attivare, parte sempre con
+tutti accesi.
 
 ---
 

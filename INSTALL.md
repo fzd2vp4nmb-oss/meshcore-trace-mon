@@ -7,9 +7,9 @@ posto, e cosa fare se non lo è — pensata per chi non ha molta
 familiarità con Linux.
 
 Copre: configurazione del companion MeshCore, prerequisiti di
-sistema, Python, Node.js, git, il clone del progetto, generazione
-guidata dei file di configurazione (`setup.sh`), attivazione dei
-servizi e crontab.
+sistema, Python, Node.js, git, sqlite3, il clone del progetto,
+generazione guidata dei file di configurazione (`setup.sh`),
+attivazione dei servizi e crontab.
 
 ---
 
@@ -42,7 +42,7 @@ nell'app se non esiste già.
 
 Se preferisci usare un canale diverso da `#bot`, crealo comunque
 nell'app **e** aggiorna di conseguenza `bot.channel_name` in
-`config/config.yaml` (generato da `setup.sh`, §9) — i due devono
+`config/config.yaml` (generato da `setup.sh`, §10) — i due devono
 corrispondere.
 
 ### 1.4 Impostazioni contatti (per il servizio Nodes)
@@ -226,8 +226,8 @@ sudo apt install -y python3-venv
 ```
 
 **Nota**: la creazione effettiva dell'ambiente virtuale (`.venv`)
-avviene più avanti (paragrafo 7), dentro la cartella del progetto —
-che esiste solo dopo il clone (paragrafo 6).
+avviene più avanti (paragrafo 8), dentro la cartella del progetto —
+che esiste solo dopo il clone (paragrafo 7).
 
 ---
 
@@ -296,7 +296,30 @@ sudo apt install -y git
 
 ---
 
-## 6. Scaricare il progetto (git clone)
+## 6. sqlite3
+
+`contact_sync.sh` usa il comando a riga di comando `sqlite3` per
+sincronizzare `contacts.db` verso il Collettore.
+
+### 6.1 Verifica
+
+```bash
+sqlite3 --version
+```
+
+Se stampa un numero di versione, sei già a posto — salta al
+paragrafo 7.
+
+### 6.2 Installazione (solo se mancante)
+
+```bash
+sudo apt update
+sudo apt install -y sqlite3
+```
+
+---
+
+## 7. Scaricare il progetto (git clone)
 
 ```bash
 cd ~
@@ -310,9 +333,9 @@ indicato diversamente.
 
 ---
 
-## 7. Ambiente virtuale Python e dipendenze
+## 8. Ambiente virtuale Python e dipendenze
 
-### 7.1 Creazione dell'ambiente virtuale
+### 8.1 Creazione dell'ambiente virtuale
 
 Un ambiente virtuale (`venv`) è una copia isolata di Python dove
 installare le librerie del progetto senza toccare l'installazione di
@@ -327,7 +350,7 @@ python3 -m venv .venv
 Questo crea la cartella `.venv/` dentro il progetto (non serve
 crearla a mano, il comando la genera da solo).
 
-### 7.2 Attivazione e installazione delle dipendenze
+### 8.2 Attivazione e installazione delle dipendenze
 
 ```bash
 source .venv/bin/activate
@@ -345,9 +368,9 @@ progetto richiede:
 - `PyYAML` — per leggere `config.yaml`
 - `aiohttp` — usata dal comando bot `!meteo`
 
-### 7.3 Verifica
+### 8.3 Verifica
 
-Controlla che il prompt mostri ancora `(.venv)` all'inizio (§7.2) —
+Controlla che il prompt mostri ancora `(.venv)` all'inizio (§8.2) —
 se manca, `source .venv/bin/activate` prima di continuare: i comandi
 seguenti, eseguiti fuori dall'ambiente virtuale, mostrerebbero i
 pacchetti del Python di sistema invece di quelli del progetto, senza
@@ -379,7 +402,7 @@ necessario attivare nulla a mano.
 
 ---
 
-## 8. Dipendenze Node.js del frontend
+## 9. Dipendenze Node.js del frontend
 
 ```bash
 cd ~/trace-mon/frontend
@@ -401,7 +424,7 @@ andata a buon fine.
 
 ---
 
-## 9. Generare i file specifici della tua installazione (`setup.sh`)
+## 10. Generare i file specifici della tua installazione (`setup.sh`)
 
 Per completare l'installazione esegui `setup.sh`, un breve
 questionario interattivo:
@@ -453,7 +476,7 @@ sempre con tutti accesi.
 
 ---
 
-## 10. Attivare i servizi systemd
+## 11. Attivare i servizi systemd
 
 ```bash
 sudo cp systemd/trace-mon.service systemd/trace-web.service /etc/systemd/system/
@@ -482,7 +505,7 @@ journalctl -u trace-web -n 50
 
 ---
 
-## 11. Crontab
+## 12. Crontab
 
 Alcune attività (tracciamento, monitoraggio repeater, manutenzione)
 non girano come parte del servizio systemd continuo, ma vengono
@@ -544,7 +567,7 @@ praticamente sempre.
 
 ---
 
-## 12. Modificare la configurazione in seguito (`config.sh`)
+## 13. Modificare la configurazione in seguito (`config.sh`)
 
 Per cambiare `config.yaml` dopo l'installazione — connessione, path
 tracciati, canale/regioni del bot, repeater interrogati, quali

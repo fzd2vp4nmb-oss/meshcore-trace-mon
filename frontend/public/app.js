@@ -1893,7 +1893,7 @@ function renderNodesTable(
         );
 
     let html =
-        "<tr><th>Name</th><th>Type</th><th>Last Advert</th><th>Path</th></tr>";
+        "<tr><th>Name</th><th>Type</th><th>Advert Time</th><th>Path</th></tr>";
 
     nodes.forEach(
         n => {
@@ -2236,7 +2236,7 @@ function renderNodeDetail(
         <tr><th>Type</th><td>${formatNodeType(node.node_type)}</td></tr>
         <tr><th>Public Key</th><td>${node.public_key}</td></tr>
         <tr><th>Position</th><td>${node.adv_lat ?? "-"}, ${node.adv_lon ?? "-"}</td></tr>
-        <tr><th>Last Advert</th><td>${formatUnixTime(node.last_advert)}</td></tr>
+        <tr><th>Advert Time</th><td>${formatUnixTime(node.last_advert)}</td></tr>
         <tr><th>Last Activity</th><td>${formatUnixTime(node.last_seen)}</td></tr>
         <tr><th>Total Observations</th><td id="nodeDetailObsCount">${observations.length}</td></tr>
     `;

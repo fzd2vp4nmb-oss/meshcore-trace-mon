@@ -62,12 +62,17 @@ menu_connection() {
 
         2)
             current_device=$(engine get connection.serial.device)
+            current_baudrate=$(engine get connection.serial.baudrate)
 
             read -p "Device seriale [$current_device]: " device
             device="${device:-$current_device}"
 
+            read -p "Baudrate [$current_baudrate]: " baudrate
+            baudrate="${baudrate:-$current_baudrate}"
+
             engine set connection.type serial
             engine set connection.serial.device "$device"
+            engine set connection.serial.baudrate "$baudrate"
             CHANGES_MADE=1
             ;;
 
@@ -100,6 +105,8 @@ menu_trace() {
     while true; do
 
         current_enabled=$(engine get trace.enabled)
+        current_interval=$(engine get trace.interval)
+        current_timeout=$(engine get trace.timeout)
 
         echo
         echo "--- Trace (abilitato: $current_enabled) ---"
@@ -108,6 +115,8 @@ menu_trace() {
         echo "  3) Aggiungi un path"
         echo "  4) Rimuovi un path"
         echo "  5) Attiva/disattiva un path esistente"
+        echo "  6) Imposta intervallo tra un path e il successivo (attuale: ${current_interval}s)"
+        echo "  7) Imposta timeout risposta TRACE_DATA (attuale: ${current_timeout}s)"
         echo "  0) Torna indietro"
         read -p "Scelta: " choice || { echo; return; }
 
@@ -157,6 +166,22 @@ menu_trace() {
                 else
                     engine trace-path-set-enabled "$path" false
                 fi
+                CHANGES_MADE=1
+                ;;
+
+            6)
+                echo "Secondi di attesa tra un path e il successivo nello stesso giro (minimo 10)."
+                read -p "Intervallo [$current_interval]: " interval
+                interval="${interval:-$current_interval}"
+                engine set trace.interval "$interval"
+                CHANGES_MADE=1
+                ;;
+
+            7)
+                echo "Secondi di attesa di una risposta TRACE_DATA prima di considerare il path fallito (minimo 10)."
+                read -p "Timeout [$current_timeout]: " timeout
+                timeout="${timeout:-$current_timeout}"
+                engine set trace.timeout "$timeout"
                 CHANGES_MADE=1
                 ;;
 
@@ -235,19 +260,49 @@ menu_bot() {
 # ============================================================
 menu_contacts() {
 
-    current_enabled=$(engine get contacts.enabled)
+    while true; do
 
-    echo
-    echo "--- Contacts (abilitato: $current_enabled) ---"
-    read -p "Abilitare contacts? [y/N]: " yn
+        current_enabled=$(engine get contacts.enabled)
+        current_sync_interval=$(engine get contacts.sync_interval)
 
-    if [[ "$yn" =~ ^[Yy]$ ]]; then
-        engine set contacts.enabled true
-    else
-        engine set contacts.enabled false
-    fi
+        echo
+        echo "--- Contacts (abilitato: $current_enabled) ---"
+        echo "  1) Attiva/disattiva"
+        echo "  2) Imposta intervallo di sync col device (attuale: ${current_sync_interval}s)"
+        echo "  0) Torna indietro"
+        read -p "Scelta: " choice || { echo; return; }
 
-    CHANGES_MADE=1
+        case "$choice" in
+
+            1)
+                read -p "Abilitare contacts? [y/N]: " yn
+                if [[ "$yn" =~ ^[Yy]$ ]]; then
+                    engine set contacts.enabled true
+                else
+                    engine set contacts.enabled false
+                fi
+                CHANGES_MADE=1
+                ;;
+
+            2)
+                echo "Secondi tra un sync completo col device (get_contacts()) e il"
+                echo "successivo (minimo 60). Comunicazione locale, nessun impatto radio —"
+                echo "solo più scritture su contacts.db se abbassato molto."
+                read -p "Intervallo [$current_sync_interval]: " interval
+                interval="${interval:-$current_sync_interval}"
+                engine set contacts.sync_interval "$interval"
+                CHANGES_MADE=1
+                ;;
+
+            0)
+                return
+                ;;
+
+            *)
+                echo "Scelta non valida."
+                ;;
+        esac
+    done
 }
 
 # ============================================================
@@ -258,15 +313,17 @@ menu_repeaters() {
     while true; do
 
         current_retries=$(engine get neighbor_monitoring.max_retries)
+        current_interval=$(engine get neighbor_monitoring.interval)
 
         echo
-        echo "--- Repeater interrogati (tab Repeaters) — tentativi per interrogazione fallita: $current_retries ---"
+        echo "--- Repeater interrogati (tab Repeaters) — tentativi per interrogazione fallita: $current_retries, intervallo tra repeater: ${current_interval}s ---"
         engine repeater-list
         echo
         echo "  1) Aggiungi un repeater"
         echo "  2) Rimuovi un repeater"
         echo "  3) Rinomina un repeater"
         echo "  4) Imposta tentativi per interrogazione fallita"
+        echo "  5) Imposta intervallo tra un repeater e il successivo"
         echo "  0) Torna indietro"
         read -p "Scelta: " choice || { echo; return; }
 
@@ -298,6 +355,15 @@ menu_repeaters() {
                 read -p "Tentativi [$current_retries]: " retries
                 retries="${retries:-$current_retries}"
                 engine set neighbor_monitoring.max_retries "$retries"
+                CHANGES_MADE=1
+                ;;
+
+            5)
+                echo "Secondi di attesa tra un repeater e il successivo, se più di uno"
+                echo "configurato — irrilevante con un solo repeater."
+                read -p "Intervallo [$current_interval]: " interval
+                interval="${interval:-$current_interval}"
+                engine set neighbor_monitoring.interval "$interval"
                 CHANGES_MADE=1
                 ;;
 
@@ -355,6 +421,32 @@ menu_services() {
 }
 
 # ============================================================
+# Sottomenu: logging
+# ============================================================
+menu_logging() {
+
+    current_level=$(engine get logging.level)
+
+    echo
+    echo "--- Logging (livello attuale: $current_level) ---"
+    echo "  1) DEBUG"
+    echo "  2) INFO"
+    echo "  3) WARNING"
+    echo "  4) ERROR"
+    echo "  0) Torna indietro (nessuna modifica)"
+    read -p "Scelta: " choice || { echo; return; }
+
+    case "$choice" in
+        1) engine set logging.level DEBUG; CHANGES_MADE=1 ;;
+        2) engine set logging.level INFO; CHANGES_MADE=1 ;;
+        3) engine set logging.level WARNING; CHANGES_MADE=1 ;;
+        4) engine set logging.level ERROR; CHANGES_MADE=1 ;;
+        0) return ;;
+        *) echo "Scelta non valida." ;;
+    esac
+}
+
+# ============================================================
 # Menu principale
 # ============================================================
 while true; do
@@ -367,6 +459,7 @@ while true; do
     echo "  4) Contacts"
     echo "  5) Repeater interrogati"
     echo "  6) Servizi"
+    echo "  7) Logging"
     echo "  0) Esci"
     read -p "Scelta: " main_choice || { echo; break; }
 
@@ -377,6 +470,7 @@ while true; do
         4) menu_contacts ;;
         5) menu_repeaters ;;
         6) menu_services ;;
+        7) menu_logging ;;
         0) break ;;
         *) echo "Scelta non valida." ;;
     esac

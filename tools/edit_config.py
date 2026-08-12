@@ -56,6 +56,35 @@ VALID_SERVICES = [
     "system", "trace", "advert", "bot", "contact_sync", "neighbor_monitor"
 ]
 
+#
+# Suffissi di path che vanno convertiti a intero prima di scrivere.
+# ".interval" copre sia trace.interval sia neighbor_monitoring.interval
+# (stesso trattamento numerico, soglie minime diverse — vedi MIN_VALUES
+# sotto, indicizzato sul path ESATTO non sul suffisso).
+#
+NUMERIC_SUFFIXES = (
+    ".port", ".baudrate", ".max_retries", ".sync_interval",
+    ".interval", ".timeout"
+)
+
+#
+# Soglie minime per specifici path numerici. trace.interval/timeout
+# toccano timing radio su una rete condivisa — un valore troppo basso
+# (es. 0) impatta traffico reale sulla mesh, non solo il Nodo locale.
+# contacts.sync_interval è comunicazione locale col device (nessun
+# impatto radio) ma un valore troppo basso moltiplica inutilmente le
+# scritture su contacts.db.
+#
+MIN_VALUES = {
+    "neighbor_monitoring.max_retries": 1,
+    "neighbor_monitoring.interval": 1,
+    "trace.interval": 10,
+    "trace.timeout": 10,
+    "contacts.sync_interval": 60,
+}
+
+VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+
 HEADER_COMMENT = """\
 # =====================================================================
 # config.yaml — MeshCore trace-mon
@@ -72,19 +101,35 @@ HEADER_COMMENT = """\
 #     scelto viene letto, gli altri due restano ignorati.
 #   heartbeat_interval — secondi tra un health-check attivo e l'altro
 #   heartbeat_timeout — timeout del singolo controllo di verifica
+#   serial.baudrate — 115200 è il default proposto da setup.sh, non
+#     un vincolo: cambialo solo se il tuo device seriale richiede un
+#     valore diverso.
 #
 # trace:
 #   paths — elenco di path da tracciare, uno per riga, formato
 #     "aaaa,bbbb,aaaa" (prefissi esadecimali separati da virgola).
 #     Un suffisso ,true/,false abilita o disabilita il path senza
 #     rimuoverlo — nessun suffisso equivale a ,true.
+#   interval — secondi di attesa tra un path e il successivo nello
+#     stesso giro (minimo 10)
+#   timeout — secondi di attesa di una risposta TRACE_DATA prima di
+#     considerare il path fallito (minimo 10)
+#
+# logging:
+#   level — DEBUG, INFO, WARNING o ERROR
+#
+# contacts:
+#   sync_interval — secondi tra un sync completo del device
+#     (get_contacts()) e il successivo (minimo 60) — comunicazione
+#     locale col companion, non genera traffico radio, ma più
+#     scritture su contacts.db
 #
 # bot:
 #   known_regions — regioni note al bot per la risoluzione flood-scope
 #
 # neighbor_monitoring:
-#   Nessun parametro di cadenza qui — la cadenza è quella dell'unica
-#   entry di crontab che lancia main_neighbor_monitor.py.
+#   interval — secondi di attesa tra un repeater e il successivo, se
+#     più di uno configurato
 #   repeaters — elenco dei repeater da interrogare (tab Repeaters)
 #   max_retries — tentativi totali per singola interrogazione radio
 #     (status/neighbours/telemetry/region/login/comandi CLI) prima di
@@ -193,6 +238,23 @@ def parse_bool(s):
     sys.exit(1)
 
 
+def parse_log_level(s):
+
+    normalized = s.strip().upper()
+
+    if normalized not in VALID_LOG_LEVELS:
+
+        print(
+            f"ERRORE: livello di log non valido: '{s}' "
+            f"(validi: {', '.join(VALID_LOG_LEVELS)}).",
+            file=sys.stderr
+        )
+
+        sys.exit(1)
+
+    return normalized
+
+
 def cmd_get(args):
 
     data = load_config()
@@ -218,11 +280,10 @@ def cmd_set(args):
     if args.path.endswith(".enabled") or args.path == "enabled":
         value = parse_bool(value)
 
-    elif (
-        args.path.endswith(".port")
-        or args.path.endswith(".baudrate")
-        or args.path.endswith(".max_retries")
-    ):
+    elif args.path == "logging.level":
+        value = parse_log_level(value)
+
+    elif args.path.endswith(NUMERIC_SUFFIXES):
 
         try:
             value = int(value)
@@ -231,8 +292,15 @@ def cmd_set(args):
             print(f"ERRORE: valore numerico non valido: '{value}'", file=sys.stderr)
             sys.exit(1)
 
-        if args.path.endswith(".max_retries") and value < 1:
-            print("ERRORE: max_retries deve essere almeno 1.", file=sys.stderr)
+        minimum = MIN_VALUES.get(args.path)
+
+        if minimum is not None and value < minimum:
+
+            print(
+                f"ERRORE: {args.path} deve essere almeno {minimum}.",
+                file=sys.stderr
+            )
+
             sys.exit(1)
 
     if not str(value).strip() and not isinstance(value, bool):

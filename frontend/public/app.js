@@ -1563,6 +1563,23 @@ function nodeMatchesLengthFilter(
     );
 }
 
+//
+// Stesso identico criterio di formatAdvertPath() per "not observed":
+// hop_count assente (mai una riga in path_observations per questo
+// nodo, arrivato solo dal sync periodico get_contacts()) — non va
+// confuso con hop_count===0, che è un advert DIRECT realmente
+// ricevuto dal vivo.
+//
+function nodeIsNotObserved(
+    n
+) {
+
+    return (
+        n.hop_count === null ||
+        n.hop_count === undefined
+    );
+}
+
 function applyNodesFilters() {
 
     const nameFilterInput =
@@ -1585,6 +1602,11 @@ function applyNodesFilters() {
             "nodePathLengthFilter"
         );
 
+    const notObservedCheckbox =
+        document.getElementById(
+            "nodeNotObservedFilter"
+        );
+
     const nameFilter =
         nameFilterInput
             ? nameFilterInput.value.trim()
@@ -1604,6 +1626,11 @@ function applyNodesFilters() {
         lengthSelect
             ? lengthSelect.value
             : "all";
+
+    const notObservedFilter =
+        notObservedCheckbox
+            ? notObservedCheckbox.checked
+            : false;
 
     localStorage.setItem(
         "nodeNameFilter",
@@ -1625,13 +1652,19 @@ function applyNodesFilters() {
         lengthFilter
     );
 
+    localStorage.setItem(
+        "nodeNotObservedFilter",
+        notObservedFilter
+    );
+
     //
     // name, path e type sono in OR tra loro (modi alternativi di
     // cercare/restringere lo stesso insieme di nodi, non condizioni
     // da soddisfare tutte insieme) — se più di uno è valorizzato, un
-    // nodo compare se soddisfa ALMENO UNO. length resta invece un
-    // affinamento in AND: non è un criterio di ricerca, è un vincolo
-    // strutturale applicato sopra il risultato della ricerca.
+    // nodo compare se soddisfa ALMENO UNO. length e not-observed
+    // restano invece un affinamento in AND: non sono criteri di
+    // ricerca, sono vincoli strutturali applicati sopra il risultato
+    // della ricerca.
     //
     const typeFilterActive =
         !!typeFilter &&
@@ -1677,6 +1710,12 @@ function applyNodesFilters() {
                     nodeMatchesLengthFilter(
                         n,
                         lengthFilter
+                    ) &&
+                    (
+                        !notObservedFilter ||
+                        nodeIsNotObserved(
+                            n
+                        )
                     )
                 );
             }
@@ -1714,6 +1753,11 @@ function initNodesFilters() {
             "nodePathFilterClearBtn"
         );
 
+    const notObservedCheckbox =
+        document.getElementById(
+            "nodeNotObservedFilter"
+        );
+
     if (
         !filterInput ||
         !lengthSelect
@@ -1742,6 +1786,11 @@ function initNodesFilters() {
             "nodePathLengthFilter"
         ) || "all";
 
+    const savedNotObserved =
+        localStorage.getItem(
+            "nodeNotObservedFilter"
+        ) === "true";
+
     if (
         nameFilterInput
     ) {
@@ -1768,6 +1817,14 @@ function initNodesFilters() {
 
     lengthSelect.value =
         savedLength;
+
+    if (
+        notObservedCheckbox
+    ) {
+
+        notObservedCheckbox.checked =
+            savedNotObserved;
+    }
 
     if (
         filterInput.dataset.bound
@@ -1808,6 +1865,16 @@ function initNodesFilters() {
         "change",
         applyNodesFilters
     );
+
+    if (
+        notObservedCheckbox
+    ) {
+
+        notObservedCheckbox.addEventListener(
+            "change",
+            applyNodesFilters
+        );
+    }
 
     if (
         clearBtn

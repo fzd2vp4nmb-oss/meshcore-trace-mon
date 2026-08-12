@@ -420,6 +420,32 @@ body.dark .filterGroup button {
     border-color: #555555;
 }
 
+/*
+   Filtro checkbox — a differenza degli altri filterGroup (etichetta
+   sopra, controllo sotto), qui etichetta e checkbox stanno sulla
+   stessa riga: non c'è un controllo separato da nominare né un
+   bottone Clear, deselezionare la checkbox È il modo di azzerarlo.
+*/
+.filterGroup.filterCheckboxGroup label {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 6px;
+
+    cursor: pointer;
+}
+
+.filterGroup.filterCheckboxGroup input[type="checkbox"] {
+
+    width: 16px;
+
+    height: 16px;
+
+    cursor: pointer;
+}
+
 /* =========================
    TABS
 ========================= */

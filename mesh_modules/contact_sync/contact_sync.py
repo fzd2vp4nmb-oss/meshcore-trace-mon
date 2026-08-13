@@ -217,13 +217,13 @@ class ContactSyncModule:
     async def _sync_device_status(self, now):
         """
         Stato corrente del companion connesso a trace-mon stesso —
-        tre query locali al device (get_stats_core/radio/packets,
-        nessun traffico radio, stesso principio di get_bat() già
-        usato nell'heartbeat di Engine), eseguite in questo stesso
+        quattro query locali al device (get_stats_core/radio/packets
+        + send_device_query per modello/firmware, nessun traffico
+        radio, stesso principio di get_bat() già usato nell'heartbeat di Engine), eseguite in questo stesso
         giro invece che con un cron dedicato. Ogni gruppo è
-        indipendente: se una fallisce le altre due vengono comunque
+        indipendente: se una fallisce le altre tre vengono comunque
         salvate (vedi COALESCE in upsert_device_status). Se falliscono
-        TUTTE E TRE, l'aggiornamento viene saltato del tutto —
+        TUTTE E QUATTRO, l'aggiornamento viene saltato del tutto —
         updated_at resta quello dell'ultimo giro riuscito, un segnale
         onesto di quanto il dato sia vecchio invece di un errore.
         """
@@ -243,11 +243,21 @@ class ContactSyncModule:
             self.engine.mesh.commands.get_stats_packets
         )
 
-        if core is None and radio is None and packets is None:
+        device_info = await self._get_stats_safe(
+            "device_query",
+            self.engine.mesh.commands.send_device_query
+        )
+
+        if (
+            core is None and
+            radio is None and
+            packets is None and
+            device_info is None
+        ):
 
             log.warning(
                 "ContactSyncModule: device_status non aggiornato "
-                "(nessuna delle tre query locali è riuscita)."
+                "(nessuna delle quattro query locali è riuscita)."
             )
 
             return
@@ -255,6 +265,7 @@ class ContactSyncModule:
         core = core or {}
         radio = radio or {}
         packets = packets or {}
+        device_info = device_info or {}
 
         self.db.upsert_device_status(
             updated_at=now,
@@ -273,16 +284,19 @@ class ContactSyncModule:
             direct_tx=packets.get("direct_tx"),
             flood_rx=packets.get("flood_rx"),
             direct_rx=packets.get("direct_rx"),
-            recv_errors=packets.get("recv_errors")
+            recv_errors=packets.get("recv_errors"),
+            model=device_info.get("model"),
+            fw_build=device_info.get("fw_build"),
+            fw_version=device_info.get("ver")
         )
 
     async def _get_stats_safe(self, label, factory):
         """
-        Esegue una delle tre query di stato locale sotto command_lock
+        Esegue una delle quattro query di stato locale sotto command_lock
         (condivisa con IPC/bot come ogni altro comando sulla stessa
         connessione — locale sì, ma pur sempre unica connessione).
         Ritorna il payload (dict) o None se fallita — un fallimento
-        qui non deve mai impedire alle altre due di essere salvate.
+        qui non deve mai impedire alle altre tre di essere salvate.
         send() della libreria non solleva mai per timeout, ritorna un
         Event(ERROR) sintetico — controlliamo .type, non un except
         dedicato al timeout.

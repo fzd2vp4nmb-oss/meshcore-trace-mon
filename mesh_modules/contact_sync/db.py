@@ -172,23 +172,45 @@ CREATE TABLE IF NOT EXISTS device_status (
     direct_tx      INTEGER,
     flood_rx       INTEGER,
     direct_rx      INTEGER,
-    recv_errors    INTEGER
+    recv_errors    INTEGER,
+    model          TEXT,
+    fw_build       TEXT,
+    fw_version     TEXT
+                  -- da send_device_query() (EventType.DEVICE_INFO) —
+                  -- identità hardware/firmware statica del companion,
+                  -- non una metrica runtime, ma sincronizzata nello
+                  -- stesso giro per semplicità (query locale anch'essa,
+                  -- costo trascurabile a ripeterla).
 );
 """
 
 #
-# Colonne aggiunte dopo la prima versione dello schema. Originariamente
-# pensate per ricostruire il payload di add_contact() (ripristino
-# contatti CHAT espulsi, poi rivelatosi non percorribile — vedi
-# docs/CONTACT_MANAGEMENT.md §12). Mantenute comunque: arrivano gratis
-# da get_contacts() e hanno un valore analitico proprio (last_advert/
-# lastmod utili a prescindere).
+# Colonne aggiunte dopo la prima versione dello schema, per tabella.
+# CREATE TABLE IF NOT EXISTS non aggiunge colonne a una tabella che
+# esiste già — serve un ALTER TABLE esplicito per chi ha un
+# contacts.db creato da una versione precedente del codice.
 #
 MIGRATIONS = {
-    "flags": "INTEGER",
-    "out_path_hash_mode": "INTEGER",
-    "last_advert": "INTEGER",
-    "lastmod": "INTEGER"
+    "nodes": {
+        # Originariamente pensate per ricostruire il payload di
+        # add_contact() (ripristino contatti CHAT espulsi, poi
+        # rivelatosi non percorribile — vedi
+        # docs/CONTACT_MANAGEMENT.md §12). Mantenute comunque:
+        # arrivano gratis da get_contacts() e hanno un valore
+        # analitico proprio (last_advert/lastmod utili a prescindere).
+        "flags": "INTEGER",
+        "out_path_hash_mode": "INTEGER",
+        "last_advert": "INTEGER",
+        "lastmod": "INTEGER"
+    },
+    "device_status": {
+        # Identità hardware/firmware del companion
+        # (send_device_query()), aggiunta dopo la prima versione
+        # della tabella.
+        "model": "TEXT",
+        "fw_build": "TEXT",
+        "fw_version": "TEXT"
+    }
 }
 
 
@@ -237,18 +259,22 @@ class ContactDB:
 
     def _migrate(self):
 
-        existing = {
-            row[1]
-            for row in self._conn.execute("PRAGMA table_info(nodes)")
-        }
+        for table, columns in MIGRATIONS.items():
 
-        for column, column_type in MIGRATIONS.items():
-
-            if column not in existing:
-
-                self._conn.execute(
-                    f"ALTER TABLE nodes ADD COLUMN {column} {column_type}"
+            existing = {
+                row[1]
+                for row in self._conn.execute(
+                    f"PRAGMA table_info({table})"
                 )
+            }
+
+            for column, column_type in columns.items():
+
+                if column not in existing:
+
+                    self._conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {column_type}"
+                    )
 
         self._conn.commit()
 
@@ -414,7 +440,10 @@ class ContactDB:
         direct_tx=None,
         flood_rx=None,
         direct_rx=None,
-        recv_errors=None
+        recv_errors=None,
+        model=None,
+        fw_build=None,
+        fw_version=None
     ):
         """
         Stato corrente del companion connesso a trace-mon stesso (non
@@ -434,9 +463,10 @@ class ContactDB:
                 id, updated_at, battery_mv, uptime_secs, errors,
                 queue_len, noise_floor, last_rssi, last_snr,
                 tx_air_secs, rx_air_secs, recv, sent, flood_tx,
-                direct_tx, flood_rx, direct_rx, recv_errors
+                direct_tx, flood_rx, direct_rx, recv_errors, model,
+                fw_build, fw_version
             )
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 updated_at  = excluded.updated_at,
                 battery_mv  = COALESCE(excluded.battery_mv, device_status.battery_mv),
@@ -454,13 +484,16 @@ class ContactDB:
                 direct_tx   = COALESCE(excluded.direct_tx, device_status.direct_tx),
                 flood_rx    = COALESCE(excluded.flood_rx, device_status.flood_rx),
                 direct_rx   = COALESCE(excluded.direct_rx, device_status.direct_rx),
-                recv_errors = COALESCE(excluded.recv_errors, device_status.recv_errors)
+                recv_errors = COALESCE(excluded.recv_errors, device_status.recv_errors),
+                model       = COALESCE(excluded.model, device_status.model),
+                fw_build    = COALESCE(excluded.fw_build, device_status.fw_build),
+                fw_version  = COALESCE(excluded.fw_version, device_status.fw_version)
             """,
             (
                 updated_at, battery_mv, uptime_secs, errors, queue_len,
                 noise_floor, last_rssi, last_snr, tx_air_secs,
                 rx_air_secs, recv, sent, flood_tx, direct_tx, flood_rx,
-                direct_rx, recv_errors
+                direct_rx, recv_errors, model, fw_build, fw_version
             )
         )
 

@@ -2004,6 +2004,7 @@ function renderDeviceStatusTable(
         <tr><th>Flood RX</th><td>${status.flood_rx ?? "n/a"}</td></tr>
         <tr><th>Direct TX</th><td>${status.direct_tx ?? "n/a"}</td></tr>
         <tr><th>Direct RX</th><td>${status.direct_rx ?? "n/a"}</td></tr>
+        <tr><th>Device</th><td>${status.model ?? "n/a"} running ${status.fw_build ?? "n/a"}/${status.fw_version ?? "n/a"}</td></tr>
     `;
 }
 

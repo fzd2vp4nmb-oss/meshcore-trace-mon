@@ -16,7 +16,7 @@ def split_path_hops(path_hex, path_len):
 
 def format_path(path_hex, path_len, max_chars=None):
     """
-    Formatta il path come elenco di hop separati da ' > '.
+    Formatta il path come elenco di hop separati da ','.
 
     path_len is None -> instradamento non ancora noto (tipico dei DM
     prima che il path venga appreso, out_path_len == 255).
@@ -34,14 +34,14 @@ def format_path(path_hex, path_len, max_chars=None):
         return "DIRECT (0 hop)"
 
     if max_chars is None:
-        return " > ".join(hops)
+        return ",".join(hops)
 
     shown = []
     total = 0
 
     for i, hop in enumerate(hops):
 
-        sep_len = 3 if shown else 0
+        sep_len = 1 if shown else 0
         remaining_after = len(hops) - (i + 1)
         suffix_len = len(f" +{remaining_after}") if remaining_after > 0 else 0
 
@@ -53,7 +53,7 @@ def format_path(path_hex, path_len, max_chars=None):
 
     omitted = len(hops) - len(shown)
 
-    result = " > ".join(shown) if shown else "…"
+    result = ",".join(shown) if shown else "…"
 
     if omitted > 0:
         result += f" +{omitted}"

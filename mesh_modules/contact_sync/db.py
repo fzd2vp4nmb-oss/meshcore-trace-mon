@@ -149,6 +149,31 @@ CREATE TABLE IF NOT EXISTS repeater_config (
 
 CREATE INDEX IF NOT EXISTS idx_repeater_config_node_time
     ON repeater_config(public_key, queried_at);
+
+CREATE TABLE IF NOT EXISTS device_status (
+    id             INTEGER PRIMARY KEY CHECK (id = 1),
+                  -- riga singola forzata dal CHECK — non è uno
+                  -- storico (a differenza di repeater_status), è
+                  -- "lo stato ATTUALE del companion collegato a
+                  -- trace-mon stesso", sovrascritta ad ogni sync.
+    updated_at     INTEGER NOT NULL,
+    battery_mv     INTEGER,
+    uptime_secs    INTEGER,
+    errors         INTEGER,
+    queue_len      INTEGER,
+    noise_floor    INTEGER,
+    last_rssi      INTEGER,
+    last_snr       REAL,
+    tx_air_secs    INTEGER,
+    rx_air_secs    INTEGER,
+    recv           INTEGER,
+    sent           INTEGER,
+    flood_tx       INTEGER,
+    direct_tx      INTEGER,
+    flood_rx       INTEGER,
+    direct_rx      INTEGER,
+    recv_errors    INTEGER
+);
 """
 
 #
@@ -366,6 +391,76 @@ class ContactDB:
                 sent_flood, sent_direct, recv_flood, recv_direct,
                 full_evts, last_snr, direct_dups, flood_dups,
                 rx_airtime, recv_errors
+            )
+        )
+
+        self._conn.commit()
+
+    def upsert_device_status(
+        self,
+        updated_at,
+        battery_mv=None,
+        uptime_secs=None,
+        errors=None,
+        queue_len=None,
+        noise_floor=None,
+        last_rssi=None,
+        last_snr=None,
+        tx_air_secs=None,
+        rx_air_secs=None,
+        recv=None,
+        sent=None,
+        flood_tx=None,
+        direct_tx=None,
+        flood_rx=None,
+        direct_rx=None,
+        recv_errors=None
+    ):
+        """
+        Stato corrente del companion connesso a trace-mon stesso (non
+        un repeater remoto) — riga singola (id=1 fisso), sovrascritta
+        ad ogni giro invece che accumulata come repeater_status. Un
+        gruppo di campi None (es. tutti quelli 'radio') significa che
+        quella singola query locale è fallita in questo giro — resta
+        il valore del giro precedente (COALESCE), non viene azzerato.
+        Il chiamante è responsabile di non richiamare questa funzione
+        affatto se TUTTE le query del giro sono fallite (in tal caso
+        updated_at deve restare quello dell'ultimo giro riuscito).
+        """
+
+        self._conn.execute(
+            """
+            INSERT INTO device_status (
+                id, updated_at, battery_mv, uptime_secs, errors,
+                queue_len, noise_floor, last_rssi, last_snr,
+                tx_air_secs, rx_air_secs, recv, sent, flood_tx,
+                direct_tx, flood_rx, direct_rx, recv_errors
+            )
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                updated_at  = excluded.updated_at,
+                battery_mv  = COALESCE(excluded.battery_mv, device_status.battery_mv),
+                uptime_secs = COALESCE(excluded.uptime_secs, device_status.uptime_secs),
+                errors      = COALESCE(excluded.errors, device_status.errors),
+                queue_len   = COALESCE(excluded.queue_len, device_status.queue_len),
+                noise_floor = COALESCE(excluded.noise_floor, device_status.noise_floor),
+                last_rssi   = COALESCE(excluded.last_rssi, device_status.last_rssi),
+                last_snr    = COALESCE(excluded.last_snr, device_status.last_snr),
+                tx_air_secs = COALESCE(excluded.tx_air_secs, device_status.tx_air_secs),
+                rx_air_secs = COALESCE(excluded.rx_air_secs, device_status.rx_air_secs),
+                recv        = COALESCE(excluded.recv, device_status.recv),
+                sent        = COALESCE(excluded.sent, device_status.sent),
+                flood_tx    = COALESCE(excluded.flood_tx, device_status.flood_tx),
+                direct_tx   = COALESCE(excluded.direct_tx, device_status.direct_tx),
+                flood_rx    = COALESCE(excluded.flood_rx, device_status.flood_rx),
+                direct_rx   = COALESCE(excluded.direct_rx, device_status.direct_rx),
+                recv_errors = COALESCE(excluded.recv_errors, device_status.recv_errors)
+            """,
+            (
+                updated_at, battery_mv, uptime_secs, errors, queue_len,
+                noise_floor, last_rssi, last_snr, tx_air_secs,
+                rx_air_secs, recv, sent, flood_tx, direct_tx, flood_rx,
+                direct_rx, recv_errors
             )
         )
 

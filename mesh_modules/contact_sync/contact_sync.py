@@ -211,3 +211,104 @@ class ContactSyncModule:
             "ContactSyncModule: sync periodico completato (%d nodi).",
             count
         )
+
+        await self._sync_device_status(now)
+
+    async def _sync_device_status(self, now):
+        """
+        Stato corrente del companion connesso a trace-mon stesso —
+        tre query locali al device (get_stats_core/radio/packets,
+        nessun traffico radio, stesso principio di get_bat() già
+        usato nell'heartbeat di Engine), eseguite in questo stesso
+        giro invece che con un cron dedicato. Ogni gruppo è
+        indipendente: se una fallisce le altre due vengono comunque
+        salvate (vedi COALESCE in upsert_device_status). Se falliscono
+        TUTTE E TRE, l'aggiornamento viene saltato del tutto —
+        updated_at resta quello dell'ultimo giro riuscito, un segnale
+        onesto di quanto il dato sia vecchio invece di un errore.
+        """
+
+        core = await self._get_stats_safe(
+            "stats_core",
+            self.engine.mesh.commands.get_stats_core
+        )
+
+        radio = await self._get_stats_safe(
+            "stats_radio",
+            self.engine.mesh.commands.get_stats_radio
+        )
+
+        packets = await self._get_stats_safe(
+            "stats_packets",
+            self.engine.mesh.commands.get_stats_packets
+        )
+
+        if core is None and radio is None and packets is None:
+
+            log.warning(
+                "ContactSyncModule: device_status non aggiornato "
+                "(nessuna delle tre query locali è riuscita)."
+            )
+
+            return
+
+        core = core or {}
+        radio = radio or {}
+        packets = packets or {}
+
+        self.db.upsert_device_status(
+            updated_at=now,
+            battery_mv=core.get("battery_mv"),
+            uptime_secs=core.get("uptime_secs"),
+            errors=core.get("errors"),
+            queue_len=core.get("queue_len"),
+            noise_floor=radio.get("noise_floor"),
+            last_rssi=radio.get("last_rssi"),
+            last_snr=radio.get("last_snr"),
+            tx_air_secs=radio.get("tx_air_secs"),
+            rx_air_secs=radio.get("rx_air_secs"),
+            recv=packets.get("recv"),
+            sent=packets.get("sent"),
+            flood_tx=packets.get("flood_tx"),
+            direct_tx=packets.get("direct_tx"),
+            flood_rx=packets.get("flood_rx"),
+            direct_rx=packets.get("direct_rx"),
+            recv_errors=packets.get("recv_errors")
+        )
+
+    async def _get_stats_safe(self, label, factory):
+        """
+        Esegue una delle tre query di stato locale sotto command_lock
+        (condivisa con IPC/bot come ogni altro comando sulla stessa
+        connessione — locale sì, ma pur sempre unica connessione).
+        Ritorna il payload (dict) o None se fallita — un fallimento
+        qui non deve mai impedire alle altre due di essere salvate.
+        send() della libreria non solleva mai per timeout, ritorna un
+        Event(ERROR) sintetico — controlliamo .type, non un except
+        dedicato al timeout.
+        """
+
+        try:
+            async with self.engine.command_lock:
+                result = await factory()
+
+            if result.type == EventType.ERROR:
+
+                log.warning(
+                    "ContactSyncModule: %s fallita (%s).",
+                    label,
+                    result.payload
+                )
+
+                return None
+
+            return result.payload
+
+        except Exception:
+
+            log.exception(
+                "ContactSyncModule: %s fallita.",
+                label
+            )
+
+            return None

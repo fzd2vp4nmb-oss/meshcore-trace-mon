@@ -1381,6 +1381,8 @@ function stopNodesAutoRefresh() {
 
 async function loadNodesTab() {
 
+    loadDeviceStatus();
+
     const table =
         document.getElementById(
             "nodesTable"
@@ -1908,6 +1910,101 @@ function initNodesFilters() {
             }
         );
     }
+}
+
+async function loadDeviceStatus() {
+
+    const table =
+        document.getElementById(
+            "deviceStatusTable"
+        );
+
+    if (
+        !table
+    ) {
+
+        return;
+    }
+
+    try {
+
+        const res =
+            await fetch(
+                "/api/device_status"
+            );
+
+        const status =
+            await res.json();
+
+        renderDeviceStatusTable(
+            status
+        );
+    }
+
+    catch (
+        err
+    ) {
+
+        console.error(
+            "Error loading device status:",
+            err
+        );
+
+        table.innerHTML =
+            "<tr><td>Error loading device status.</td></tr>";
+    }
+}
+
+function renderDeviceStatusTable(
+    status
+) {
+
+    const table =
+        document.getElementById(
+            "deviceStatusTable"
+        );
+
+    if (
+        !status
+    ) {
+
+        table.innerHTML =
+            "<tr><td>No device status data available.</td></tr>";
+
+        return;
+    }
+
+    const secsAgo =
+        Math.floor(
+            Date.now() / 1000
+        ) - status.updated_at;
+
+    //
+    // Ogni campo è difensivo perché, a differenza della status
+    // table dei Repeaters (dove un fallimento azzera l'intero
+    // oggetto), qui i tre gruppi core/radio/packets possono fallire
+    // indipendentemente da un giro all'altro — vedi COALESCE in
+    // upsert_device_status() lato backend. ?? gestisce anche 0 come
+    // valore legittimo (es. Errors: 0), a differenza di ||.
+    //
+    table.innerHTML = `
+        <tr><th>Updated</th><td>${formatSecsAgo(secsAgo)}</td></tr>
+        <tr><th>Uptime</th><td>${formatDurationLong(status.uptime_secs)}</td></tr>
+        <tr><th>Battery</th><td>${status.battery_mv != null ? (status.battery_mv / 1000).toFixed(2) + "V" : "n/a"}</td></tr>
+        <tr><th>TX Queue</th><td>${status.queue_len != null ? status.queue_len + " / 16" : "n/a"}</td></tr>
+        <tr><th>Errors</th><td>${status.errors ?? "n/a"}</td></tr>
+        <tr><th>Noise Floor</th><td>${status.noise_floor != null ? status.noise_floor + " dBm" : "n/a"}</td></tr>
+        <tr><th>Last RSSI</th><td>${status.last_rssi != null ? status.last_rssi + " dBm" : "n/a"}</td></tr>
+        <tr><th>Last SNR</th><td>${status.last_snr != null ? status.last_snr + " dB" : "n/a"}</td></tr>
+        <tr><th>TX Airtime</th><td>${status.tx_air_secs != null ? status.tx_air_secs + "s" : "n/a"}</td></tr>
+        <tr><th>RX Airtime</th><td>${status.rx_air_secs != null ? status.rx_air_secs + "s" : "n/a"}</td></tr>
+        <tr><th>Packets Received</th><td>${status.recv ?? "n/a"}</td></tr>
+        <tr><th>Packets Sent</th><td>${status.sent ?? "n/a"}</td></tr>
+        <tr><th>Flood TX</th><td>${status.flood_tx ?? "n/a"}</td></tr>
+        <tr><th>Flood RX</th><td>${status.flood_rx ?? "n/a"}</td></tr>
+        <tr><th>Direct TX</th><td>${status.direct_tx ?? "n/a"}</td></tr>
+        <tr><th>Direct RX</th><td>${status.direct_rx ?? "n/a"}</td></tr>
+    `;
 }
 
 function updateNodesHeading(nodes) {

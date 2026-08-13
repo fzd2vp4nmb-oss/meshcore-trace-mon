@@ -459,6 +459,75 @@ app.get(
 );
 
 /* =========================
+   DEVICE STATUS API (contacts.db)
+
+   Stato corrente del companion connesso a trace-mon stesso (non un
+   repeater remoto interrogato via radio) — riga singola (id=1),
+   scritta da ContactSyncModule ad ogni sync periodico interno (vedi
+   contact_sync.py). Nessuna interrogazione live al device da qui:
+   stesso pattern di lettura-da-SQLite già in uso per /api/nodes.
+========================= */
+
+app.get(
+    "/api/device_status",
+    (
+        req,
+        res
+    ) => {
+
+        try {
+
+            if (
+                !fs.existsSync(
+                    CONTACTS_DB_FILE
+                )
+            ) {
+
+                return res.json(
+                    null
+                );
+            }
+
+            const db =
+                new DatabaseSync(
+                    CONTACTS_DB_FILE,
+                    { readOnly: true }
+                );
+
+            const row =
+                db.prepare(
+                    `SELECT * FROM device_status WHERE id = 1`
+                ).get();
+
+            db.close();
+
+            res.json(
+                row || null
+            );
+        }
+
+        catch (
+            err
+        ) {
+
+            console.error(
+                "API ERROR (/api/device_status):",
+                err
+            );
+
+            res
+                .status(
+                    500
+                )
+                .json({
+                    error:
+                        err.message
+                });
+        }
+    }
+);
+
+/* =========================
    NODE DETAIL API (contacts.db)
 ========================= */
 

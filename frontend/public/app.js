@@ -2964,6 +2964,19 @@ function renderNeighboursTable(
     neighbours
 ) {
 
+    const heading =
+        document.getElementById(
+            "neighborsTabHeading"
+        );
+
+    if (
+        heading
+    ) {
+
+        heading.textContent =
+            `Neighbours - ${neighbours.length}`;
+    }
+
     const neighborsTable =
         document.getElementById(
             "neighborsTable"

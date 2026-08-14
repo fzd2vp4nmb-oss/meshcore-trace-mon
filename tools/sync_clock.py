@@ -5,9 +5,13 @@ tools/sync_clock.py
 
 Sincronizza l'orologio del companion MeshCore con quello del
 Raspberry — equivalente al "clock sync" della CLI/app ufficiale.
-Non è una funzione periodica né esposta al daemon: va eseguita
-all'occorrenza (es. dopo un reboot del companion che ha perso il
-sync orario), a mano.
+
+Dalla versione che integra core/clock_sync.py, il daemon esegue
+questa stessa sincronizzazione IN AUTOMATICO ad ogni avvio (vedi
+services/daemon.py) — un `sudo systemctl restart trace-mon` la
+attiva già, senza bisogno di questo tool. Resta utile per:
+un controllo/correzione al volo senza riavviare l'intero servizio,
+o per verificare lo scarto (--check) senza modificare nulla.
 
 Come gli altri script diagnostici in tools/ (vedi experiments/ nel
 mirror di sviluppo), apre una connessione ESCLUSIVA al companion —
@@ -33,13 +37,12 @@ bootstrap()
 
 import argparse
 import asyncio
-import time
 from datetime import datetime, timezone
 
 from meshcore.meshcore import MeshCore
-from meshcore.events import EventType
 
 from core.config import config
+from core.clock_sync import sync_clock
 
 
 async def create_mesh():
@@ -111,31 +114,26 @@ async def main():
     mesh = await create_mesh()
 
     try:
-        get_result = await mesh.commands.get_time()
+        result = await sync_clock(mesh, dry_run=args.check)
 
-        if get_result.type == EventType.ERROR:
+        if not result.ok:
 
             print(
-                f"ERRORE: impossibile leggere l'ora del device: "
-                f"{get_result.payload}",
+                f"ERRORE: {result.error}",
                 file=sys.stderr
             )
 
             sys.exit(1)
 
-        device_time = get_result.payload["time"]
-        local_time = int(time.time())
-        drift = local_time - device_time
-
-        print(f"Ora del device:     {format_time(device_time)}")
-        print(f"Ora del Raspberry:  {format_time(local_time)}")
-        print(f"Differenza:         {drift:+d} secondi")
+        print(f"Ora del device:     {format_time(result.device_time_before)}")
+        print(f"Ora del Raspberry:  {format_time(result.local_time)}")
+        print(f"Differenza:         {result.drift_before:+d} secondi")
 
         if args.check:
             print("Modalità --check: nessuna modifica effettuata.")
             return
 
-        if abs(drift) < 5:
+        if not result.synced:
 
             print(
                 "Differenza trascurabile (< 5s), nessuna sincronizzazione "
@@ -144,43 +142,19 @@ async def main():
 
             return
 
-        print("Sincronizzazione in corso...")
-
-        set_result = await mesh.commands.set_time(local_time)
-
-        if set_result.type == EventType.ERROR:
+        if result.drift_after is None:
 
             print(
-                f"ERRORE: impossibile impostare l'ora del device: "
-                f"{set_result.payload}",
-                file=sys.stderr
-            )
-
-            sys.exit(1)
-
-        #
-        # Rilettura per conferma — non ci fidiamo del solo OK locale,
-        # stesso principio già applicato altrove nel progetto (un
-        # comando accettato localmente non prova che l'effetto
-        # desiderato sia avvenuto).
-        #
-        verify_result = await mesh.commands.get_time()
-
-        if verify_result.type == EventType.ERROR:
-
-            print(
-                "Comando di set inviato, ma non sono riuscito a "
-                "verificare il risultato (lettura fallita).",
+                f"Comando di set inviato, ma non sono riuscito a "
+                f"verificare il risultato: {result.error}",
                 file=sys.stderr
             )
 
             return
 
-        new_device_time = verify_result.payload["time"]
-        new_drift = int(time.time()) - new_device_time
-
-        print(f"Ora del device dopo la sincronizzazione: {format_time(new_device_time)}")
-        print(f"Differenza residua: {new_drift:+d} secondi")
+        print("Sincronizzazione in corso...")
+        print(f"Ora del device dopo la sincronizzazione: {format_time(result.device_time_after)}")
+        print(f"Differenza residua: {result.drift_after:+d} secondi")
 
     finally:
         await mesh.disconnect()

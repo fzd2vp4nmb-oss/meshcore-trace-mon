@@ -22,6 +22,7 @@ import asyncio
 import signal
 
 from core.engine import Engine
+from core.clock_sync import sync_clock
 from core.logger import log
 from services.context import ServiceContext
 from services.dispatcher import Dispatcher
@@ -86,6 +87,19 @@ class MeshCoreDaemon:
         )
 
         #
+        # Sync orologio del companion — un riavvio del DEVICE (non
+        # del daemon) gli fa perdere il conteggio orario; prima si
+        # correggeva a mano con tools/sync_clock.py, che richiedeva
+        # il daemon fermo per avere la connessione libera. Qui gira
+        # sulla connessione già aperta da questo stesso daemon,
+        # quindi ad ogni riavvio del SERVIZIO — anche quando il
+        # device non si è mai spento e non ne avrebbe bisogno, nel
+        # qual caso non fa nulla oltre a leggere l'ora e verificare
+        # che lo scarto sia trascurabile.
+        #
+        await self._sync_clock_at_startup()
+
+        #
         # Contesto condiviso
         #
         context = ServiceContext(
@@ -114,6 +128,60 @@ class MeshCoreDaemon:
         # Rimane residente
         #
         await self._shutdown.wait()
+
+    async def _sync_clock_at_startup(self):
+        """
+        Non solleva mai — un problema di sync orario non deve
+        impedire l'avvio del resto del daemon, viene solo loggato.
+        """
+
+        try:
+            async with self.engine.command_lock:
+                result = await sync_clock(self.engine.mesh)
+
+        except Exception:
+
+            log.exception(
+                "Clock sync all'avvio: errore imprevisto, proseguo "
+                "comunque con l'avvio."
+            )
+
+            return
+
+        if not result.ok:
+
+            log.warning(
+                "Clock sync all'avvio fallito: %s",
+                result.error
+            )
+
+            return
+
+        if not result.synced:
+
+            log.info(
+                "Clock sync: device già allineato (scarto %+ds), "
+                "nessuna correzione necessaria.",
+                result.drift_before
+            )
+
+            return
+
+        if result.drift_after is None:
+
+            log.warning(
+                "Clock sync: %s",
+                result.error
+            )
+
+            return
+
+        log.info(
+            "Clock sync: corretto uno scarto di %+ds (residuo dopo "
+            "la sincronizzazione: %+ds).",
+            result.drift_before,
+            result.drift_after
+        )
 
     async def stop(self):
         """

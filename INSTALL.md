@@ -628,3 +628,27 @@ manutenzione già generati (`backup.sh`, `contact_sync.sh`,
 `rotate_contacts.sh`, `sync-meshnode.sh`, `trace.sh`) — rispondi
 di sì. Quando richiesto, inserisci esattamente il Node ID e l'IP
 del server comunicati dall'admin al passo 14.2.
+
+---
+
+## 15. Collegarsi alla Dashboard locale
+
+Con `trace-web.service` attivo (§11), l'interfaccia web è
+raggiungibile da qualunque dispositivo sulla stessa rete LAN del
+Raspberry, aprendo nel browser:
+
+```
+http://localhost:3000
+```
+
+Questo indirizzo funziona così com'è solo se il resolver della tua
+rete risolve `localhost` verso l'IP del Raspberry — non è la
+configurazione predefinita della maggior parte delle reti. Se non
+si apre nulla, usa direttamente l'IP del Raspberry sulla LAN:
+
+```
+http://<ip-raspberry>:3000
+```
+
+L'IP lo trovi lanciando `hostname -I` direttamente sul Raspberry,
+o dalla pagina dei dispositivi connessi del tuo router.

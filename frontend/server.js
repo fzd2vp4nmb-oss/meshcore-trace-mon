@@ -50,12 +50,6 @@ const BACKUP_DIR =
         "backup"
     );
 
-const MESH_NODES_FILE =
-    path.join(
-        __dirname,
-        "mesh-nodes.json"
-    );
-
 const CONTACTS_DB_FILE =
     path.join(
         __dirname,
@@ -110,7 +104,18 @@ app.get(
 );
 
 /* =========================
-   MESHNODES API
+   MESHNODES API (contacts.db)
+
+   Mappa public_key completa -> nome, per i tooltip del frontend
+   (tab Trace e tab Nodes) — prima letta da frontend/mesh-nodes.json
+   (curato a mano, poi automatizzato da config.sh), ora una query
+   diretta su contacts.db: l'informazione è già lì, un file separato
+   era solo un sottoinsieme ridondante da tenere sincronizzato.
+
+   SOLO node_type=2 (repeater): un path è composto esclusivamente da
+   repeater, mai da nodi chat o room server — filtrare elimina ogni
+   ambiguità nel caso i prefissi di una chat e di un repeater
+   dovessero coincidere.
 ========================= */
 
 app.get(
@@ -124,7 +129,7 @@ app.get(
 
             if (
                 !fs.existsSync(
-                    MESH_NODES_FILE
+                    CONTACTS_DB_FILE
                 )
             ) {
 
@@ -133,16 +138,35 @@ app.get(
                 );
             }
 
-            const data =
-                JSON.parse(
-                    fs.readFileSync(
-                        MESH_NODES_FILE,
-                        "utf8"
-                    )
+            const db =
+                new DatabaseSync(
+                    CONTACTS_DB_FILE,
+                    { readOnly: true }
                 );
 
+            const rows =
+                db.prepare(
+                    `SELECT public_key, adv_name
+                     FROM nodes
+                     WHERE node_type = 2
+                       AND adv_name IS NOT NULL
+                       AND adv_name != ''`
+                ).all();
+
+            db.close();
+
+            const meshNodes = {};
+
+            for (
+                const row of rows
+            ) {
+
+                meshNodes[row.public_key] =
+                    row.adv_name;
+            }
+
             res.json(
-                data
+                meshNodes
             );
         }
 

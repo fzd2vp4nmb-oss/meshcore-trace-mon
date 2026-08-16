@@ -231,21 +231,6 @@ exit 0
 MAINTSCRIPT_EOF
             ;;
 
-        sync-meshnode.sh)
-            cat > "$output" << 'MAINTSCRIPT_EOF'
-#!/bin/bash
-
-cd /home/meshcore/trace-mon/frontend
-
-NODE="node_XX"
-IP_SERVER="Y.Y.Y.Y"
-
-scp -P 15450 mesh-nodes.json trace-mon@$IP_SERVER:/home/trace-mon/data/$NODE
-
-exit 0
-MAINTSCRIPT_EOF
-            ;;
-
         trace.sh)
             cat > "$output" << 'MAINTSCRIPT_EOF'
 #!/bin/bash
@@ -274,7 +259,7 @@ MAINTSCRIPT_EOF
     echo "  generato: $output"
 }
 
-for script in backup.sh contact_sync.sh rotate_contacts.sh sync-meshnode.sh trace.sh; do
+for script in backup.sh contact_sync.sh rotate_contacts.sh trace.sh; do
     write_maint_script "$script"
 done
 

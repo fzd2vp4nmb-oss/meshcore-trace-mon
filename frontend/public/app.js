@@ -292,6 +292,43 @@ function buildPathTooltip(
     );
 }
 
+//
+// Come buildPathTooltip(), ma un tooltip INDIPENDENTE per ciascun
+// elemento invece di uno unico per l'intero "X→Y" — passando sopra
+// "0d28" si vede solo il nome di 0d28, sopra "8dbb" solo quello di
+// 8dbb. Uso HTML (due <span title="...">) invece di un title sul
+// contenitore, quindi il chiamante deve usare il risultato come
+// contenuto dell'elemento, non come suo attributo title. NON usata
+// nella callback del tooltip di Chart.js (quella resta su
+// buildPathTooltip() — testo su canvas, nessun elemento DOM
+// indipendente da poter agganciare a un hover proprio).
+//
+function buildPathTooltipHtml(
+    pathElement
+) {
+
+    const parts =
+        pathElement
+            .split("→")
+            .map(
+                p =>
+                    p.trim()
+            );
+
+    if (
+        parts.length !== 2
+    ) {
+
+        return pathElement;
+    }
+
+    return (
+        `<span title="${resolveNodeName(parts[0])}">${parts[0]}</span>` +
+        "→" +
+        `<span title="${resolveNodeName(parts[1])}">${parts[1]}</span>`
+    );
+}
+
 function populatePaths() {
 const selector =
     document.getElementById(
@@ -404,7 +441,7 @@ function renderTable(rows) {
                 )
             ) {
                 html +=
-                    `<th title="${buildPathTooltip(c)}">${c}</th>`;
+                    `<th>${buildPathTooltipHtml(c)}</th>`;
             }
             else {
                 html +=
@@ -520,8 +557,8 @@ function renderStats(
 
             html += `
             <tr>
-               <td title="${buildPathTooltip(k)}">
-                   ${k}
+               <td>
+                   ${buildPathTooltipHtml(k)}
                </td>
                <td>${colorizeSnr(Number(avg))}</td>
                <td>${colorizeSnr(v.min)}</td>
@@ -1192,6 +1229,28 @@ if (
 }
 
         await loadMeshNodes();
+
+        //
+        // Se l'ultima tab attiva ripristinata (script sincrono in
+        // index.html, PRIMA di questo DOMContentLoaded) era Nodes,
+        // loadNodesTab() è già scattato con meshNodes ancora vuoto
+        // ({}) — ogni tooltip della colonna Path sarebbe rimasto
+        // "Unknown" fino al prossimo refresh manuale. Nessun
+        // problema per Trace: il suo caricamento sta più sotto in
+        // questa stessa sequenza, già dopo loadMeshNodes().
+        //
+        const nodesPageAlreadyVisible =
+            document.getElementById("nodesPage") &&
+            document.getElementById("nodesPage").style.display !== "none";
+
+        if (
+            nodesPageAlreadyVisible &&
+            typeof loadNodesTab === "function"
+        ) {
+
+            await loadNodesTab();
+        }
+
         await loadDataSources();
         await loadData();
 
@@ -1329,14 +1388,10 @@ function formatUnixTime(ts) {
     return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }
 
-function formatAdvertPath(hopCount, pathHex) {
-
-    if (hopCount === null || hopCount === undefined) {
-        return "not observed";
-    }
+function splitAdvertPathHops(hopCount, pathHex) {
 
     if (hopCount === 0 || !pathHex) {
-        return "DIRECT (0 hop)";
+        return [];
     }
 
     const chunkSize = Math.floor(pathHex.length / hopCount);
@@ -1346,7 +1401,36 @@ function formatAdvertPath(hopCount, pathHex) {
         hops.push(pathHex.slice(i, i + chunkSize));
     }
 
-    return hops.join(" > ");
+    return hops;
+}
+
+//
+// Come buildPathTooltip/buildPathTooltipHtml in Trace: un tooltip
+// INDIPENDENTE per ciascun hop invece di uno unico per l'intero
+// path — passando sopra un singolo hop se ne vede solo il nome
+// risolto. resolveNodeName() resta l'unica fonte di verità per la
+// risoluzione nome, invariata: il cambiamento è tutto in cosa
+// restituisce /api/meshnodes lato server (contacts.db invece di
+// mesh-nodes.json), non nella logica di lookup qui. Uso HTML (uno
+// <span title="..."> per hop) invece di un title sul contenitore —
+// il chiamante usa il risultato come contenuto della cella, non
+// come suo attributo title.
+//
+function buildAdvertPathHtml(hopCount, pathHex) {
+
+    if (hopCount === null || hopCount === undefined) {
+        return "not observed";
+    }
+
+    const hops = splitAdvertPathHops(hopCount, pathHex);
+
+    if (hops.length === 0) {
+        return "DIRECT (0 hop)";
+    }
+
+    return hops
+        .map(hop => `<span title="${resolveNodeName(hop)}">${hop}</span>`)
+        .join(" > ");
 }
 
 let nodesAutoRefreshTimer = null;
@@ -1566,11 +1650,11 @@ function nodeMatchesLengthFilter(
 }
 
 //
-// Stesso identico criterio di formatAdvertPath() per "not observed":
-// hop_count assente (mai una riga in path_observations per questo
-// nodo, arrivato solo dal sync periodico get_contacts()) — non va
-// confuso con hop_count===0, che è un advert DIRECT realmente
-// ricevuto dal vivo.
+// Stesso identico criterio di buildAdvertPathHtml()/split
+// AdvertPathHops() per "not observed": hop_count assente (mai una
+// riga in path_observations per questo nodo, arrivato solo dal sync
+// periodico get_contacts()) — non va confuso con hop_count===0, che
+// è un advert DIRECT realmente ricevuto dal vivo.
 //
 function nodeIsNotObserved(
     n
@@ -2067,7 +2151,7 @@ function renderNodesTable(
             html += `<td><a href="#" class="nodeLink" data-key="${n.public_key}">${n.adv_name || "(unknown)"}</a></td>`;
             html += `<td>${formatNodeType(n.node_type)}</td>`;
             html += `<td>${formatUnixTime(n.last_advert)}</td>`;
-            html += `<td>${formatAdvertPath(n.hop_count, n.path_hex)}</td>`;
+            html += `<td>${buildAdvertPathHtml(n.hop_count, n.path_hex)}</td>`;
             html += "</tr>";
         }
     );
@@ -2449,7 +2533,7 @@ function renderNodeDetailObsTable(
                 html += "<tr>";
                 html += `<td>${formatUnixTime(o.observed_at)}</td>`;
                 html += `<td>${o.hop_count}</td>`;
-                html += `<td>${formatAdvertPath(o.hop_count, o.path_hex)}</td>`;
+                html += `<td>${buildAdvertPathHtml(o.hop_count, o.path_hex)}</td>`;
                 html += `<td>${o.rssi ?? "-"}</td>`;
                 html += `<td>${colorizeSnr(o.snr)}</td>`;
                 html += "</tr>";

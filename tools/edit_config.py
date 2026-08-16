@@ -30,8 +30,6 @@ Sicurezza built-in, per ogni comando che scrive:
 import argparse
 import sys
 import shutil
-import json
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -53,15 +51,6 @@ from core.trace_paths import parse_path_entry, format_path_entry
 
 CONFIG_PATH = Path("config/config.yaml")
 
-#
-# frontend/mesh-nodes.json — mappa public_key completa -> nome
-# leggibile, usata dal frontend (Nodo e Collettore) per mostrare un
-# nome nei tooltip dei grafici invece del prefisso hex grezzo. File
-# per-Nodo, non condiviso: sync-meshnode.sh lo copia al Collettore,
-# che ha un suo script di merge con deduplica — questo script non
-# deve preoccuparsi di altri nodi, solo del proprio.
-#
-MESH_NODES_PATH = PROJECT_ROOT / "frontend" / "mesh-nodes.json"
 BACKUP_DIR = Path("config/backup")
 
 VALID_SERVICES = [
@@ -381,153 +370,6 @@ def cmd_list_remove(args):
     save_config(data, backup_path)
 
 
-def _load_mesh_nodes():
-    """
-    None distingue "file illeggibile, non toccare nulla" da "file
-    assente o vuoto, {} va bene" — un JSON corrotto non deve essere
-    silenziosamente sovrascritto da un json.dump() successivo.
-    """
-
-    if not MESH_NODES_PATH.exists():
-        return {}
-
-    try:
-        with open(MESH_NODES_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    except (json.JSONDecodeError, OSError) as e:
-
-        print(
-            f"AVVISO: impossibile leggere {MESH_NODES_PATH} ({e}) — "
-            "salto l'aggiornamento automatico dei nomi nodo per "
-            "questo path.",
-            file=sys.stderr
-        )
-
-        return None
-
-
-def _save_mesh_nodes(mesh_nodes):
-
-    with open(MESH_NODES_PATH, "w", encoding="utf-8") as f:
-        json.dump(mesh_nodes, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-
-
-def _contacts_db_path(data):
-
-    db_file = get_path(data, "contacts.db_file") or "data/contacts.db"
-
-    return PROJECT_ROOT / db_file
-
-
-def auto_register_path_nodes(data, path):
-    """
-    Per ogni prefisso esadecimale distinto nel path, se non è già
-    presente in mesh-nodes.json (stesso confronto case-insensitive
-    a prefisso di resolveNodeName() in app.js) cerca una
-    corrispondenza UNIVOCA in contacts.db e la aggiunge.
-
-    SOLO aggiunta, mai rimozione (deciso con l'utente: un file più
-    grande del necessario è innocuo, una voce tolta per errore rompe
-    un tooltip altrove senza preavviso). Se il nodo non è ancora
-    noto al device o il prefisso è ambiguo (più corrispondenze),
-    stampa un avviso e lascia il compito all'utente — non è un
-    errore fatale, il path resta comunque salvato.
-    """
-
-    segments = {
-        s.strip()
-        for s in path.split(",")
-        if s.strip()
-    }
-
-    mesh_nodes = _load_mesh_nodes()
-
-    if mesh_nodes is None:
-        return
-
-    db_path = _contacts_db_path(data)
-
-    if not db_path.exists():
-
-        print(
-            f"AVVISO: {db_path} non trovato — impossibile risolvere "
-            "automaticamente i nomi nodo per questo path. Aggiungili "
-            "a mano in frontend/mesh-nodes.json quando disponibili."
-        )
-
-        return
-
-    conn = sqlite3.connect(str(db_path))
-    changed = False
-
-    try:
-
-        for prefix in segments:
-
-            already_known = any(
-                full_key.lower().startswith(prefix.lower())
-                for full_key in mesh_nodes
-            )
-
-            if already_known:
-                continue
-
-            rows = conn.execute(
-                "SELECT public_key, adv_name FROM nodes "
-                "WHERE public_key LIKE ?",
-                (prefix.lower() + "%",)
-            ).fetchall()
-
-            if not rows:
-
-                print(
-                    f"AVVISO: nodo '{prefix}' non ancora noto al "
-                    "device — aggiungilo a mano in "
-                    "frontend/mesh-nodes.json quando disponibile."
-                )
-
-                continue
-
-            if len(rows) > 1:
-
-                print(
-                    f"AVVISO: '{prefix}' corrisponde a più di un "
-                    "nodo noto (prefisso ambiguo) — aggiungilo a "
-                    "mano in frontend/mesh-nodes.json scegliendo "
-                    "quello giusto."
-                )
-
-                continue
-
-            public_key, adv_name = rows[0]
-
-            if not adv_name:
-
-                print(
-                    f"AVVISO: nodo '{prefix}' trovato ma senza nome "
-                    "(adv_name vuoto) — aggiungilo a mano in "
-                    "frontend/mesh-nodes.json."
-                )
-
-                continue
-
-            mesh_nodes[public_key] = adv_name
-            changed = True
-
-            print(
-                f"'{prefix}' -> '{adv_name}' aggiunto a "
-                "frontend/mesh-nodes.json."
-            )
-
-    finally:
-        conn.close()
-
-    if changed:
-        _save_mesh_nodes(mesh_nodes)
-
-
 def cmd_trace_path_list(args):
 
     data = load_config()
@@ -565,16 +407,6 @@ def cmd_trace_path_add(args):
 
         print(f"'{args.path}' è già presente, nessuna modifica.")
 
-        #
-        # La risoluzione dei nomi va comunque tentata: un path già
-        # presente può avere nodi non ancora risolti in
-        # mesh-nodes.json (es. aggiunto prima che esistesse questa
-        # automazione, o riprovato dopo che il device ha imparato a
-        # conoscere un nodo nel frattempo) — "già presente" riguarda
-        # solo trace.paths, non deve troncare la risoluzione.
-        #
-        auto_register_path_nodes(data, args.path)
-
         return
 
     entries.append(
@@ -583,8 +415,6 @@ def cmd_trace_path_add(args):
 
     backup_path = backup_config()
     save_config(data, backup_path)
-
-    auto_register_path_nodes(data, args.path)
 
 
 def cmd_trace_path_remove(args):
@@ -640,9 +470,6 @@ def cmd_trace_path_set_enabled(args):
     backup_path = backup_config()
     set_path(data, "trace.paths", entries)
     save_config(data, backup_path)
-
-    if enabled:
-        auto_register_path_nodes(data, args.path)
 
 
 def cmd_repeater_list(args):

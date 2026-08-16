@@ -441,8 +441,8 @@ Lo script è diviso in tre parti, in quest'ordine:
    `scp`. Questi due valori non li scegli tu: te li assegna l'admin
    del server Collector — contattalo prima di arrivare a questo
    punto (§14.2) se non li hai già. Genera `backup.sh`,
-   `contact_sync.sh`, `rotate_contacts.sh`, `sync-meshnode.sh`,
-   `trace.sh`, tutti già eseguibili.
+   `contact_sync.sh`, `rotate_contacts.sh`, `trace.sh`, tutti già
+   eseguibili.
 2. **`config.yaml`** — ti chiede il tipo di connessione al companion
    MeshCore (TCP, Seriale o BLE) e i dettagli coerenti con la scelta
    (host+porta per TCP, device+baudrate per Seriale, indirizzo per
@@ -525,7 +525,6 @@ Esempio di configurazione, con cadenze di partenza ragionevoli:
 */5 * * * * /home/meshcore/trace-mon/contact_sync.sh >> /home/meshcore/trace-mon/logs/contact_sync.log 2>&1
 2 0 1 * * /home/meshcore/trace-mon/backup.sh > /dev/null 2>&1
 3 0 1 * * /home/meshcore/trace-mon/rotate_contacts.sh > /dev/null 2>&1
-1 4 * * * /home/meshcore/trace-mon/sync-meshnode.sh > /dev/null 2>&1
 10 3 * * 0 /usr/sbin/logrotate --state /home/meshcore/trace-mon/run/logrotate.status /home/meshcore/trace-mon/config/logrotate.conf
 ```
 
@@ -542,8 +541,6 @@ Cosa fa ciascuna riga:
 - **`backup.sh`** / **`rotate_contacts.sh`** (il giorno 1 di ogni
   mese) — archiviano ed espellono dal database live i dati del mese
   appena concluso (trace, path osservati, neighbours dei repeater).
-- **`sync-meshnode.sh`** (ogni giorno alle 4:01) — sincronizza
-  l'elenco dei nodi mesh conosciuti verso il Collettore.
 - **logrotate** (ogni domenica alle 3:10) — ruota i log applicativi.
 
 **Le cadenze di `trace.sh`/`neighbor_monitor.sh`/`floodadv.sh` sono
@@ -552,9 +549,8 @@ interrogazione passa per lo stesso canale radio condiviso con il
 resto della mesh — cadenze più strette aumentano il traffico che
 generi sulla rete. Osserva il comportamento della tua rete e stringi
 o allarga questi intervalli di conseguenza; le voci di manutenzione
-(`contact_sync.sh`, backup/rotate, `sync-meshnode.sh`, logrotate)
-invece non generano traffico radio, la cadenza qui data va bene
-praticamente sempre.
+(`contact_sync.sh`, backup/rotate, logrotate) invece non generano
+traffico radio, la cadenza qui data va bene praticamente sempre.
 
 ---
 
@@ -625,9 +621,9 @@ cd ~/trace-mon
 
 Ti chiederà conferma prima di sovrascrivere gli script di
 manutenzione già generati (`backup.sh`, `contact_sync.sh`,
-`rotate_contacts.sh`, `sync-meshnode.sh`, `trace.sh`) — rispondi
-di sì. Quando richiesto, inserisci esattamente il Node ID e l'IP
-del server comunicati dall'admin al passo 14.2.
+`rotate_contacts.sh`, `trace.sh`) — rispondi di sì. Quando
+richiesto, inserisci esattamente il Node ID e l'IP del server
+comunicati dall'admin al passo 14.2.
 
 ---
 

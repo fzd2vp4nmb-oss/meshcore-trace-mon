@@ -77,6 +77,15 @@ class MeshCoreDaemon:
         log.info("Starting MeshCore daemon...")
 
         #
+        # Controllo NTP — il sync dell'orologio del companion, subito
+        # dopo la connessione, presuppone che l'orologio di QUESTO
+        # Raspberry sia corretto: se non lo è, gli propaghiamo noi un
+        # errore invece di correggerlo. Va prima di qualunque sync
+        # verso il device, quindi è il primo passo in assoluto.
+        #
+        await self._check_ntp_sync()
+
+        #
         # Connessione MeshCore
         #
         await self.engine.connect()
@@ -128,6 +137,96 @@ class MeshCoreDaemon:
         # Rimane residente
         #
         await self._shutdown.wait()
+
+    async def _check_ntp_sync(self):
+        """
+        Controllo leggero, mai bloccante — un problema qui viene solo
+        loggato, mai un motivo per fermare l'avvio (stesso principio
+        di _sync_clock_at_startup più sotto). timedatectl è lo stesso
+        meccanismo sia con systemd-timesyncd sia con chrony su
+        Raspberry Pi OS/Debian — nessun bisogno di distinguerli. Se
+        proprio non disponibile, lo stato resta "sconosciuto" (solo
+        loggato): niente euristiche via file di stato, meno affidabili
+        di una risposta diretta e non ne vale la complessità per un
+        controllo di questo peso.
+        """
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "timedatectl", "show", "-p", "NTPSynchronized", "--value",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            try:
+                stdout, _ = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=5
+                )
+
+            except asyncio.TimeoutError:
+
+                #
+                # wait_for() interrompe solo l'ATTESA, non il
+                # processo sottostante — senza kill()+wait()
+                # espliciti resterebbe uno zombie. Scoperto con un
+                # test mirato (comando che non risponde mai), non
+                # solo per teoria.
+                #
+                proc.kill()
+                await proc.wait()
+
+                raise
+
+            if proc.returncode != 0:
+
+                log.warning(
+                    "NTP: impossibile verificare lo stato di "
+                    "sincronizzazione (timedatectl ha risposto con "
+                    "errore, exit code %d) — stato sconosciuto, "
+                    "proseguo comunque.",
+                    proc.returncode
+                )
+
+                return
+
+            output = stdout.decode().strip()
+
+        except (OSError, asyncio.TimeoutError):
+
+            log.warning(
+                "NTP: impossibile verificare lo stato di "
+                "sincronizzazione (timedatectl non disponibile o "
+                "troppo lento) — stato sconosciuto, proseguo "
+                "comunque."
+            )
+
+            return
+
+        if output == "yes":
+
+            log.info(
+                "NTP: orologio di sistema sincronizzato."
+            )
+
+            return
+
+        if output == "no":
+
+            log.warning(
+                "NTP: orologio di sistema NON sincronizzato — il "
+                "sync verso il companion userà comunque quest'ora, "
+                "potenzialmente propagando un errore invece di "
+                "correggerlo."
+            )
+
+            return
+
+        log.warning(
+            "NTP: risposta inattesa da timedatectl ('%s'), stato "
+            "sincronizzazione sconosciuto.",
+            output
+        )
 
     async def _sync_clock_at_startup(self):
         """

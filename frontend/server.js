@@ -1170,6 +1170,27 @@ app.get(
                     ? configRows[0]
                     : null;
 
+            //
+            // Stesso gate ACL di region (AnonReqType, nessun
+            // permesso richiesto) — query indipendente, propria
+            // MAX(queried_at).
+            //
+            const clockRows =
+                db.prepare(
+                    `SELECT remote_clock, skew_seconds, queried_at
+                    FROM repeater_clock
+                    WHERE public_key = ?
+                    ORDER BY queried_at DESC
+                    LIMIT 1`
+                ).all(
+                    publicKey
+                );
+
+            const clock =
+                clockRows.length > 0
+                    ? clockRows[0]
+                    : null;
+
             db.close();
 
             res.json(
@@ -1180,6 +1201,7 @@ app.get(
                     neighbours: neighbours,
                     telemetry: telemetry,
                     region: region,
+                    clock: clock,
                     config: config
                 }
             );

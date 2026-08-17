@@ -3098,6 +3098,43 @@ function formatSecsAgo(
     return `${Math.floor(secs / 86400)}d ago`;
 }
 
+//
+// Soglia sotto la quale lo scarto è rumore di misura, non un
+// problema reale di RTC del repeater — stessa soglia suggerita
+// nell'analisi firmware che ha originato questa funzionalità.
+//
+const CLOCK_SKEW_SYNC_THRESHOLD_SECS = 60;
+
+function formatClockSkew(
+    skewSeconds
+) {
+
+    if (
+        skewSeconds === null ||
+        skewSeconds === undefined
+    ) {
+
+        return "n/a";
+    }
+
+    if (
+        Math.abs(skewSeconds) < CLOCK_SKEW_SYNC_THRESHOLD_SECS
+    ) {
+
+        return "in sync";
+    }
+
+    //
+    // formatDurationLong() lavora su valori non negativi (il modulo
+    // JS su numeri negativi non si comporta come ci si aspetta) —
+    // il segno lo aggiungiamo qui, separatamente.
+    //
+    const sign =
+        skewSeconds > 0 ? "+" : "-";
+
+    return `${sign}${formatDurationLong(Math.abs(skewSeconds))}`;
+}
+
 function formatDurationLong(
     secs
 ) {
@@ -3191,12 +3228,16 @@ function renderNeighborData(
     const status =
         data.status;
 
+    const clock =
+        data.clock;
+
     if (
         !status
     ) {
 
         statusTable.innerHTML =
-            "<tr><td>No status data available.</td></tr>";
+            "<tr><td>No status data available.</td></tr>" +
+            `<tr><th>Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>`;
     }
 
     else {
@@ -3217,6 +3258,7 @@ function renderNeighborData(
             <tr><th>Receive Errors</th><td>${status.recv_errors ?? "n/a"}</td></tr>
             <tr><th>Full Events</th><td>${status.full_evts}</td></tr>
             <tr><th>Airtime (TX / RX)</th><td>${status.airtime} / ${status.rx_airtime}</td></tr>
+            <tr><th>Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>
         `;
     }
 

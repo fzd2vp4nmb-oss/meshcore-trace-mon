@@ -37,10 +37,11 @@ CLI_RESPONSE_TIMEOUT = 10.0
 
 class NeighborMonitorModule:
     """
-    Interroga un repeater remoto per status, neighbours, telemetria
-    e regioni supportate, via richieste dirette (req_status_sync/
-    fetch_all_neighbours/req_telemetry_sync/req_regions_sync) — non
-    trace/advert. Vedi docs/NEIGHBOR_MONITORING.md.
+    Interroga un repeater remoto per status, neighbours, telemetria,
+    regioni supportate e scarto orologio, via richieste dirette
+    (req_status_sync/fetch_all_neighbours/req_telemetry_sync/
+    req_regions_sync/req_basic_sync) — non trace/advert. Vedi
+    docs/NEIGHBOR_MONITORING.md.
 
     Legge l'istanza MeshCore corrente dinamicamente da Engine ad
     ogni chiamata, come TraceModule/ContactSyncModule — nessuna
@@ -49,8 +50,8 @@ class NeighborMonitorModule:
     Nessun lock esplicito qui dentro: come TraceModule, si affida al
     fatto che IPCServer.handle_client() avvolge l'intero dispatch()
     (quindi anche get_contacts()+req_status_sync()+
-    fetch_all_neighbours()+req_telemetry_sync()+req_regions_sync()
-    in sequenza) in Engine.command_lock.
+    fetch_all_neighbours()+req_telemetry_sync()+req_regions_sync()+
+    req_basic_sync() in sequenza) in Engine.command_lock.
     """
 
     def __init__(self, engine):
@@ -137,8 +138,8 @@ class NeighborMonitorModule:
     async def query(self, repeater_name):
         """
         Risolve repeater_name in chiave pubblica via get_contacts(),
-        poi interroga status, neighbours, telemetria e regioni in
-        sequenza.
+        poi interroga status, neighbours, telemetria, regioni e
+        scarto orologio in sequenza.
 
         Ritorna None su qualunque fallimento (repeater non trovato
         nella lista contatti, timeout, permesso ACL mancante) —
@@ -147,14 +148,14 @@ class NeighborMonitorModule:
         va solo nei log, mai nella risposta IPC — stesso principio
         già adottato altrove nel progetto (!meteo, !status).
 
-        Se anche solo una delle quattro richieste va a buon fine, il
+        Se anche solo una delle cinque richieste va a buon fine, il
         risultato viene comunque restituito con i campi mancanti a
         None — meglio un dato parziale che nessun dato, dato che
         sono richieste radio indipendenti. Nota: req_regions_sync()
-        non richiede ACL (usa AnonReqType, non BinaryReqType come le
-        altre tre) — può quindi riuscire anche quando status/
-        neighbours/telemetry falliscono per un problema ACL, non
-        solo per un timeout radio genuino.
+        e req_basic_sync() non richiedono ACL (AnonReqType, non
+        BinaryReqType come le altre tre) — possono quindi riuscire
+        anche quando status/neighbours/telemetry falliscono per un
+        problema ACL, non solo per un timeout radio genuino.
         """
 
         tag = f"[repeater:{repeater_name}]"
@@ -306,6 +307,62 @@ class NeighborMonitorModule:
                 self.max_retries
             )
 
+        clock = None
+
+        raw_clock = await self._call_with_retries(
+            tag,
+            "req_basic_sync",
+            lambda: self.engine.mesh.commands.req_basic_sync(public_key)
+        )
+
+        if raw_clock is None:
+
+            log.warning(
+                "NEIGHBOR_MONITOR: %s nessuna risposta a req_basic "
+                "dopo %d tentativi (nessun ACL richiesto per questa "
+                "richiesta — un fallimento qui è più probabilmente "
+                "un timeout radio genuino che un problema di "
+                "permessi).",
+                tag,
+                self.max_retries
+            )
+
+        else:
+
+            #
+            # Il clock del repeater è nei byte [0:4] di 'data',
+            # little-endian uint32 (epoch secondi) — non ancora
+            # esposto/decodificato da meshcore_py, va fatto qui.
+            # Offset confermato empiricamente sul campo (log
+            # diagnostico con dump byte grezzi + doppia
+            # interpretazione, 2026-08-17): l'ipotesi iniziale [4:8]
+            # da analisi statica del firmware era sbagliata, dava
+            # uno scarto di ~56 anni. Un payload troppo corto non
+            # solleva da solo (lo slicing di bytes non fallisce,
+            # produce solo meno byte) — il controllo esplicito di
+            # lunghezza evita di calcolare uno scarto senza senso da
+            # un payload malformato invece di segnalarlo.
+            #
+            try:
+                raw_bytes = bytes.fromhex(raw_clock.get("data", ""))
+
+                if len(raw_bytes) < 4:
+                    raise ValueError(
+                        f"payload troppo corto ({len(raw_bytes)} byte)"
+                    )
+
+                remote_clock = int.from_bytes(raw_bytes[0:4], "little")
+                clock = {"remote_clock": remote_clock}
+
+            except (ValueError, TypeError, AttributeError):
+
+                log.warning(
+                    "NEIGHBOR_MONITOR: %s risposta req_basic non "
+                    "decodificabile.",
+                    tag,
+                    exc_info=True
+                )
+
         config = await self._query_cli_config(
             public_key,
             tag
@@ -316,18 +373,21 @@ class NeighborMonitorModule:
             neighbours is None and
             telemetry is None and
             region is None and
+            clock is None and
             config is None
         ):
             return None
 
         log.info(
             "NEIGHBOR_MONITOR: %s query completata (status=%s, "
-            "neighbours=%s, telemetry=%s, region=%s, config=%s).",
+            "neighbours=%s, telemetry=%s, region=%s, clock=%s, "
+            "config=%s).",
             tag,
             "ok" if status is not None else "mancante",
             "ok" if neighbours is not None else "mancante",
             "ok" if telemetry is not None else "mancante",
             "ok" if region is not None else "mancante",
+            "ok" if clock is not None else "mancante",
             "ok" if config is not None else "mancante"
         )
 
@@ -338,6 +398,7 @@ class NeighborMonitorModule:
             "neighbours": neighbours,
             "telemetry": telemetry,
             "region": region,
+            "clock": clock,
             "config": config
         }
 

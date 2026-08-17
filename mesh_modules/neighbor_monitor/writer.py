@@ -20,10 +20,11 @@ class NeighborMonitorWriter:
     def write(self, result):
         """
         result è il dict {public_key, adv_name, status, neighbours,
-        telemetry} restituito da NeighborMonitorService via IPC.
-        Ciascun campo può essere None indipendentemente dagli altri
-        (tre richieste radio distinte, ciascuna con il proprio gate
-        ACL) — in quel caso si scrive solo la parte disponibile.
+        telemetry, region, clock, config} restituito da
+        NeighborMonitorService via IPC. Ciascun campo può essere
+        None indipendentemente dagli altri (richieste radio
+        distinte, ciascuna con il proprio gate ACL) — in quel caso
+        si scrive solo la parte disponibile.
         """
 
         queried_at = int(
@@ -127,6 +128,28 @@ class NeighborMonitorWriter:
                 public_key=public_key,
                 queried_at=queried_at,
                 **config
+            )
+
+        #
+        # Stesso gate ACL di region (AnonReqType, nessun permesso
+        # richiesto) — tabella indipendente per lo stesso motivo.
+        # skew_seconds calcolato qui con lo STESSO queried_at con cui
+        # la riga viene salvata, non con l'istante originale della
+        # richiesta radio (che può differire di una manciata di
+        # secondi per via del giro IPC) — coerenza con le altre
+        # tabelle, tutte ancorate a questo singolo queried_at.
+        #
+        clock = result.get("clock")
+
+        if clock:
+
+            remote_clock = clock.get("remote_clock")
+
+            self.db.insert_repeater_clock(
+                public_key=public_key,
+                queried_at=queried_at,
+                remote_clock=remote_clock,
+                skew_seconds=remote_clock - queried_at
             )
 
     def close(self):

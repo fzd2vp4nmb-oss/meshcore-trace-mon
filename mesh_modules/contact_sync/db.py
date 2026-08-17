@@ -150,6 +150,23 @@ CREATE TABLE IF NOT EXISTS repeater_config (
 CREATE INDEX IF NOT EXISTS idx_repeater_config_node_time
     ON repeater_config(public_key, queried_at);
 
+CREATE TABLE IF NOT EXISTS repeater_clock (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    public_key     TEXT NOT NULL REFERENCES nodes(public_key),
+    queried_at     INTEGER NOT NULL,   -- clock del NOSTRO Companion/host
+    remote_clock   INTEGER NOT NULL,   -- clock dichiarato dal repeater
+    skew_seconds   INTEGER NOT NULL
+                  -- remote_clock - queried_at, pre-calcolato per non
+                  -- doverlo rifare ad ogni lettura frontend. Da
+                  -- req_basic_sync() (AnonReqType.BASIC, nessun ACL,
+                  -- stesso gate di repeater_region) — tabella
+                  -- indipendente per lo stesso motivo: può riuscire
+                  -- anche quando status fallisce per permessi.
+);
+
+CREATE INDEX IF NOT EXISTS idx_repeater_clock_node_time
+    ON repeater_clock(public_key, queried_at);
+
 CREATE TABLE IF NOT EXISTS device_status (
     id             INTEGER PRIMARY KEY CHECK (id = 1),
                   -- riga singola forzata dal CHECK — non è uno
@@ -642,6 +659,34 @@ class ContactDB:
                 path_hash_mode, txdelay, direct_txdelay, rxdelay,
                 flood_max, flood_max_unscoped, flood_max_advert
             )
+        )
+
+        self._conn.commit()
+
+    def insert_repeater_clock(
+        self,
+        public_key,
+        queried_at,
+        remote_clock,
+        skew_seconds
+    ):
+        """
+        Inserisce una riga di scarto orologio — una sola riga per
+        query, come repeater_region (stesso gate ACL: AnonReqType,
+        nessun permesso richiesto). skew_seconds arriva già calcolato
+        dal chiamante (remote_clock - queried_at), non ricalcolato
+        qui, per usare esattamente lo stesso queried_at con cui viene
+        salvata la riga.
+        """
+
+        self._conn.execute(
+            """
+            INSERT INTO repeater_clock (
+                public_key, queried_at, remote_clock, skew_seconds
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (public_key, queried_at, remote_clock, skew_seconds)
         )
 
         self._conn.commit()

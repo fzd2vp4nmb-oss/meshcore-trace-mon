@@ -1,4 +1,5 @@
 import asyncio
+import random
 
 from meshcore.events import EventType
 from core.config import config
@@ -48,6 +49,57 @@ class TraceModule:
     async def _trace_callback(self, event):
         await self._queue.put(event)
 
+    async def _wait_for_own_trace(
+        self,
+        expected_tag,
+        timeout,
+        tag
+    ):
+        """
+        Continua a drenare la coda finché non arriva un TRACE_DATA il
+        cui campo 'tag' corrisponde a quello generato per QUESTA
+        richiesta — scarta (senza consumarlo come risposta valida)
+        qualunque altro TRACE_DATA nel frattempo, entro la stessa
+        finestra di timeout complessiva. Stesso principio già
+        applicato in neighbor_monitor.py (_wait_for_own_response())
+        per le risposte CLI: la coda non è isolata per richiesta, un
+        trace innescato da un altro nodo sulla mesh (o una risposta
+        in ritardo di un giro precedente, mai consumata perché
+        arrivata dopo il timeout) può arrivare nella stessa finestra
+        ed essere scambiato per la nostra risposta — bug reale
+        osservato sul campo (2026-08-17): un trace verso "2559,cfa4,
+        2559" ha restituito hash completamente estranei al path
+        richiesto.
+        """
+
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+
+        while True:
+
+            remaining = deadline - loop.time()
+
+            if remaining <= 0:
+                raise asyncio.TimeoutError()
+
+            event = await asyncio.wait_for(
+                self._queue.get(),
+                remaining
+            )
+
+            event_tag = event.payload.get("tag")
+
+            if event_tag == expected_tag:
+                return event
+
+            log.info(
+                "TRACE: %s TRACE_DATA scartato (tag=%s, atteso "
+                "%s) — non è la risposta a questa richiesta.",
+                tag,
+                event_tag,
+                expected_tag
+            )
+
     async def trace(
         self,
         path,
@@ -62,6 +114,16 @@ class TraceModule:
         # chiamata — il path stesso, già un identificativo leggibile.
         #
         tag = f"[path:{path}]"
+
+        #
+        # Tag NUMERICO di correlazione radio (32 bit) — non va
+        # confuso con 'tag' sopra (quello è solo per i log). Generato
+        # qui esplicitamente, invece di lasciarlo scegliere a caso da
+        # send_trace(), per poterlo confrontare con quello della
+        # risposta ricevuta e scartare TRACE_DATA che non ci
+        # appartengono (vedi _wait_for_own_trace()).
+        #
+        trace_tag = random.randint(1, 0xFFFFFFFF)
 
         if not self.engine.connected:
 
@@ -85,6 +147,7 @@ class TraceModule:
 
         try:
             result = await self.engine.mesh.commands.send_trace(
+                tag=trace_tag,
                 path=path
             )
 
@@ -130,12 +193,15 @@ class TraceModule:
             raise
 
         #
-        # attesa risposta
+        # attesa risposta — solo quella con il nostro trace_tag,
+        # scartando qualunque altro TRACE_DATA nel frattempo (vedi
+        # _wait_for_own_trace()).
         #
         try:
-            event = await asyncio.wait_for(
-                self._queue.get(),
-                timeout
+            event = await self._wait_for_own_trace(
+                trace_tag,
+                timeout,
+                tag
             )
 
             log.info(

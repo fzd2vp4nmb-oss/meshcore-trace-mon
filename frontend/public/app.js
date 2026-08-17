@@ -13,6 +13,24 @@ let nodesDataCache = [];
 //
 let nodeDetailCurrentPublicKey = null;
 
+//
+// Contatori di correlazione richiesta — incrementati ad ogni nuova
+// fetch avviata per la relativa vista. Prima di applicare il
+// risultato di una fetch (scrivere sullo stato condiviso / fare
+// render) si confronta il valore catturato all'avvio con quello
+// corrente: se nel frattempo è partita una fetch più recente per la
+// stessa vista, il risultato è scartato anche se arriva per ultimo.
+// Senza questo controllo, click/cambi rapidi (nodo, repeater,
+// sorgente dati) possono far vincere la risposta più lenta invece
+// di quella più recente — stessa classe di debolezza già trovata e
+// corretta lato radio nel backend del Nodo (mancanza di
+// correlation-id su una risorsa condivisa), qui applicata alle
+// fetch invece che agli eventi mesh.
+//
+let dataRequestId = 0;
+let nodeDetailRequestId = 0;
+let neighborRequestId = 0;
+
 /* ==========================================
    AUTO REFRESH INTERVAL
 
@@ -164,15 +182,96 @@ async function loadData() {
             );
     }
 
-    const res =
-        await fetch(
-            url
+    const requestId =
+        ++dataRequestId;
+
+    try {
+
+        const res =
+            await fetch(
+                url
+            );
+
+        if (
+            !res.ok
+        ) {
+
+            throw new Error(
+                `HTTP ${res.status}`
+            );
+        }
+
+        const data =
+            await res.json();
+
+        if (
+            requestId !== dataRequestId
+        ) {
+
+            return;
+        }
+
+        dataCache =
+            data;
+
+        populatePaths();
+
+    }
+
+    catch (
+        err
+    ) {
+
+        if (
+            requestId !== dataRequestId
+        ) {
+
+            return;
+        }
+
+        console.error(
+            "Error loading data:",
+            err
         );
 
-    dataCache =
-        await res.json();
+        const table =
+            document.getElementById(
+                "pathTable"
+            );
 
-    populatePaths();
+        if (
+            table
+        ) {
+
+            table.innerHTML =
+                "<tr><td>Error loading data.</td></tr>";
+        }
+    }
+}
+
+//
+// Unica sorgente delle soglie colore SNR (SNR_RED_LIMIT/
+// SNR_GREEN_LIMIT sopra) — sia la tabella (colorizeSnr) sia il
+// grafico Chart.js (labelTextColor in renderChart) richiamano questa
+// funzione invece di riportare da capo lo stesso if/else, così le
+// due viste restano garantite coerenti anche se le soglie o i colori
+// cambiano in futuro.
+//
+function snrColor(value) {
+
+    if (
+        value < SNR_RED_LIMIT
+    ) {
+        return "#d32f2f";
+    }
+
+    if (
+        value < SNR_GREEN_LIMIT
+    ) {
+        return "#f57c00";
+    }
+
+    return "#2e7d32";
 }
 
 function colorizeSnr(value) {
@@ -183,26 +282,8 @@ function colorizeSnr(value) {
         return value;
     }
 
-    let color;
-
-    if (
-        value < SNR_RED_LIMIT
-    ) {
-        color =
-            "#d32f2f";
-    }
-
-    else if (
-        value < SNR_GREEN_LIMIT
-    ) {
-        color =
-            "#f57c00";
-    }
-
-    else {
-        color =
-            "#2e7d32";
-    }
+    const color =
+        snrColor(value);
 
     return `
         <span style="
@@ -969,33 +1050,11 @@ function renderChart(
                                                         value
                                                     ) {
 
-                                                        const d =
+                                                        return formatDateShort(
                                                             new Date(
                                                                 value
-                                                            );
-
-                                                        return `${String(
-                                                            d.getDate()
-                                                        ).padStart(
-                                                            2,
-                                                            "0"
-                                                        )}/${String(
-                                                            d.getMonth() +
-                                                            1
-                                                        ).padStart(
-                                                            2,
-                                                            "0"
-                                                        )} ${String(
-                                                            d.getHours()
-                                                        ).padStart(
-                                                            2,
-                                                            "0"
-                                                        )}:${String(
-                                                            d.getMinutes()
-                                                        ).padStart(
-                                                            2,
-                                                            "0"
-                                                        )}`;
+                                                            )
+                                                        );
                                                     },
 
                                                 maxTicksLimit:
@@ -1071,48 +1130,11 @@ function renderChart(
                                                                 .parsed
                                                                 .x;
 
-                                                        const d =
+                                                        return formatDateFull(
                                                             new Date(
                                                                 t
-                                                            );
-
-                                                        const dd =
-                                                            String(
-                                                                d.getDate()
-                                                            ).padStart(
-                                                                2,
-                                                                "0"
-                                                            );
-
-                                                        const mm =
-                                                            String(
-                                                                d.getMonth() +
-                                                                    1
-                                                            ).padStart(
-                                                                2,
-                                                                "0"
-                                                            );
-
-                                                        const yyyy =
-                                                            d.getFullYear();
-
-                                                        const hh =
-                                                            String(
-                                                                d.getHours()
-                                                            ).padStart(
-                                                                2,
-                                                                "0"
-                                                            );
-
-                                                        const min =
-                                                            String(
-                                                                d.getMinutes()
-                                                            ).padStart(
-                                                                2,
-                                                                "0"
-                                                            );
-
-                                                        return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+                                                            )
+                                                        );
                                                     },
 
                                                 label:
@@ -1131,24 +1153,9 @@ function renderChart(
                                                     context
                                                 ) {
 
-                                                    const snr =
-                                                        context.parsed.y;
-
-                                                    if (
-                                                        snr < SNR_RED_LIMIT
-                                                    ) {
-
-                                                        return "#d32f2f";
-                                                    }
-
-                                                    if (
-                                                        snr < SNR_GREEN_LIMIT
-                                                    ) {
-
-                                                        return "#f57c00";
-                                                    }
-
-                                                    return "#2e7d32";
+                                                    return snrColor(
+                                                        context.parsed.y
+                                                    );
                                                 }
                                     }
                             }
@@ -1161,13 +1168,19 @@ function renderChart(
    AUTO REFRESH
 ========================= */
 
-function configureAutoRefresh() {
-
-    const mode =
-        localStorage.getItem(
-            "autoRefresh"
-        ) ||
-        "off";
+//
+// Meccanismo di auto-refresh CONDIVISO da tutte e tre le tab (Trace,
+// Nodes, Neighbours) — un solo timer attivo alla volta, dato che le
+// tab sono mutuamente esclusive (una sola visibile per volta). Prima
+// c'erano tre implementazioni indipendenti (un select on/off per
+// Trace non legato alla visibilità della tab, un avvio/arresto
+// automatico legato alla tab per Nodes, nessun refresh per
+// Neighbours) — questi due helper sono ora l'unico punto che fa
+// setInterval/clearInterval, richiamato da configureAutoRefresh()
+// (Trace), startNodesAutoRefresh()/stopNodesAutoRefresh() e
+// startNeighborsAutoRefresh()/stopNeighborsAutoRefresh() più sotto.
+//
+function stopAutoRefresh() {
 
     if (
         autoRefreshTimer
@@ -1180,21 +1193,49 @@ function configureAutoRefresh() {
         autoRefreshTimer =
             null;
     }
+}
+
+function startAutoRefresh(loadFn) {
+
+    stopAutoRefresh();
+
+    autoRefreshTimer =
+        setInterval(
+            async () => {
+
+                await loadFn();
+            },
+            AUTO_REFRESH_INTERVAL
+        );
+}
+
+//
+// Tab Trace: il refresh resta legato alla preferenza utente
+// (autoRefreshSelect, persistita in localStorage) — a differenza di
+// Nodes/Neighbours non parte/si ferma automaticamente in base alla
+// sola visibilità della tab, ma configureAutoRefresh() viene
+// comunque richiamata anche al cambio tab (vedi index.html) così il
+// refresh si ferma quando si lascia Trace e riparte, se abilitato,
+// quando ci si torna — non gira più a vuoto su un'altra tab.
+//
+function configureAutoRefresh() {
+
+    const mode =
+        localStorage.getItem(
+            "autoRefresh"
+        ) ||
+        "off";
+
+    stopAutoRefresh();
 
     if (
         mode ===
         "on"
     ) {
 
-        autoRefreshTimer =
-            setInterval(
-                async () => {
-
-                    await loadData();
-
-                },
-                AUTO_REFRESH_INTERVAL
-            );
+        startAutoRefresh(
+            loadData
+        );
     }
 }
 
@@ -1272,17 +1313,7 @@ dataSourceSelector.addEventListener(
                 refreshBar.disabled =
                     true;
 
-                if (
-                    autoRefreshTimer
-                ) {
-
-                    clearInterval(
-                        autoRefreshTimer
-                    );
-
-                    autoRefreshTimer =
-                        null;
-                }
+                stopAutoRefresh();
             }
         }
 
@@ -1524,11 +1555,25 @@ function formatNodeType(t) {
     return NODE_TYPE_NAMES[t] || `unknown (${t})`;
 }
 
-function formatUnixTime(ts) {
+//
+// Uniche due implementazioni di formattazione data/ora del file —
+// ogni altro punto (tabelle, assi/tooltip dei grafici Chart.js) deve
+// richiamare una di queste due invece di reimplementare da capo il
+// calcolo di dd/mm/yyyy/hh/min, per evitare che una correzione (es.
+// un bug di fuso orario) venga applicata in un punto e dimenticata
+// altrove.
+//
+function formatDateShort(d) {
 
-    if (!ts) return "never";
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
 
-    const d = new Date(ts * 1000);
+    return `${dd}/${mm} ${hh}:${min}`;
+}
+
+function formatDateFull(d) {
 
     const dd = String(d.getDate()).padStart(2, "0");
     const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -1537,6 +1582,15 @@ function formatUnixTime(ts) {
     const min = String(d.getMinutes()).padStart(2, "0");
 
     return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
+function formatUnixTime(ts) {
+
+    if (!ts) return "never";
+
+    return formatDateFull(
+        new Date(ts * 1000)
+    );
 }
 
 function splitAdvertPathHops(hopCount, pathHex) {
@@ -1584,34 +1638,16 @@ function buildAdvertPathHtml(hopCount, pathHex) {
         .join(" > ");
 }
 
-let nodesAutoRefreshTimer = null;
-
 function startNodesAutoRefresh() {
 
-    stopNodesAutoRefresh();
-
-    nodesAutoRefreshTimer =
-        setInterval(
-            async () => {
-
-                await loadNodesTab();
-            },
-            AUTO_REFRESH_INTERVAL
-        );
+    startAutoRefresh(
+        loadNodesTab
+    );
 }
 
 function stopNodesAutoRefresh() {
 
-    if (
-        nodesAutoRefreshTimer
-    ) {
-
-        clearInterval(
-            nodesAutoRefreshTimer
-        );
-
-        nodesAutoRefreshTimer = null;
-    }
+    stopAutoRefresh();
 }
 
 async function loadNodesTab() {
@@ -2415,6 +2451,20 @@ function goToNodeDetail(
     publicKey
 ) {
 
+    //
+    // Ferma l'auto-refresh di Nodes: restava attivo anche qui prima
+    // (nessuna tab "nodeDetailPage" a sé nel click handler di
+    // index.html che lo fermasse), ricaricando inutilmente la
+    // tabella Nodes nascosta mentre si guarda il dettaglio di un
+    // nodo. backToNodesLink lo riavvia esplicitamente al ritorno.
+    //
+    if (
+        typeof stopNodesAutoRefresh === "function"
+    ) {
+
+        stopNodesAutoRefresh();
+    }
+
     document.querySelectorAll(
         ".tabButton"
     ).forEach(
@@ -2440,6 +2490,16 @@ async function loadNodeDetail(
     publicKey
 ) {
 
+    //
+    // Token catturato ORA: se l'utente apre un altro nodo (o cambia
+    // periodo via switchNodeDetailPeriod) prima che questa chiamata
+    // finisca, requestId non sarà più quello corrente ai controlli
+    // sotto e il risultato tardivo viene scartato invece di
+    // sovrascrivere la vista del nodo aperto nel frattempo.
+    //
+    const requestId =
+        ++nodeDetailRequestId;
+
     nodeDetailCurrentPublicKey =
         publicKey;
 
@@ -2464,6 +2524,13 @@ async function loadNodeDetail(
     //
     await loadNodeDetailArchiveList();
 
+    if (
+        requestId !== nodeDetailRequestId
+    ) {
+
+        return;
+    }
+
     const selector =
         document.getElementById(
             "nodeDetailArchiveSelector"
@@ -2485,6 +2552,13 @@ async function loadNodeDetail(
             );
 
         if (
+            requestId !== nodeDetailRequestId
+        ) {
+
+            return;
+        }
+
+        if (
             !res.ok
         ) {
 
@@ -2499,6 +2573,13 @@ async function loadNodeDetail(
         const data =
             await res.json();
 
+        if (
+            requestId !== nodeDetailRequestId
+        ) {
+
+            return;
+        }
+
         renderNodeDetail(
             data
         );
@@ -2508,6 +2589,13 @@ async function loadNodeDetail(
     catch (
         err
     ) {
+
+        if (
+            requestId !== nodeDetailRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             "Error loading node detail:",
@@ -2595,6 +2683,16 @@ async function switchNodeDetailPeriod(
     const publicKey =
         nodeDetailCurrentPublicKey;
 
+    //
+    // Stesso token di correlazione di loadNodeDetail() — condiviso
+    // tra le due funzioni perché scrivono sulla stessa vista: aprire
+    // un nodo diverso (o cambiare periodo di nuovo) mentre questa
+    // fetch è in volo deve scartarne il risultato, chiunque delle
+    // due l'abbia avviata.
+    //
+    const requestId =
+        ++nodeDetailRequestId;
+
     try {
 
         let observations;
@@ -2615,6 +2713,13 @@ async function switchNodeDetailPeriod(
                 );
 
             if (
+                requestId !== nodeDetailRequestId
+            ) {
+
+                return;
+            }
+
+            if (
                 !res.ok
             ) {
 
@@ -2623,6 +2728,13 @@ async function switchNodeDetailPeriod(
 
             const data =
                 await res.json();
+
+            if (
+                requestId !== nodeDetailRequestId
+            ) {
+
+                return;
+            }
 
             renderNodeDetail(
                 data
@@ -2640,6 +2752,13 @@ async function switchNodeDetailPeriod(
             );
 
         if (
+            requestId !== nodeDetailRequestId
+        ) {
+
+            return;
+        }
+
+        if (
             !res.ok
         ) {
 
@@ -2653,6 +2772,13 @@ async function switchNodeDetailPeriod(
 
         const data =
             await res.json();
+
+        if (
+            requestId !== nodeDetailRequestId
+        ) {
+
+            return;
+        }
 
         observations =
             data.observations ||
@@ -2680,6 +2806,13 @@ async function switchNodeDetailPeriod(
     catch (
         err
     ) {
+
+        if (
+            requestId !== nodeDetailRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             "Error switching node detail period:",
@@ -2858,9 +2991,7 @@ function renderNodeDetailChart(
                                 color: tickColor,
                                 callback: function (value) {
 
-                                    const d = new Date(value);
-
-                                    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+                                    return formatDateShort(new Date(value));
                                 },
                                 maxTicksLimit: 6
                             },
@@ -2994,6 +3125,37 @@ async function loadNeighborsRepeaterList() {
     }
 }
 
+//
+// Auto-refresh della tab Neighbours — legato alla visibilità della
+// tab come per Nodes (nessuna preferenza on/off qui, a differenza di
+// Trace). Prima questa tab non aveva alcun auto-refresh; il repeater
+// aggiornato è sempre quello corrente (currentRepeaterPublicKey,
+// impostato da renderNeighborData), non quello selezionato al
+// momento dell'avvio del timer — così un cambio di repeater durante
+// il periodo di refresh viene rispettato.
+//
+function startNeighborsAutoRefresh() {
+
+    startAutoRefresh(
+        async () => {
+
+            if (
+                currentRepeaterPublicKey
+            ) {
+
+                await loadNeighborData(
+                    currentRepeaterPublicKey
+                );
+            }
+        }
+    );
+}
+
+function stopNeighborsAutoRefresh() {
+
+    stopAutoRefresh();
+}
+
 async function loadNeighborsTab() {
 
     await loadNeighborsRepeaterList();
@@ -3072,6 +3234,16 @@ async function loadNeighborData(
     publicKey
 ) {
 
+    //
+    // Token catturato ORA: se l'utente seleziona un altro repeater
+    // prima che questa fetch finisca, requestId non sarà più quello
+    // corrente ai controlli sotto e il risultato tardivo (che
+    // altrimenti sovrascriverebbe anche currentRepeaterPublicKey via
+    // renderNeighborData) viene scartato.
+    //
+    const requestId =
+        ++neighborRequestId;
+
     document.getElementById(
         "neighborRepeaterName"
     ).textContent =
@@ -3105,6 +3277,13 @@ async function loadNeighborData(
             );
 
         if (
+            requestId !== neighborRequestId
+        ) {
+
+            return;
+        }
+
+        if (
             !res.ok
         ) {
 
@@ -3119,6 +3298,13 @@ async function loadNeighborData(
         const data =
             await res.json();
 
+        if (
+            requestId !== neighborRequestId
+        ) {
+
+            return;
+        }
+
         renderNeighborData(
             data
         );
@@ -3127,6 +3313,13 @@ async function loadNeighborData(
     catch (
         err
     ) {
+
+        if (
+            requestId !== neighborRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             "Error loading neighbor data:",
@@ -3529,19 +3722,9 @@ async function loadNeighboursArchiveList() {
 
     try {
 
-        const node =
-            typeof currentSelectedNode === "function"
-                ? currentSelectedNode()
-                : null;
-
-        const url =
-            node
-                ? `/api/neighbors/archive/list?node=${encodeURIComponent(node)}`
-                : "/api/neighbors/archive/list";
-
         const res =
             await fetch(
-                url
+                "/api/neighbors/archive/list"
             );
 
         const months =
@@ -3626,21 +3809,9 @@ async function onNeighboursArchiveChange() {
 
     try {
 
-        const node =
-            typeof currentSelectedNode === "function"
-                ? currentSelectedNode()
-                : null;
-
-        let url =
+        const url =
             `/api/neighbors/${encodeURIComponent(currentRepeaterPublicKey)}` +
             `/archive/snapshots?file=${encodeURIComponent(selectedFile)}`;
-
-        if (
-            node
-        ) {
-
-            url += `&node=${encodeURIComponent(node)}`;
-        }
 
         const res =
             await fetch(
@@ -3752,22 +3923,10 @@ async function loadNeighboursSnapshot(
 
     try {
 
-        const node =
-            typeof currentSelectedNode === "function"
-                ? currentSelectedNode()
-                : null;
-
-        let url =
+        const url =
             `/api/neighbors/${encodeURIComponent(currentRepeaterPublicKey)}` +
             `/archive/load?file=${encodeURIComponent(file)}` +
             `&queried_at=${encodeURIComponent(queriedAt)}`;
-
-        if (
-            node
-        ) {
-
-            url += `&node=${encodeURIComponent(node)}`;
-        }
 
         const res =
             await fetch(

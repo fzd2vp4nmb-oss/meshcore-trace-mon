@@ -357,13 +357,40 @@ document.querySelectorAll(
                         typeof loadNeighborsTab === "function"
                     ) {
 
-                        loadNeighborsTab();
+                        loadNeighborsTab().then(
+                            () => {
+
+                                if (
+                                    typeof startNeighborsAutoRefresh === "function"
+                                ) {
+
+                                    startNeighborsAutoRefresh();
+                                }
+                            }
+                        );
                     }
                 }
 
                 else {
 
+                    //
+                    // tracePage — a differenza di Nodes/Neighbours il
+                    // refresh qui resta legato alla preferenza utente
+                    // (autoRefreshSelect), non solo alla visibilità
+                    // della tab: configureAutoRefresh() la rilegge da
+                    // localStorage e riavvia il timer condiviso solo
+                    // se l'utente l'aveva lasciato su "on" — così non
+                    // gira più a vuoto mentre si è su un'altra tab, ma
+                    // resta comunque disattivabile come prima.
+                    //
                     if (
+                        typeof configureAutoRefresh === "function"
+                    ) {
+
+                        configureAutoRefresh();
+                    }
+
+                    else if (
                         typeof stopNodesAutoRefresh === "function"
                     ) {
 

@@ -104,16 +104,54 @@ MONTH=$(printf "%02d" "$MONTH")
 FILEOUT="trace-$YEAR-$MONTH.json"
 FILEOUTZIP="trace-$YEAR-$MONTH.json.gz"
 
-cp data/trace.json backup/$FILEOUT
+#
+# Ogni passaggio va confermato riuscito PRIMA di quello successivo —
+# in particolare data/trace.json non va mai rimosso finché non esiste
+# già una copia .gz valida in backup/. Senza questi controlli, un cp
+# o un gzip falliti (disco pieno, permessi, file assente) porterebbero
+# comunque alla rimozione del file live più sotto: dati persi in modo
+# irreversibile, senza che il backup sia stato fatto davvero.
+#
+
+if [ ! -f data/trace.json ]; then
+    echo "Errore: data/trace.json non trovato, backup annullato."
+    exit 1
+fi
+
+cp data/trace.json "backup/$FILEOUT"
+
+if [ $? -ne 0 ]; then
+    echo "Errore durante la copia di data/trace.json in backup/$FILEOUT"
+    exit 1
+fi
+
 sleep 10
-gzip backup/$FILEOUT
+
+gzip "backup/$FILEOUT"
+
+if [ $? -ne 0 ] || [ ! -f "backup/$FILEOUTZIP" ]; then
+    echo "Errore durante la compressione di backup/$FILEOUT"
+    exit 1
+fi
+
 sleep 10
+
+#
+# Solo ora, con backup/$FILEOUTZIP confermato presente, è sicuro
+# azzerare il file live.
+#
 rm -f data/trace.json
 sleep 10
 touch data/trace.json
 sleep 10
 cd /home/meshcore/trace-mon/backup
-scp -P 15450 $FILEOUTZIP trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
+
+scp -P 15450 "$FILEOUTZIP" trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
+
+if [ $? -ne 0 ]; then
+    echo "Errore durante l'invio di $FILEOUTZIP al Collettore (il backup locale resta comunque disponibile in backup/)."
+    exit 1
+fi
 
 exit 0
 MAINTSCRIPT_EOF

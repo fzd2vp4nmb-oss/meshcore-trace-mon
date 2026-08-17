@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>MeshCore Path Explorer - Node - Info</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="headerBar">
+    <h2>trace-mon — Overview</h2>
+    <div>
+        <a href="info_it.html" class="tabBarLink">Italiano</a>
+        <a href="index.html" class="tabBarLink">&larr; Back to Dashboard</a>
+    </div>
+</div>
+
+<p>
+trace-mon is a diagnostic system for analyzing the RF links of a
+MeshCore network. It observes a set of predefined paths on a fixed
+schedule, so that link quality can be tracked over time and later
+correlated with weather events that occurred during a given period.
+</p>
+
+<h3>1. Trace</h3>
+
+<p>
+Trace monitors a set of trace-paths scheduled by the system, checking
+the round-trip RF link quality and showing the SNR value for each hop.
+Data is shown both as a chart and as a table, with the detail of every
+measurement taken over time.
+</p>
+
+<p>
+The current month's data is shown live, with a check every 30
+minutes. Past months are archived and available through the
+<b>Data Source</b> selector, which switches between Live monitoring
+and monthly archives. The <b>Path</b> selector lets you pick which of
+the monitored traces to view.
+</p>
+
+<table>
+<tr><th>Path Element</th><th>Avg SNR</th><th>Min</th><th>Max</th></tr>
+<tr><td>SRC &rarr; IK2XYP-RPT</td><td>9.4 dB</td><td>6.2 dB</td><td>12.1 dB</td></tr>
+<tr><td>IK2XYP-RPT &rarr; SRC</td><td>8.7 dB</td><td>5.0 dB</td><td>11.5 dB</td></tr>
+</table>
+<p><i>Example data.</i></p>
+
+<h3>2. Nodes</h3>
+
+<p>
+Nodes shows information extracted from the MeshCore device that acts
+as this system's tracker. The data is split across a few tables:
+</p>
+
+<ul>
+<li><b>Device Status</b> shows the device's own status, including
+    the amount of RF traffic transmitted and received over time,
+    both direct and flood.</li>
+<li><b>Known Nodes</b> lists every MeshCore node this system has
+    received an advert from over the mesh. For each node you can see
+    its type (chat = Companion, Repeater, or Room Server), when its
+    advert was last received, and the path that advert took to reach
+    this system. This is valuable information: it shows over time how
+    a node's advert reaches the tracking station, with the path
+    changing as the RF links along the way perform differently.</li>
+<li>Selecting a node shows its full observation history. A set of
+    filters lets you narrow the list down to a given node type, a
+    path of a given length, a path containing a specific node, or a
+    name / public key match.</li>
+</ul>
+
+<table>
+<tr><th>Name</th><th>Type</th><th>Advert Time</th><th>Path</th></tr>
+<tr><td>IK2XYP-RPT</td><td>repeater</td><td>2h ago</td><td>DIRECT (0 hop)</td></tr>
+<tr><td>Rasa di Varese</td><td>repeater</td><td>1d ago</td><td>IK2XYP-RPT</td></tr>
+</table>
+<p><i>Example data.</i></p>
+
+<h4>Device Status (excerpt)</h4>
+
+<table>
+<tr><th>Field</th><th>Value</th></tr>
+<tr><td>Uptime</td><td>4d 12h</td></tr>
+<tr><td>Battery</td><td>4.03V</td></tr>
+<tr><td>Packets Received</td><td>1,204</td></tr>
+<tr><td>Flood RX / Direct RX</td><td>980 / 224</td></tr>
+</table>
+<p><i>Example data.</i></p>
+
+<h3>3. Repeaters</h3>
+
+<p>
+Repeaters queries the local repeater and shows the results across a
+few tables:
+</p>
+
+<ul>
+<li><b>Status</b> shows the repeater's own status: transmission
+    data, detected noise floor, and packets sent/received by traffic
+    type (direct or flood).</li>
+<li><b>Telemetry</b> shows a set of values read from the repeater's
+    telemetry.</li>
+<li><b>Config</b> shows the value of a number of parameters
+    configured on the repeater.</li>
+<li><b>Region</b> shows the regional scopes the repeater supports,
+    and therefore which packets it will relay depending on the scope
+    used by the sender.</li>
+<li><b>Neighbours</b> lists the repeaters that this repeater has
+    received directly — which other repeaters nearby it hears, with
+    what SNR, and when their advert was last received. This is
+    archived monthly, so past data stays available through the web
+    platform even across a repeater restart.</li>
+</ul>
+
+<table>
+<tr><th>Neighbour</th><th>SNR</th><th>Last Heard</th></tr>
+<tr><td>Rasa di Varese</td><td>7.2 dB</td><td>3h ago</td></tr>
+<tr><td>ARI Varese</td><td>5.8 dB</td><td>1d ago</td></tr>
+</table>
+<p><i>Example data.</i></p>
+
+<script>
+if (localStorage.getItem("theme") === "dark") {
+    document.body.classList.add("dark");
+}
+</script>
+
+</body>
+</html>

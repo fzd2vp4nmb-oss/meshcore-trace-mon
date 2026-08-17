@@ -296,12 +296,13 @@ function buildPathTooltip(
 // Come buildPathTooltip(), ma un tooltip INDIPENDENTE per ciascun
 // elemento invece di uno unico per l'intero "X→Y" — passando sopra
 // "0d28" si vede solo il nome di 0d28, sopra "8dbb" solo quello di
-// 8dbb. Uso HTML (due <span title="...">) invece di un title sul
-// contenitore, quindi il chiamante deve usare il risultato come
-// contenuto dell'elemento, non come suo attributo title. NON usata
-// nella callback del tooltip di Chart.js (quella resta su
-// buildPathTooltip() — testo su canvas, nessun elemento DOM
-// indipendente da poter agganciare a un hover proprio).
+// 8dbb. data-tooltip (non title): il nativo del browser non ha
+// equivalente touch, il tooltip vero lo gestisce initTooltips() più
+// sotto. Uso HTML, quindi il chiamante deve usare il risultato come
+// contenuto dell'elemento. NON usata nella callback del tooltip di
+// Chart.js (quella resta su buildPathTooltip() — testo su canvas,
+// nessun elemento DOM indipendente da poter agganciare a un hover
+// proprio).
 //
 function buildPathTooltipHtml(
     pathElement
@@ -323,11 +324,161 @@ function buildPathTooltipHtml(
     }
 
     return (
-        `<span title="${resolveNodeName(parts[0])}">${parts[0]}</span>` +
+        `<span data-tooltip="${resolveNodeName(parts[0])}">${parts[0]}</span>` +
         "→" +
-        `<span title="${resolveNodeName(parts[1])}">${parts[1]}</span>`
+        `<span data-tooltip="${resolveNodeName(parts[1])}">${parts[1]}</span>`
     );
 }
+
+//
+// Motore del tooltip per gli span data-tooltip (Trace/Nodes) —
+// sostituisce l'attributo title nativo, che sui dispositivi mobili
+// non ha alcun equivalente (nessun concetto di hover). Event
+// delegation su document invece di un listener per elemento: gli
+// span sono generati dinamicamente via innerHTML, un binding diretto
+// andrebbe perso ad ogni ri-render della tabella.
+//
+function initTooltips() {
+
+    let bubble = null;
+    let activeTarget = null;
+
+    function positionTooltip(x, y) {
+
+        if (!bubble) {
+            return;
+        }
+
+        const offset = 12;
+        const rect = bubble.getBoundingClientRect();
+
+        let left = x + offset;
+        let top = y + offset;
+
+        if (left + rect.width > window.innerWidth) {
+            left = x - rect.width - offset;
+        }
+
+        if (top + rect.height > window.innerHeight) {
+            top = y - rect.height - offset;
+        }
+
+        bubble.style.left = left + "px";
+        bubble.style.top = top + "px";
+    }
+
+    function showTooltip(target, x, y) {
+
+        const text =
+            target.getAttribute("data-tooltip");
+
+        if (!text) {
+            return;
+        }
+
+        hideTooltip();
+
+        bubble = document.createElement("div");
+        bubble.className = "tooltip-bubble";
+        bubble.textContent = text;
+
+        document.body.appendChild(bubble);
+
+        positionTooltip(x, y);
+
+        activeTarget = target;
+    }
+
+    function hideTooltip() {
+
+        if (bubble) {
+            bubble.remove();
+            bubble = null;
+        }
+
+        activeTarget = null;
+    }
+
+    //
+    // Desktop — mouseover/mouseout invece di mouseenter/mouseleave:
+    // questi ultimi non risalgono dai figli (niente bubbling),
+    // indispensabile qui perché il listener è su document, non
+    // sul singolo span.
+    //
+    document.addEventListener(
+        "mouseover",
+        e => {
+
+            const target =
+                e.target.closest("[data-tooltip]");
+
+            if (target) {
+                showTooltip(target, e.clientX, e.clientY);
+            }
+        }
+    );
+
+    document.addEventListener(
+        "mousemove",
+        e => {
+
+            if (
+                bubble &&
+                activeTarget &&
+                activeTarget.contains(e.target)
+            ) {
+
+                positionTooltip(e.clientX, e.clientY);
+            }
+        }
+    );
+
+    document.addEventListener(
+        "mouseout",
+        e => {
+
+            if (e.target.closest("[data-tooltip]")) {
+                hideTooltip();
+            }
+        }
+    );
+
+    //
+    // Mobile — tap per aprire/chiudere, tap altrove per chiudere.
+    // click copre sia il touch reale (i browser mobile emettono
+    // click dopo un tap) sia il click del mouse su desktop, qui
+    // innocuo dato che lì il tooltip è già aperto da mouseover.
+    //
+    document.addEventListener(
+        "click",
+        e => {
+
+            const target =
+                e.target.closest("[data-tooltip]");
+
+            if (!target) {
+                hideTooltip();
+                return;
+            }
+
+            if (activeTarget === target) {
+                hideTooltip();
+            }
+            else {
+                const rect =
+                    target.getBoundingClientRect();
+
+                showTooltip(
+                    target,
+                    rect.left,
+                    rect.bottom
+                );
+            }
+        }
+    );
+}
+
+initTooltips();
 
 function populatePaths() {
 const selector =
@@ -1411,10 +1562,10 @@ function splitAdvertPathHops(hopCount, pathHex) {
 // risolto. resolveNodeName() resta l'unica fonte di verità per la
 // risoluzione nome, invariata: il cambiamento è tutto in cosa
 // restituisce /api/meshnodes lato server (contacts.db invece di
-// mesh-nodes.json), non nella logica di lookup qui. Uso HTML (uno
-// <span title="..."> per hop) invece di un title sul contenitore —
-// il chiamante usa il risultato come contenuto della cella, non
-// come suo attributo title.
+// mesh-nodes.json), non nella logica di lookup qui. data-tooltip
+// (non title): il tooltip vero lo gestisce initTooltips() più sotto,
+// con supporto touch — il chiamante usa il risultato come contenuto
+// della cella.
 //
 function buildAdvertPathHtml(hopCount, pathHex) {
 
@@ -1429,7 +1580,7 @@ function buildAdvertPathHtml(hopCount, pathHex) {
     }
 
     return hops
-        .map(hop => `<span title="${resolveNodeName(hop)}">${hop}</span>`)
+        .map(hop => `<span data-tooltip="${resolveNodeName(hop)}">${hop}</span>`)
         .join(" > ");
 }
 

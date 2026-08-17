@@ -499,6 +499,56 @@ body.dark .tabButton.active {
     color: white;
 }
 
+/*
+   Link stile "tabBar" (Installation, Info, e i link di intestazione
+   di info.html/info_it.html/info_en.html) — stile cosmetico generico
+   qui sotto, non scoperto a .tabBar apposta: serve anche fuori da lì
+   (link di navigazione/cambio lingua nell'header delle pagine Info).
+   Solo il posizionamento "spingi a destra dentro la riga dei tab" è
+   specifico di .tabBar, isolato nelle due regole successive. Stessa
+   palette di .helpBar a per coerenza visiva col resto del progetto.
+*/
+.tabBarLink {
+
+    align-self: center;
+
+    text-decoration: none;
+
+    font-weight: bold;
+
+    color: #1f5fbf;
+
+    transition:
+        color 0.3s;
+}
+
+.tabBar a.tabBarLink:first-of-type {
+
+    margin-left: auto;
+}
+
+.tabBar a.tabBarLink + a.tabBarLink {
+
+    margin-left: 12px;
+}
+
+.tabBarLink:hover {
+
+    text-decoration: underline;
+
+    color: #4a90e2;
+}
+
+body.dark .tabBarLink {
+
+    color: #7fc8ff;
+}
+
+body.dark .tabBarLink:hover {
+
+    color: #b0e0ff;
+}
+
 /* =========================
    NEIGHBORS: REGION DUMP
 
@@ -534,4 +584,39 @@ body.dark #neighborRegionDump {
     color: #e0e0e0;
 
     border-color: #555555;
+}
+
+/* =========================
+   TOOLTIP (data-tooltip)
+
+   Sostituisce l'attributo HTML nativo title sugli span per-hop di
+   Trace/Nodes: title non ha equivalente touch sui dispositivi
+   mobili (nessun concetto di hover) — serve un tooltip reale
+   gestito via JS (initTooltips() in app.js), attivato sia da
+   mouseover (desktop) sia da tap (mobile). Stile ricalcato sul
+   tooltip nativo del browser, invariato tra light/dark mode come
+   fanno i tooltip nativi stessi (non seguono il tema della pagina).
+========================= */
+
+.tooltip-bubble {
+
+    position: fixed;
+
+    background-color: #ffffff;
+
+    color: #000000;
+
+    border: 1px solid #000000;
+
+    padding: 2px 5px;
+
+    font-size: 12px;
+
+    line-height: 1.4;
+
+    white-space: nowrap;
+
+    pointer-events: none;
+
+    z-index: 9999;
 }

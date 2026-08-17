@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>MeshCore Path Explorer - Node - Info</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="headerBar">
+    <h2>trace-mon — Panoramica</h2>
+    <div>
+        <a href="info_en.html" class="tabBarLink">English</a>
+        <a href="index.html" class="tabBarLink">&larr; Torna alla Dashboard</a>
+    </div>
+</div>
+
+<p>
+trace-mon è un sistema diagnostico per l'analisi delle tratte RF di
+una rete MeshCore. Osserva un insieme di percorsi predefiniti a
+cadenza prestabilita, così da poter verificare la qualità del link
+RF nel tempo e, successivamente, metterla in relazione con gli
+eventi meteorologici verificatisi in un dato periodo.
+</p>
+
+<h3>1. Trace</h3>
+
+<p>
+Trace monitora una serie di trace-path pianificati dal sistema,
+controllando la qualità del link RF di andata e ritorno e mostrando
+il valore di SNR per ogni passaggio (hop). I dati sono mostrati sia
+a livello grafico (Chart) sia tabellare, con il dettaglio di ogni
+misurazione effettuata nel tempo.
+</p>
+
+<p>
+I dati del mese corrente sono mostrati in tempo reale, con un
+controllo ogni 30 minuti. I mesi precedenti sono archiviati e
+consultabili tramite il selettore <b>Data Source</b>, che permette di
+passare dal monitoraggio Live a quello dei dati d'archivio mensile.
+Il selettore <b>Path</b> permette di scegliere quale delle tracce
+monitorate visualizzare.
+</p>
+
+<table>
+<tr><th>Path Element</th><th>Avg SNR</th><th>Min</th><th>Max</th></tr>
+<tr><td>SRC &rarr; IK2XYP-RPT</td><td>9.4 dB</td><td>6.2 dB</td><td>12.1 dB</td></tr>
+<tr><td>IK2XYP-RPT &rarr; SRC</td><td>8.7 dB</td><td>5.0 dB</td><td>11.5 dB</td></tr>
+</table>
+<p><i>Dati d'esempio.</i></p>
+
+<h3>2. Nodes</h3>
+
+<p>
+Nodes mostra le informazioni estratte dal device MeshCore che
+costituisce l'elemento tracciatore del sistema. I dati sono
+suddivisi su alcune tabelle:
+</p>
+
+<ul>
+<li><b>Device Status</b> mostra lo stato del device stesso, incluso
+    il quantitativo di traffico RF trasmesso e ricevuto nel tempo,
+    sia di tipo direct che flood.</li>
+<li><b>Known Nodes</b> mostra la lista di tutti i nodi MeshCore da
+    cui questo sistema ha ricevuto un advert via rete mesh. Per ogni
+    nodo si vede il tipo (chat = Companion, Repeater o Room Server),
+    il momento in cui il suo advert è stato ricevuto l'ultima volta,
+    e il path con cui l'advert è giunto fino a questo sistema. È
+    un'informazione importante: mostra nel tempo come l'advert di un
+    nodo raggiunge la stazione di rilevamento, con il path che cambia
+    in funzione di come performano le tratte RF lungo il percorso.</li>
+<li>Selezionando un nodo si vede la sua intera storia di ascolti. Un
+    insieme di filtri permette di restringere l'elenco per tipo di
+    nodo, per lunghezza del path, per un nodo contenuto nel path,
+    oppure per nome/chiave pubblica.</li>
+</ul>
+
+<table>
+<tr><th>Name</th><th>Type</th><th>Advert Time</th><th>Path</th></tr>
+<tr><td>IK2XYP-RPT</td><td>repeater</td><td>2h ago</td><td>DIRECT (0 hop)</td></tr>
+<tr><td>Rasa di Varese</td><td>repeater</td><td>1d ago</td><td>IK2XYP-RPT</td></tr>
+</table>
+<p><i>Dati d'esempio.</i></p>
+
+<h4>Device Status (estratto)</h4>
+
+<table>
+<tr><th>Field</th><th>Value</th></tr>
+<tr><td>Uptime</td><td>4d 12h</td></tr>
+<tr><td>Battery</td><td>4.03V</td></tr>
+<tr><td>Packets Received</td><td>1.204</td></tr>
+<tr><td>Flood RX / Direct RX</td><td>980 / 224</td></tr>
+</table>
+<p><i>Dati d'esempio.</i></p>
+
+<h3>3. Repeaters</h3>
+
+<p>
+Repeaters effettua delle interrogazioni al ripetitore locale e
+mostra i risultati su alcune tabelle:
+</p>
+
+<ul>
+<li><b>Status</b> mostra lo stato del ripetitore: dati relativi alle
+    sue trasmissioni, soglia di rumore rilevata, pacchetti
+    trasmessi/ricevuti per tipologia di traffico (direct o
+    flood).</li>
+<li><b>Telemetry</b> mostra alcuni dati rilevati dalla telemetria del
+    ripetitore.</li>
+<li><b>Config</b> mostra il valore di alcuni parametri impostati sul
+    ripetitore.</li>
+<li><b>Region</b> mostra i regional scope supportati dal ripetitore,
+    e quindi quali pacchetti è in grado di far transitare in base
+    allo scope usato dal mittente.</li>
+<li><b>Neighbours</b> mostra la lista dei ripetitori che questo
+    ripetitore ha ricevuto tramite collegamento diretto — quali altri
+    ripetitori in zona vengono sentiti direttamente, con quale valore
+    di SNR e quando è stato ricevuto il loro ultimo advert. Questa
+    informazione viene archiviata ogni mese, quindi resta consultabile
+    sulla piattaforma Web anche dopo un riavvio del ripetitore.</li>
+</ul>
+
+<table>
+<tr><th>Neighbour</th><th>SNR</th><th>Last Heard</th></tr>
+<tr><td>Rasa di Varese</td><td>7.2 dB</td><td>3h ago</td></tr>
+<tr><td>ARI Varese</td><td>5.8 dB</td><td>1d ago</td></tr>
+</table>
+<p><i>Dati d'esempio.</i></p>
+
+<script>
+if (localStorage.getItem("theme") === "dark") {
+    document.body.classList.add("dark");
+}
+</script>
+
+</body>
+</html>

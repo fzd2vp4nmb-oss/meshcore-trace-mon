@@ -1817,6 +1817,35 @@ function nodeIsNotObserved(
     );
 }
 
+//
+// Un last_advert nel futuro rispetto all'orologio di QUESTO browser
+// è il sintomo di un orologio sbagliato sul nodo che ha generato
+// l'advert — stesso concetto del Clock Skew dei repeater (tab
+// Repeaters), ma qui rilevabile lato client senza bisogno di
+// un'interrogazione dedicata: last_advert arriva già dal device.
+// Un last_advert assente (not observed) non è "nel futuro", è
+// semplicemente ignoto — false, non true.
+//
+function nodeHasFutureAdvert(
+    n
+) {
+
+    if (
+        n.last_advert === null ||
+        n.last_advert === undefined
+    ) {
+
+        return false;
+    }
+
+    const nowSecs =
+        Math.floor(
+            Date.now() / 1000
+        );
+
+    return n.last_advert > nowSecs;
+}
+
 function applyNodesFilters() {
 
     const nameFilterInput =
@@ -1844,6 +1873,11 @@ function applyNodesFilters() {
             "nodeNotObservedFilter"
         );
 
+    const futureAdvertCheckbox =
+        document.getElementById(
+            "nodeFutureAdvertFilter"
+        );
+
     const nameFilter =
         nameFilterInput
             ? nameFilterInput.value.trim()
@@ -1867,6 +1901,11 @@ function applyNodesFilters() {
     const notObservedFilter =
         notObservedCheckbox
             ? notObservedCheckbox.checked
+            : false;
+
+    const futureAdvertFilter =
+        futureAdvertCheckbox
+            ? futureAdvertCheckbox.checked
             : false;
 
     localStorage.setItem(
@@ -1894,14 +1933,19 @@ function applyNodesFilters() {
         notObservedFilter
     );
 
+    localStorage.setItem(
+        "nodeFutureAdvertFilter",
+        futureAdvertFilter
+    );
+
     //
     // name, path e type sono in OR tra loro (modi alternativi di
     // cercare/restringere lo stesso insieme di nodi, non condizioni
     // da soddisfare tutte insieme) — se più di uno è valorizzato, un
-    // nodo compare se soddisfa ALMENO UNO. length e not-observed
-    // restano invece un affinamento in AND: non sono criteri di
-    // ricerca, sono vincoli strutturali applicati sopra il risultato
-    // della ricerca.
+    // nodo compare se soddisfa ALMENO UNO. length, not-observed e
+    // future-advert restano invece un affinamento in AND: non sono
+    // criteri di ricerca, sono vincoli strutturali applicati sopra
+    // il risultato della ricerca.
     //
     const typeFilterActive =
         !!typeFilter &&
@@ -1953,6 +1997,12 @@ function applyNodesFilters() {
                         nodeIsNotObserved(
                             n
                         )
+                    ) &&
+                    (
+                        !futureAdvertFilter ||
+                        nodeHasFutureAdvert(
+                            n
+                        )
                     )
                 );
             }
@@ -1995,6 +2045,11 @@ function initNodesFilters() {
             "nodeNotObservedFilter"
         );
 
+    const futureAdvertCheckbox =
+        document.getElementById(
+            "nodeFutureAdvertFilter"
+        );
+
     if (
         !filterInput ||
         !lengthSelect
@@ -2026,6 +2081,11 @@ function initNodesFilters() {
     const savedNotObserved =
         localStorage.getItem(
             "nodeNotObservedFilter"
+        ) === "true";
+
+    const savedFutureAdvert =
+        localStorage.getItem(
+            "nodeFutureAdvertFilter"
         ) === "true";
 
     if (
@@ -2061,6 +2121,14 @@ function initNodesFilters() {
 
         notObservedCheckbox.checked =
             savedNotObserved;
+    }
+
+    if (
+        futureAdvertCheckbox
+    ) {
+
+        futureAdvertCheckbox.checked =
+            savedFutureAdvert;
     }
 
     if (
@@ -2108,6 +2176,16 @@ function initNodesFilters() {
     ) {
 
         notObservedCheckbox.addEventListener(
+            "change",
+            applyNodesFilters
+        );
+    }
+
+    if (
+        futureAdvertCheckbox
+    ) {
+
+        futureAdvertCheckbox.addEventListener(
             "change",
             applyNodesFilters
         );

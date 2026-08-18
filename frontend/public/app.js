@@ -3810,12 +3810,12 @@ function renderNeighborData(
             <tr><th>Last RSSI</th><td>${status.last_rssi} dBm</td></tr>
             <tr><th>Last SNR</th><td>${status.last_snr} dB</td></tr>
             <tr><th>TX Queue Length</th><td>${status.tx_queue_len}</td></tr>
-            <tr><th>Packets Received</th><td>${status.nb_recv}</td></tr>
-            <tr><th>Packets Sent</th><td>${status.nb_sent}</td></tr>
-            <tr><th>Sent (Flood | Direct)</th><td>${status.sent_flood} | ${status.sent_direct}</td></tr>
-            <tr><th>Received (Flood | Direct)</th><td>${status.recv_flood} | ${status.recv_direct}</td></tr>
-            <tr><th>Duplicates (Direct | Flood)</th><td>${status.direct_dups} | ${status.flood_dups}</td></tr>
-            <tr><th>Receive Errors (CRC Fail)</th><td>${status.recv_errors ?? "n/a"}</td></tr>
+            <tr><th>Packets Received</th><td>${status.nb_recv} pkts</td></tr>
+            <tr><th>Packets Sent</th><td>${status.nb_sent} pkts</td></tr>
+            <tr><th>Sent (Flood | Direct)</th><td>${status.sent_flood} pkts | ${status.sent_direct} pkts</td></tr>
+            <tr><th>Received (Flood | Direct)</th><td>${status.recv_flood} pkts | ${status.recv_direct} pkts</td></tr>
+            <tr><th>Duplicates (Direct | Flood)</th><td>${status.direct_dups} pkts | ${status.flood_dups} pkts</td></tr>
+            <tr><th>Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : "n/a"}</td></tr>
             <tr><th>CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.nb_recv)}</td></tr>
             <tr><th>Full Events</th><td>${status.full_evts}</td></tr>
             <tr><th>Airtime (TX | RX)</th><td>${formatDurationLong(status.airtime)} | ${formatDurationLong(status.rx_airtime)}</td></tr>

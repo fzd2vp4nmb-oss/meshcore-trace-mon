@@ -19,7 +19,23 @@ OUT_PATH_UNKNOWN = 255
 #
 # Vita massima delle cache di correlazione/dedup, in secondi.
 #
-CORRELATION_TTL = 15
+# CORRELATION_TTL: a differenza delle DM (che hanno un pubkey_prefix
+# per correlare in modo univoco RX_LOG_DATA/CHANNEL_MSG_RECV allo
+# stesso mittente), un messaggio di canale non porta alcun
+# identificativo di mittente a livello di protocollo — né
+# PACKET_LOG_DATA né PACKET_CHANNEL_MSG_RECV ne espongono uno (il
+# "nome" che si vede nei log è testo libero dentro il messaggio
+# stesso, non un campo verificabile). L'unica correlazione possibile
+# resta quindi (canale, sender_timestamp) — vedi
+# _pending_scope_info/_resolve_scope_for_message più sotto, che ora
+# rileva esplicitamente il caso ambiguo invece di sceglierne uno alla
+# cieca. Restringere la finestra qui riduce la probabilità che due
+# mittenti diversi collidano sullo stesso sender_timestamp (risoluzione
+# di un secondo): 3s invece di 15, ampiamente sufficiente rispetto ai
+# 0.3s di attesa in _on_channel_message più il margine osservato
+# empiricamente per RX_LOG_DATA "a ridosso" di CHANNEL_MSG_RECV.
+#
+CORRELATION_TTL = 3
 DM_DEDUP_TTL = 60
 
 
@@ -107,6 +123,16 @@ class BotModule:
 
         #
         # Correlazione RX_LOG_DATA -> CHANNEL_MSG_RECV (scope canale).
+        # Valore: LISTA di candidati per quel sender_timestamp, non un
+        # singolo dict — nessun identificativo di mittente è
+        # disponibile a questo livello (vedi nota su CORRELATION_TTL),
+        # quindi due RX_LOG_DATA con lo stesso sender_timestamp sullo
+        # stesso canale sono, per quanto ne sappiamo, entrambi
+        # candidati legittimi. _resolve_scope_for_message() tratta più
+        # di un candidato come ambiguo — non sceglie quale dei due sia
+        # quello giusto, ma risponde comunque con lo scope ampio di
+        # default (vedi commento lì) invece di uno scope stretto
+        # potenzialmente sbagliato.
         #
         self._pending_scope_info = {}
 
@@ -265,25 +291,70 @@ class BotModule:
         except (KeyError, ValueError):
             return
 
-        self._prune_dict(self._pending_scope_info, CORRELATION_TTL)
+        self._prune_scope_info()
 
-        self._pending_scope_info[sender_timestamp] = {
-            "transport_code": transport_code,
-            "payload_type": payload.get("payload_type"),
-            "payload": payload_bytes,
-            "added_at": time.monotonic()
-        }
+        #
+        # Accoda invece di sovrascrivere: se un altro RX_LOG_DATA con
+        # lo stesso sender_timestamp arriva prima che questo venga
+        # consumato, _resolve_scope_for_message() deve poterli vedere
+        # entrambi per riconoscere l'ambiguità, non solo l'ultimo.
+        #
+        self._pending_scope_info.setdefault(
+            sender_timestamp,
+            []
+        ).append(
+            {
+                "transport_code": transport_code,
+                "payload_type": payload.get("payload_type"),
+                "payload": payload_bytes,
+                "added_at": time.monotonic()
+            }
+        )
 
     def _resolve_scope_for_message(self, sender_timestamp, tag):
 
-        info = self._pending_scope_info.pop(sender_timestamp, None)
+        candidates = self._pending_scope_info.pop(sender_timestamp, None)
 
-        if info is None:
+        if not candidates:
             log.warning(
                 "BOT: %s nessuna info di scope correlata per il messaggio.",
                 tag
             )
             return None
+
+        if len(candidates) > 1:
+
+            #
+            # Nessun identificativo di mittente disponibile a questo
+            # livello per decidere quale dei candidati appartenga a
+            # QUESTO messaggio (vedi nota su CORRELATION_TTL) — non
+            # possiamo scegliere il candidato giusto, ma NON è lo
+            # stesso caso di "scope non riconosciuto" (quello ritorna
+            # None più sotto, trattato con scope_to_set="" da
+            # _send_channel_reply): qui torniamo "" (default/ampio,
+            # stesso scope_to_set="*" già usato per i messaggi
+            # nativamente unscoped) di proposito, non None. Un
+            # candidato scartato dall'ambiguità potrebbe comunque
+            # appartenere a un mittente scoped su una regione stretta
+            # — rispondere con lo scope ampio dà a TUTTI i mittenti
+            # coinvolti nella collisione una possibilità di ricevere
+            # la risposta, invece di rischiare un pacchetto unscoped
+            # che alcuni nodi potrebbero non ritrasmettere. Caso raro
+            # per costruzione (stesso canale, stesso secondo, finestra
+            # di pochi secondi), ma va comunque gestito con l'invio
+            # più permissivo, non con quello più silenzioso.
+            #
+            log.warning(
+                "BOT: %s scope ambiguo, %d candidati con lo stesso "
+                "sender_timestamp sullo stesso canale — risposta "
+                "inviata con scope ampio di default.",
+                tag,
+                len(candidates)
+            )
+
+            return ""
+
+        info = candidates[0]
 
         if info["transport_code"] is None:
             return ""
@@ -728,3 +799,31 @@ class BotModule:
 
         for k in expired:
             del d[k]
+
+    def _prune_scope_info(self):
+        """
+        Variante di _prune_dict() per _pending_scope_info: qui il
+        valore è una LISTA di candidati per sender_timestamp (non un
+        singolo dict/timestamp), quindi la potatura va fatta voce per
+        voce dentro ciascuna lista, non sull'intera chiave — un
+        candidato vecchio non deve trascinare con sé uno scaduto da
+        poco per lo stesso sender_timestamp. Le chiavi rimaste con
+        lista vuota vengono rimosse.
+        """
+
+        now = time.monotonic()
+
+        empty_keys = []
+
+        for key, candidates in self._pending_scope_info.items():
+
+            candidates[:] = [
+                c for c in candidates
+                if now - c["added_at"] <= CORRELATION_TTL
+            ]
+
+            if not candidates:
+                empty_keys.append(key)
+
+        for key in empty_keys:
+            del self._pending_scope_info[key]

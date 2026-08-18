@@ -31,6 +31,26 @@ let dataRequestId = 0;
 let nodeDetailRequestId = 0;
 let neighborRequestId = 0;
 
+//
+// Stesso pattern esteso a tutte le altre funzioni che fanno fetch,
+// anche quelle che popolano solo un menu a tendina invece di dati
+// visualizzati come "correnti" — un secondo giro apparso dopo la
+// prima code review (v. AUDIT_seconda_passata.md) aveva trovato solo
+// i tre contatori sopra, lasciando fuori loadNodesTab()/
+// loadDeviceStatus() (mai segnalate) e la catena archivio/snapshot
+// di Neighbours (segnalata ma non ancora corretta) più cinque
+// funzioni "minori". Contatori separati per non far scartare per
+// errore il risultato di una fetch a una funzione che non ha nulla a
+// che fare con quella in corso.
+//
+let nodesTabRequestId = 0;
+let deviceStatusRequestId = 0;
+let dataSourcesRequestId = 0;
+let meshNodesRequestId = 0;
+let neighborsRepeaterListRequestId = 0;
+let nodeDetailArchiveListRequestId = 0;
+let neighboursArchiveListRequestId = 0;
+
 /* ==========================================
    AUTO REFRESH INTERVAL
 
@@ -77,6 +97,9 @@ async function loadDataSources() {
         return;
     }
 
+    const requestId =
+        ++dataSourcesRequestId;
+
     try {
 
         const res =
@@ -86,6 +109,13 @@ async function loadDataSources() {
 
         const sources =
             await res.json();
+
+        if (
+            requestId !== dataSourcesRequestId
+        ) {
+
+            return;
+        }
 
         selector.innerHTML =
             "";
@@ -129,6 +159,13 @@ async function loadDataSources() {
         err
     ) {
 
+        if (
+            requestId !== dataSourcesRequestId
+        ) {
+
+            return;
+        }
+
         console.error(
             err
         );
@@ -137,6 +174,9 @@ async function loadDataSources() {
 
 async function loadMeshNodes() {
 
+    const requestId =
+        ++meshNodesRequestId;
+
     try {
 
         const res =
@@ -144,13 +184,30 @@ async function loadMeshNodes() {
                 "/api/meshnodes"
             );
 
-        meshNodes =
+        const data =
             await res.json();
+
+        if (
+            requestId !== meshNodesRequestId
+        ) {
+
+            return;
+        }
+
+        meshNodes =
+            data;
     }
 
     catch (
         err
     ) {
+
+        if (
+            requestId !== meshNodesRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             err
@@ -1662,6 +1719,9 @@ async function loadNodesTab() {
     table.innerHTML =
         "<tr><td>Loading...</td></tr>";
 
+    const requestId =
+        ++nodesTabRequestId;
+
     try {
 
         const res =
@@ -1671,6 +1731,13 @@ async function loadNodesTab() {
 
         const nodes =
             await res.json();
+
+        if (
+            requestId !== nodesTabRequestId
+        ) {
+
+            return;
+        }
 
         nodesDataCache =
             nodes;
@@ -1684,6 +1751,13 @@ async function loadNodesTab() {
     catch (
         err
     ) {
+
+        if (
+            requestId !== nodesTabRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             "Error loading nodes:",
@@ -2275,6 +2349,9 @@ async function loadDeviceStatus() {
         return;
     }
 
+    const requestId =
+        ++deviceStatusRequestId;
+
     try {
 
         const res =
@@ -2285,6 +2362,13 @@ async function loadDeviceStatus() {
         const status =
             await res.json();
 
+        if (
+            requestId !== deviceStatusRequestId
+        ) {
+
+            return;
+        }
+
         renderDeviceStatusTable(
             status
         );
@@ -2293,6 +2377,13 @@ async function loadDeviceStatus() {
     catch (
         err
     ) {
+
+        if (
+            requestId !== deviceStatusRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             "Error loading device status:",
@@ -2623,6 +2714,9 @@ async function loadNodeDetailArchiveList() {
         return;
     }
 
+    const requestId =
+        ++nodeDetailArchiveListRequestId;
+
     try {
 
         const res =
@@ -2632,6 +2726,13 @@ async function loadNodeDetailArchiveList() {
 
         const sources =
             await res.json();
+
+        if (
+            requestId !== nodeDetailArchiveListRequestId
+        ) {
+
+            return;
+        }
 
         selector.innerHTML =
             "";
@@ -2661,6 +2762,13 @@ async function loadNodeDetailArchiveList() {
     catch (
         err
     ) {
+
+        if (
+            requestId !== nodeDetailArchiveListRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             "Error loading node archive list:",
@@ -3043,6 +3151,9 @@ async function loadNeighborsRepeaterList() {
         return;
     }
 
+    const requestId =
+        ++neighborsRepeaterListRequestId;
+
     try {
 
         const res =
@@ -3052,6 +3163,13 @@ async function loadNeighborsRepeaterList() {
 
         const repeaters =
             await res.json();
+
+        if (
+            requestId !== neighborsRepeaterListRequestId
+        ) {
+
+            return;
+        }
 
         //
         // Preferisce restare sulla selezione corrente se ancora
@@ -3117,6 +3235,13 @@ async function loadNeighborsRepeaterList() {
     catch (
         err
     ) {
+
+        if (
+            requestId !== neighborsRepeaterListRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             "Error loading neighbor repeaters:",
@@ -3720,6 +3845,9 @@ async function loadNeighboursArchiveList() {
         return;
     }
 
+    const requestId =
+        ++neighboursArchiveListRequestId;
+
     try {
 
         const res =
@@ -3729,6 +3857,13 @@ async function loadNeighboursArchiveList() {
 
         const months =
             await res.json();
+
+        if (
+            requestId !== neighboursArchiveListRequestId
+        ) {
+
+            return;
+        }
 
         selector.innerHTML = "";
 
@@ -3756,6 +3891,13 @@ async function loadNeighboursArchiveList() {
         err
     ) {
 
+        if (
+            requestId !== neighboursArchiveListRequestId
+        ) {
+
+            return;
+        }
+
         console.error(
             "Error loading neighbours archive list:",
             err
@@ -3763,6 +3905,16 @@ async function loadNeighboursArchiveList() {
     }
 }
 
+//
+// onNeighboursArchiveChange()/onNeighboursSnapshotChange()/
+// loadNeighboursSnapshot() condividono neighborRequestId con
+// loadNeighborData() invece di avere un contatore proprio: scrivono
+// tutte nella stessa area (tabella Neighbours / stato del repeater
+// corrente), quindi un cambio di repeater mentre una di queste è in
+// volo deve scartarne il risultato esattamente come già avviene tra
+// loadNodeDetail()/switchNodeDetailPeriod() sullo stesso
+// nodeDetailRequestId.
+//
 async function onNeighboursArchiveChange() {
 
     const archiveSelector =
@@ -3783,6 +3935,9 @@ async function onNeighboursArchiveChange() {
         return;
     }
 
+    const requestId =
+        ++neighborRequestId;
+
     const selectedFile =
         archiveSelector.value;
 
@@ -3799,6 +3954,9 @@ async function onNeighboursArchiveChange() {
         // inclusi) — più semplice e sempre corretto che tenere una
         // cache separata dei soli dati live, a costo di una
         // richiesta in più su un'interazione poco frequente.
+        // loadNeighborData() incrementa neighborRequestId una
+        // seconda volta al suo interno: corretto, resta l'ultima
+        // fetch avviata a vincere.
         //
         await loadNeighborData(
             currentRepeaterPublicKey
@@ -3820,6 +3978,13 @@ async function onNeighboursArchiveChange() {
 
         const snapshots =
             await res.json();
+
+        if (
+            requestId !== neighborRequestId
+        ) {
+
+            return;
+        }
 
         snapshotSelector.innerHTML = "";
 
@@ -3866,6 +4031,13 @@ async function onNeighboursArchiveChange() {
     catch (
         err
     ) {
+
+        if (
+            requestId !== neighborRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             "Error loading neighbours snapshots:",
@@ -3921,6 +4093,9 @@ async function loadNeighboursSnapshot(
     queriedAt
 ) {
 
+    const requestId =
+        ++neighborRequestId;
+
     try {
 
         const url =
@@ -3936,6 +4111,13 @@ async function loadNeighboursSnapshot(
         const neighbours =
             await res.json();
 
+        if (
+            requestId !== neighborRequestId
+        ) {
+
+            return;
+        }
+
         renderNeighboursTable(
             neighbours
         );
@@ -3944,6 +4126,13 @@ async function loadNeighboursSnapshot(
     catch (
         err
     ) {
+
+        if (
+            requestId !== neighborRequestId
+        ) {
+
+            return;
+        }
 
         console.error(
             "Error loading neighbours archive snapshot:",

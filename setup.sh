@@ -196,6 +196,11 @@ fi
 
 scp -P 15450 "$SNAPSHOT" trace-mon@$IP_SERVER:/home/trace-mon/data/$NODE/contacts.db
 
+if [ $? -ne 0 ]; then
+    echo "Errore durante l'invio di $SNAPSHOT al Collettore"
+    exit 1
+fi
+
 exit 0
 MAINTSCRIPT_EOF
             ;;
@@ -257,12 +262,36 @@ FILEOUTZIP2="repeater_neighbours-$YEAR-$MONTH.json.gz"
 
 cd /home/meshcore/trace-mon/backup
 
+#
+# I due file sono indipendenti (path_observations e
+# repeater_neighbours provengono da tabelle diverse, ruotate sopra da
+# due script python separati): un fallimento sul primo scp NON deve
+# impedire il tentativo del secondo. SCP_FAILED tiene traccia di un
+# eventuale fallimento e lo script esce con errore solo alla fine,
+# dopo aver comunque tentato entrambi gli invii.
+#
+SCP_FAILED=0
+
 if [ -f "$FILEOUTZIP" ]; then
     scp -P 15450 $FILEOUTZIP trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
+
+    if [ $? -ne 0 ]; then
+        echo "Errore durante l'invio di $FILEOUTZIP al Collettore"
+        SCP_FAILED=1
+    fi
 fi
 
 if [ -f "$FILEOUTZIP2" ]; then
     scp -P 15450 $FILEOUTZIP2 trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
+
+    if [ $? -ne 0 ]; then
+        echo "Errore durante l'invio di $FILEOUTZIP2 al Collettore"
+        SCP_FAILED=1
+    fi
+fi
+
+if [ $SCP_FAILED -ne 0 ]; then
+    exit 1
 fi
 
 exit 0
@@ -280,9 +309,19 @@ IP_SERVER="Y.Y.Y.Y"
 
 ./main_trace.py
 
+if [ $? -ne 0 ]; then
+    echo "Errore durante l'esecuzione di main_trace.py"
+    exit 1
+fi
+
 sleep 10
 cd /home/meshcore/trace-mon/data
 scp -P 15450 trace.json trace-mon@$IP_SERVER:/home/trace-mon/data/$NODE
+
+if [ $? -ne 0 ]; then
+    echo "Errore durante l'invio di trace.json al Collettore"
+    exit 1
+fi
 
 exit 0
 MAINTSCRIPT_EOF

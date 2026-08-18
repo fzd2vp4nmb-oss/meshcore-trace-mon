@@ -100,11 +100,37 @@ few tables:
 <ul>
 <li><b>Status</b> shows the repeater's own status: transmission
     data, detected noise floor, and packets sent/received by traffic
-    type (direct or flood).</li>
+    type (direct or flood). A few derived values are worth
+    explaining:
+    <ul>
+    <li><b>Airtime % (mesh, TX+RX/Uptime)</b>: the percentage of the
+        repeater's uptime during which its radio channel was busy —
+        transmitting or receiving. It reflects how "loaded" the
+        channel is in that area, not a regulatory compliance
+        figure.</li>
+    <li><b>TX Duty Cycle (observed, TX/Uptime)</b>: the same
+        percentage computed on transmission only, directly
+        comparable with the "Duty Cycle" shown in Config, to see how
+        close the actual traffic gets to the ceiling configured on
+        the repeater.</li>
+    <li><b>Receive Errors (CRC Fail)</b>: the number of packets the
+        repeater physically detected whose content arrived
+        corrupted (failed CRC check) — caused by a weak signal,
+        interference, or overlap with another transmission.</li>
+    <li><b>CRC Error Rate (RX)</b>: the percentage of packets that
+        failed the CRC check out of all packets the repeater
+        detected (successful plus failed) — a compact indicator of
+        reception quality.</li>
+    </ul>
+    </li>
 <li><b>Telemetry</b> shows a set of values read from the repeater's
     telemetry.</li>
 <li><b>Config</b> shows the value of a number of parameters
-    configured on the repeater.</li>
+    configured on the repeater, including <b>Duty Cycle</b>: the
+    transmit limit the repeater's own firmware self-enforces (a
+    forced silence period after each transmission) to comply with
+    local regulations — it applies to transmission time only, never
+    to reception.</li>
 <li><b>Region</b> shows the regional scopes the repeater supports,
     and therefore which packets it will relay depending on the scope
     used by the sender.</li>

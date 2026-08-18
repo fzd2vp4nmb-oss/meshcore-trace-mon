@@ -106,11 +106,37 @@ mostra i risultati su alcune tabelle:
 <li><b>Status</b> mostra lo stato del ripetitore: dati relativi alle
     sue trasmissioni, soglia di rumore rilevata, pacchetti
     trasmessi/ricevuti per tipologia di traffico (direct o
-    flood).</li>
+    flood). Alcuni valori derivati richiedono una spiegazione:
+    <ul>
+    <li><b>Airtime % (mesh, TX+RX/Uptime)</b>: percentuale di tempo,
+        rispetto all'uptime, in cui il canale radio del ripetitore è
+        risultato occupato — sia in trasmissione che in ricezione.
+        Indica quanto è "carico" il canale in quella zona, non un
+        dato di conformità normativa.</li>
+    <li><b>TX Duty Cycle (observed, TX/Uptime)</b>: la stessa
+        percentuale calcolata sulla sola trasmissione, confrontabile
+        direttamente con il "Duty Cycle" mostrato in Config, per
+        capire quanto il traffico reale si avvicina al tetto
+        impostato sul ripetitore.</li>
+    <li><b>Receive Errors (CRC Fail)</b>: numero di pacchetti che il
+        ripetitore ha rilevato fisicamente ma il cui contenuto è
+        arrivato corrotto (controllo CRC fallito) — causato da
+        segnale debole, interferenze o sovrapposizione con altre
+        trasmissioni.</li>
+    <li><b>CRC Error Rate (RX)</b>: percentuale di pacchetti che
+        hanno fallito il CRC rispetto al totale dei pacchetti
+        rilevati dal ripetitore (corretti più falliti) — un
+        indicatore sintetico della qualità di ricezione.</li>
+    </ul>
+    </li>
 <li><b>Telemetry</b> mostra alcuni dati rilevati dalla telemetria del
     ripetitore.</li>
 <li><b>Config</b> mostra il valore di alcuni parametri impostati sul
-    ripetitore.</li>
+    ripetitore, tra cui il <b>Duty Cycle</b>: il limite di
+    trasmissione che il firmware del ripetitore si autoimpone
+    (silenzio forzato dopo ogni invio) per rispettare le normative
+    locali — riguarda solo il tempo di trasmissione, mai la
+    ricezione.</li>
 <li><b>Region</b> mostra i regional scope supportati dal ripetitore,
     e quindi quali pacchetti è in grado di far transitare in base
     allo scope usato dal mittente.</li>

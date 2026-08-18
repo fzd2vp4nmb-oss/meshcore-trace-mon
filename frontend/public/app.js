@@ -3820,7 +3820,7 @@ function renderNeighborData(
             <tr><th>Full Events</th><td>${status.full_evts}</td></tr>
             <tr><th>Airtime (TX | RX)</th><td>${formatDurationLong(status.airtime)} | ${formatDurationLong(status.rx_airtime)}</td></tr>
             <tr><th>Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.airtime, status.rx_airtime, status.uptime)}</td></tr>
-            <tr><th>TX Duty Cycle (osservato, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.airtime, status.uptime)}</td></tr>
+            <tr><th>TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.airtime, status.uptime)}</td></tr>
             <tr><th>Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>
         `;
     }

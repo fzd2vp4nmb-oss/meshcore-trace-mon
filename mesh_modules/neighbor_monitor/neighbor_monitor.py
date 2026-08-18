@@ -6,6 +6,21 @@ from core.logger import log
 from meshcore.events import EventType
 
 
+def _parse_percent(raw):
+    """
+    Conversione per 'get dutycycle' — a differenza degli altri
+    comandi numerici, la risposta reale include un suffisso '%'
+    (confermato empiricamente sul campo, 2026-08-18: '10.0%', non
+    '10.0' come gli altri valori numerici). Il valore viene
+    memorizzato come numero puro (10.0, non 10.0/100) — è il
+    firmware stesso a esprimerlo già in percentuale, non una
+    frazione — il '%' è solo notazione di visualizzazione, aggiunta
+    di nuovo lato frontend.
+    """
+
+    return float(raw.rstrip("%").strip())
+
+
 #
 # Comandi CLI testuali interrogati dopo il login (vedi
 # docs/NEIGHBOR_MONITORING.md §12). Ogni voce: (chiave risultato,
@@ -24,6 +39,8 @@ CLI_QUERIES = [
     ("flood_max", "get flood.max", int),
     ("flood_max_unscoped", "get flood.max.unscoped", int),
     ("flood_max_advert", "get flood.max.advert", int),
+    ("region_default", "region default", str),
+    ("dutycycle", "get dutycycle", _parse_percent),
 ]
 
 #

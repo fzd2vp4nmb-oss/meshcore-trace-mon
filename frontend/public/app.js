@@ -663,10 +663,17 @@ if (
         currentSelection;
 }
 
-localStorage.setItem(
-    "selectedPath",
-    selector.value
-);
+//
+// BUG RISOLTO (segnalato dall'utente su Collettore, stesso difetto
+// presente identico anche qui): questa funzione scriveva sempre
+// "selectedPath" col valore risultante — anche quando currentSelection
+// era solo un fallback (il path salvato non esisteva più nella lista
+// corrente, es. cambio sorgente dati), sovrascrivendo così una scelta
+// esplicita dell'utente con un valore scelto automaticamente. La
+// persistenza della scelta esplicita è già gestita dal listener
+// "change" di pathSelector qui sotto — populatePaths() ora legge
+// soltanto, non scrive mai.
+//
 
 updateView();
 }
@@ -1296,6 +1303,54 @@ function configureAutoRefresh() {
     }
 }
 
+//
+// Invariante "sorgente dati archiviata ⇒ Auto Refresh forzato OFF e
+// disabilitato" — prima era scritta due volte quasi identica (al
+// DOMContentLoaded iniziale e nel listener "change" di
+// dataSourceSelector), col rischio concreto di disallinearsi se una
+// delle due copie veniva aggiornata e l'altra no. Un solo punto,
+// richiamato da entrambe.
+//
+function syncAutoRefreshToDataSource() {
+
+    const refreshBar =
+        document.getElementById(
+            "autoRefreshSelect"
+        );
+
+    const dataSourceSelector =
+        document.getElementById(
+            "dataSourceSelector"
+        );
+
+    if (
+        !refreshBar ||
+        !dataSourceSelector
+    ) {
+
+        return;
+    }
+
+    if (
+        dataSourceSelector.value === "live"
+    ) {
+
+        refreshBar.disabled =
+            false;
+    }
+
+    else {
+
+        refreshBar.value =
+            "off";
+
+        refreshBar.disabled =
+            true;
+
+        stopAutoRefresh();
+    }
+}
+
 /* =========================
    INIT
 ========================= */
@@ -1343,35 +1398,20 @@ dataSourceSelector.addEventListener(
             dataSourceSelector.value
         );
 
-        const refreshBar =
-            document.getElementById(
-                "autoRefreshSelect"
-            );
+        syncAutoRefreshToDataSource();
 
+        //
+        // dataSourceSelector è raggiungibile solo dal tab Trace (sta
+        // dentro tracePage) — configureAutoRefresh() qui è sempre
+        // sicura, a differenza della chiamata a fine
+        // DOMContentLoaded che invece va condizionata al tab
+        // effettivamente visibile (v. più sotto).
+        //
         if (
-            refreshBar
+            dataSourceSelector.value === "live"
         ) {
 
-            if (
-                dataSourceSelector.value ===
-                "live"
-            ) {
-
-                refreshBar.disabled =
-                    false;
-
-                configureAutoRefresh();
-            }
-
-            else {
-
-                refreshBar.value = "off";
-
-                refreshBar.disabled =
-                    true;
-
-                stopAutoRefresh();
-            }
+            configureAutoRefresh();
         }
 
         await loadData();
@@ -1508,22 +1548,13 @@ if (
                 ) ||
                 "off";
 
-const source =
-    localStorage.getItem(
-        "dataSource"
-    ) || "live";
-
-if (
-    source !==
-    "live"
-) {
-
-    refreshSelector.value =
-        "off";
-
-    refreshSelector.disabled =
-        true;
-}
+            //
+            // Stesso helper usato dal listener "change" di
+            // dataSourceSelector — imposta disabled/value in base
+            // alla sorgente dati corrente e ferma un eventuale timer
+            // residuo, senza duplicare la logica.
+            //
+            syncAutoRefreshToDataSource();
 
             refreshSelector.addEventListener(
                 "change",
@@ -1538,7 +1569,31 @@ if (
                 }
             );
 
-            configureAutoRefresh();
+            //
+            // BUG RISOLTO (v. AUDIT_terza_passata_tab_refresh.md):
+            // questa chiamata era incondizionata, quindi girava anche
+            // quando il tab ripristinato al caricamento pagina era
+            // Nodes o Repeaters — configureAutoRefresh() ferma SEMPRE
+            // il timer condiviso e lo riavvia solo per Trace
+            // (loadData()), rompendo così in modo silenzioso
+            // l'auto-refresh che il click sintetico di ripristino tab
+            // in index.html (eseguito PRIMA di questo
+            // DOMContentLoaded) aveva appena avviato per quel tab. Va
+            // eseguita solo se il tab davvero attivo in questo
+            // momento è tracePage — e solo se la sorgente dati
+            // corrente non l'ha già disabilitata.
+            //
+            const tracePageVisible =
+                document.getElementById("tracePage") &&
+                document.getElementById("tracePage").style.display !== "none";
+
+            if (
+                tracePageVisible &&
+                !refreshSelector.disabled
+            ) {
+
+                configureAutoRefresh();
+            }
         }
 
         document
@@ -3718,6 +3773,8 @@ function renderNeighborData(
             <tr><th>Flood Max Hops</th><td>${config.flood_max ?? "n/a"}</td></tr>
             <tr><th>Flood Max Hops (Unscoped)</th><td>${config.flood_max_unscoped ?? "n/a"}</td></tr>
             <tr><th>Flood Max Hops (Advert)</th><td>${config.flood_max_advert ?? "n/a"}</td></tr>
+            <tr><th>Default Region</th><td>${config.region_default ?? "n/a"}</td></tr>
+            <tr><th>Duty Cycle</th><td>${config.dutycycle != null ? `${config.dutycycle}%` : "n/a"}</td></tr>
         `;
     }
 

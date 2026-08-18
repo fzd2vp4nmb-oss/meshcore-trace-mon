@@ -130,7 +130,9 @@ CREATE TABLE IF NOT EXISTS repeater_config (
     rxdelay              REAL,
     flood_max            INTEGER,
     flood_max_unscoped   INTEGER,
-    flood_max_advert     INTEGER
+    flood_max_advert     INTEGER,
+    region_default       TEXT,
+    dutycycle            REAL
                         -- ottenuti via login (password vuota,
                         -- sufficiente quando il richiedente ha già
                         -- il bit admin nell'ACL) + comandi CLI
@@ -145,6 +147,8 @@ CREATE TABLE IF NOT EXISTS repeater_config (
                         -- ricevuto risposta (radio silence LoRa, non
                         -- necessariamente comando inesistente — vedi
                         -- docs/NEIGHBOR_MONITORING.md §12).
+                        -- region_default/dutycycle aggiunte in §14
+                        -- ("region default" e "get dutycycle").
 );
 
 CREATE INDEX IF NOT EXISTS idx_repeater_config_node_time
@@ -227,6 +231,14 @@ MIGRATIONS = {
         "model": "TEXT",
         "fw_build": "TEXT",
         "fw_version": "TEXT"
+    },
+    "repeater_config": {
+        # Aggiunti ai comandi CLI testuali di CLI_QUERIES dopo la
+        # prima versione della tabella (vedi
+        # docs/NEIGHBOR_MONITORING.md §14): "region default" e
+        # "get dutycycle".
+        "region_default": "TEXT",
+        "dutycycle": "REAL"
     }
 }
 
@@ -635,7 +647,9 @@ class ContactDB:
         rxdelay=None,
         flood_max=None,
         flood_max_unscoped=None,
-        flood_max_advert=None
+        flood_max_advert=None,
+        region_default=None,
+        dutycycle=None
     ):
         """
         Inserisce una riga di configurazione CLI per il repeater —
@@ -650,14 +664,16 @@ class ContactDB:
             INSERT INTO repeater_config (
                 public_key, queried_at, firmware_version,
                 path_hash_mode, txdelay, direct_txdelay, rxdelay,
-                flood_max, flood_max_unscoped, flood_max_advert
+                flood_max, flood_max_unscoped, flood_max_advert,
+                region_default, dutycycle
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 public_key, queried_at, firmware_version,
                 path_hash_mode, txdelay, direct_txdelay, rxdelay,
-                flood_max, flood_max_unscoped, flood_max_advert
+                flood_max, flood_max_unscoped, flood_max_advert,
+                region_default, dutycycle
             )
         )
 

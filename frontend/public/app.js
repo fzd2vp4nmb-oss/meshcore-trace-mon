@@ -3676,6 +3676,49 @@ function formatTxDutyCyclePercent(
     return `${pct.toFixed(2)}%`;
 }
 
+//
+// Tasso di errore CRC in ricezione — vedi
+// docs/RECEIVE_ERRORS_CRC.md per la ricostruzione completa dal
+// sorgente del firmware (RadioLibWrappers.cpp, recvRaw()).
+// nb_recv (pacchetti che hanno superato il CRC, arrivati al livello
+// mesh) e recv_errors (quelli che l'hanno fallito, scartati prima di
+// arrivare al livello mesh) sono mutuamente esclusivi per
+// costruzione — insieme coprono tutti i pacchetti per cui il chip
+// radio ha generato un interrupt RX_DONE (preambolo/sync/header
+// validi). Stessa guardia sulle altre percentuali: nessun pacchetto
+// fisicamente ricevuto (nb_recv+recv_errors=0) → "n/a", non 0.00%
+// (0% implicherebbe "zero errori su un campione", non "nessun
+// campione").
+//
+function formatCrcErrorRate(
+    recv_errors,
+    nb_recv
+) {
+
+    if (
+        recv_errors === null || recv_errors === undefined ||
+        nb_recv === null || nb_recv === undefined
+    ) {
+
+        return "n/a";
+    }
+
+    const total =
+        nb_recv + recv_errors;
+
+    if (
+        !total
+    ) {
+
+        return "n/a";
+    }
+
+    const pct =
+        (recv_errors / total) * 100;
+
+    return `${pct.toFixed(2)}%`;
+}
+
 function formatTelemetryType(
     type
 ) {
@@ -3772,7 +3815,8 @@ function renderNeighborData(
             <tr><th>Sent (Flood | Direct)</th><td>${status.sent_flood} | ${status.sent_direct}</td></tr>
             <tr><th>Received (Flood | Direct)</th><td>${status.recv_flood} | ${status.recv_direct}</td></tr>
             <tr><th>Duplicates (Direct | Flood)</th><td>${status.direct_dups} | ${status.flood_dups}</td></tr>
-            <tr><th>Receive Errors</th><td>${status.recv_errors ?? "n/a"}</td></tr>
+            <tr><th>Receive Errors (CRC Fail)</th><td>${status.recv_errors ?? "n/a"}</td></tr>
+            <tr><th>CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.nb_recv)}</td></tr>
             <tr><th>Full Events</th><td>${status.full_evts}</td></tr>
             <tr><th>Airtime (TX | RX)</th><td>${formatDurationLong(status.airtime)} | ${formatDurationLong(status.rx_airtime)}</td></tr>
             <tr><th>Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.airtime, status.rx_airtime, status.uptime)}</td></tr>

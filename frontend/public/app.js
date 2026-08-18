@@ -3769,12 +3769,12 @@ function renderNeighborData(
             <tr><th>TX Queue Length</th><td>${status.tx_queue_len}</td></tr>
             <tr><th>Packets Received</th><td>${status.nb_recv}</td></tr>
             <tr><th>Packets Sent</th><td>${status.nb_sent}</td></tr>
-            <tr><th>Sent (Flood / Direct)</th><td>${status.sent_flood} / ${status.sent_direct}</td></tr>
-            <tr><th>Received (Flood / Direct)</th><td>${status.recv_flood} / ${status.recv_direct}</td></tr>
-            <tr><th>Duplicates (Direct / Flood)</th><td>${status.direct_dups} / ${status.flood_dups}</td></tr>
+            <tr><th>Sent (Flood | Direct)</th><td>${status.sent_flood} | ${status.sent_direct}</td></tr>
+            <tr><th>Received (Flood | Direct)</th><td>${status.recv_flood} | ${status.recv_direct}</td></tr>
+            <tr><th>Duplicates (Direct | Flood)</th><td>${status.direct_dups} | ${status.flood_dups}</td></tr>
             <tr><th>Receive Errors</th><td>${status.recv_errors ?? "n/a"}</td></tr>
             <tr><th>Full Events</th><td>${status.full_evts}</td></tr>
-            <tr><th>Airtime (TX / RX)</th><td>${formatDurationLong(status.airtime)} / ${formatDurationLong(status.rx_airtime)}</td></tr>
+            <tr><th>Airtime (TX | RX)</th><td>${formatDurationLong(status.airtime)} | ${formatDurationLong(status.rx_airtime)}</td></tr>
             <tr><th>Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.airtime, status.rx_airtime, status.uptime)}</td></tr>
             <tr><th>TX Duty Cycle (osservato, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.airtime, status.uptime)}</td></tr>
             <tr><th>Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>

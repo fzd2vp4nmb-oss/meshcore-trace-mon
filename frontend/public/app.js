@@ -3610,6 +3610,72 @@ function formatDurationLong(
     return `${days}d ${hours}h ${minutes}m`;
 }
 
+//
+// Percentuale di canale occupato dal traffico di QUESTO repeater
+// (TX+RX) sul totale del suo uptime — metrica di "channel
+// utilization" locale, concettualmente diversa dal Duty Cycle
+// normativo mostrato in Config (quello è TX-only e riguarda i
+// vincoli regolamentari sulla trasmissione, non quanto canale è
+// stato occupato in totale). rx_airtime conta solo il tempo speso a
+// ricevere pacchetti effettivi (preamble/payload rilevati), non
+// tutto il tempo in ascolto — quindi TX+RX qui è un proxy ragionevole
+// di "quanto era carico il canale", non un doppio conteggio del
+// tempo di ascolto passivo. Guardia su uptime nullo/zero: nessuna
+// divisione per zero, "n/a" come per gli altri campi mancanti.
+//
+function formatAirtimePercent(
+    tx_secs,
+    rx_secs,
+    uptime_secs
+) {
+
+    if (
+        tx_secs === null || tx_secs === undefined ||
+        rx_secs === null || rx_secs === undefined ||
+        !uptime_secs
+    ) {
+
+        return "n/a";
+    }
+
+    const pct =
+        ((tx_secs + rx_secs) / uptime_secs) * 100;
+
+    return `${pct.toFixed(2)}%`;
+}
+
+//
+// TX Duty Cycle OSSERVATO — a differenza di Airtime % (mesh), qui
+// conta solo il TX, esattamente come il meccanismo di autolimitazione
+// del firmware (docs.meshcore.io/cli_commands: dopo ogni TX il
+// repeater impone un silenzio forzato proporzionale al tempo di
+// trasmissione appena fatto — un tetto, non una media forzata).
+// Confrontabile mela-con-mela con "Duty Cycle" in Config
+// (get dutycycle, stesso TX-only) per vedere quanto il traffico
+// reale si avvicina al tetto impostato — a differenza di Airtime %
+// (mesh), che include anche RX e non è mai stato pensato per questo
+// confronto (RX non è soggetto ad alcun limite normativo). Stessa
+// guardia su uptime nullo/zero di formatAirtimePercent().
+//
+function formatTxDutyCyclePercent(
+    tx_secs,
+    uptime_secs
+) {
+
+    if (
+        tx_secs === null || tx_secs === undefined ||
+        !uptime_secs
+    ) {
+
+        return "n/a";
+    }
+
+    const pct =
+        (tx_secs / uptime_secs) * 100;
+
+    return `${pct.toFixed(2)}%`;
+}
+
 function formatTelemetryType(
     type
 ) {
@@ -3708,7 +3774,9 @@ function renderNeighborData(
             <tr><th>Duplicates (Direct / Flood)</th><td>${status.direct_dups} / ${status.flood_dups}</td></tr>
             <tr><th>Receive Errors</th><td>${status.recv_errors ?? "n/a"}</td></tr>
             <tr><th>Full Events</th><td>${status.full_evts}</td></tr>
-            <tr><th>Airtime (TX / RX)</th><td>${status.airtime} / ${status.rx_airtime}</td></tr>
+            <tr><th>Airtime (TX / RX)</th><td>${formatDurationLong(status.airtime)} / ${formatDurationLong(status.rx_airtime)}</td></tr>
+            <tr><th>Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.airtime, status.rx_airtime, status.uptime)}</td></tr>
+            <tr><th>TX Duty Cycle (osservato, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.airtime, status.uptime)}</td></tr>
             <tr><th>Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>
         `;
     }

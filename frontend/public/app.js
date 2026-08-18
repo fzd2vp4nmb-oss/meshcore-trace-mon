@@ -2479,26 +2479,46 @@ function renderDeviceStatusTable(
     // table dei Repeaters (dove un fallimento azzera l'intero
     // oggetto), qui i tre gruppi core/radio/packets possono fallire
     // indipendentemente da un giro all'altro — vedi COALESCE in
-    // upsert_device_status() lato backend. ?? gestisce anche 0 come
-    // valore legittimo (es. Errors: 0), a differenza di ||.
+    // upsert_device_status() lato backend. != null (o ??) gestisce
+    // anche 0 come valore legittimo (es. Error Flags: 0), a
+    // differenza di ||.
+    //
+    // Stesso ordine e stile della tabella Status dei Repeaters per
+    // gli elementi in comune (vedi docs/NEIGHBOR_MONITORING.md §18)
+    // — Battery/Uptime/Noise Floor/Last RSSI/Last SNR/TX Queue/
+    // Packets Received/Packets Sent/Sent/Received/Airtime, più le
+    // stesse metriche derivate (CRC Error Rate, Airtime %, TX Duty
+    // Cycle), riusando le stesse funzioni di formattazione. "Error
+    // Flags (bitmask)" e "Device" restano dove erano prima — non
+    // hanno un equivalente nella tabella Repeaters. "Error Flags" è
+    // status.errors, dal frame CORE (bitmask di eventi del
+    // dispatcher — coda piena, CAD timeout, start-RX timeout) — NON
+    // lo stesso concetto di "Receive Errors (CRC Fail)" qui sotto,
+    // che è status.recv_errors dal frame PACKETS ("Receive/CRC
+    // errors (RadioLib)", stesso significato del recv_errors dei
+    // Repeaters — vedi docs/RECEIVE_ERRORS_CRC.md). Verificato sulla
+    // documentazione ufficiale (docs.meshcore.io/stats_binary_frames)
+    // prima di assumere l'equivalenza — i due campi non sono la
+    // stessa cosa nonostante il nome "Errors" di uno richiami l'altro.
     //
     table.innerHTML = `
         <tr><th>Updated</th><td>${formatSecsAgo(secsAgo)}</td></tr>
-        <tr><th>Uptime</th><td>${formatDurationLong(status.uptime_secs)}</td></tr>
         <tr><th>Battery</th><td>${status.battery_mv != null ? (status.battery_mv / 1000).toFixed(2) + "V" : "n/a"}</td></tr>
-        <tr><th>TX Queue</th><td>${status.queue_len != null ? status.queue_len + " / 16" : "n/a"}</td></tr>
-        <tr><th>Errors</th><td>${status.errors ?? "n/a"}</td></tr>
+        <tr><th>Uptime</th><td>${formatDurationLong(status.uptime_secs)}</td></tr>
         <tr><th>Noise Floor</th><td>${status.noise_floor != null ? status.noise_floor + " dBm" : "n/a"}</td></tr>
         <tr><th>Last RSSI</th><td>${status.last_rssi != null ? status.last_rssi + " dBm" : "n/a"}</td></tr>
         <tr><th>Last SNR</th><td>${status.last_snr != null ? status.last_snr + " dB" : "n/a"}</td></tr>
-        <tr><th>TX Airtime</th><td>${status.tx_air_secs != null ? status.tx_air_secs + "s" : "n/a"}</td></tr>
-        <tr><th>RX Airtime</th><td>${status.rx_air_secs != null ? status.rx_air_secs + "s" : "n/a"}</td></tr>
-        <tr><th>Packets Received</th><td>${status.recv ?? "n/a"}</td></tr>
-        <tr><th>Packets Sent</th><td>${status.sent ?? "n/a"}</td></tr>
-        <tr><th>Flood TX</th><td>${status.flood_tx ?? "n/a"}</td></tr>
-        <tr><th>Flood RX</th><td>${status.flood_rx ?? "n/a"}</td></tr>
-        <tr><th>Direct TX</th><td>${status.direct_tx ?? "n/a"}</td></tr>
-        <tr><th>Direct RX</th><td>${status.direct_rx ?? "n/a"}</td></tr>
+        <tr><th>TX Queue</th><td>${status.queue_len != null ? status.queue_len + " / 16" : "n/a"}</td></tr>
+        <tr><th>Error Flags (bitmask)</th><td>${status.errors ?? "n/a"}</td></tr>
+        <tr><th>Packets Received</th><td>${status.recv != null ? status.recv + " pkts" : "n/a"}</td></tr>
+        <tr><th>Packets Sent</th><td>${status.sent != null ? status.sent + " pkts" : "n/a"}</td></tr>
+        <tr><th>Sent (Flood | Direct)</th><td>${status.flood_tx != null ? status.flood_tx + " pkts" : "n/a"} | ${status.direct_tx != null ? status.direct_tx + " pkts" : "n/a"}</td></tr>
+        <tr><th>Received (Flood | Direct)</th><td>${status.flood_rx != null ? status.flood_rx + " pkts" : "n/a"} | ${status.direct_rx != null ? status.direct_rx + " pkts" : "n/a"}</td></tr>
+        <tr><th>Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : "n/a"}</td></tr>
+        <tr><th>CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.recv)}</td></tr>
+        <tr><th>Airtime (TX | RX)</th><td>${formatDurationLong(status.tx_air_secs)} | ${formatDurationLong(status.rx_air_secs)}</td></tr>
+        <tr><th>Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.tx_air_secs, status.rx_air_secs, status.uptime_secs)}</td></tr>
+        <tr><th>TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.tx_air_secs, status.uptime_secs)}</td></tr>
         <tr><th>Device</th><td>${status.model ?? "n/a"} running ${status.fw_build ?? "n/a"}/${status.fw_version ?? "n/a"}</td></tr>
     `;
 }

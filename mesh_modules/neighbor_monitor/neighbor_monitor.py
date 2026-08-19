@@ -32,6 +32,7 @@ def _parse_percent(raw):
 #
 CLI_QUERIES = [
     ("firmware_version", "ver", str),
+    ("hardware", "board", str),
     ("path_hash_mode", "get path.hash.mode", int),
     ("txdelay", "get txdelay", float),
     ("direct_txdelay", "get direct.txdelay", float),

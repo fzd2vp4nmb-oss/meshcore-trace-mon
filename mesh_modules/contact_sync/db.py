@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS repeater_config (
     public_key           TEXT NOT NULL REFERENCES nodes(public_key),
     queried_at           INTEGER NOT NULL,
     firmware_version     TEXT,
+    hardware             TEXT,
     path_hash_mode       INTEGER,
     txdelay              REAL,
     direct_txdelay       REAL,
@@ -149,6 +150,7 @@ CREATE TABLE IF NOT EXISTS repeater_config (
                         -- docs/NEIGHBOR_MONITORING.md §12).
                         -- region_default/dutycycle aggiunte in §14
                         -- ("region default" e "get dutycycle").
+                        -- hardware aggiunta in §19 ("board").
 );
 
 CREATE INDEX IF NOT EXISTS idx_repeater_config_node_time
@@ -238,7 +240,9 @@ MIGRATIONS = {
         # docs/NEIGHBOR_MONITORING.md §14): "region default" e
         # "get dutycycle".
         "region_default": "TEXT",
-        "dutycycle": "REAL"
+        "dutycycle": "REAL",
+        # Aggiunta in §19: "board" (nome hardware del repeater).
+        "hardware": "TEXT"
     }
 }
 
@@ -641,6 +645,7 @@ class ContactDB:
         public_key,
         queried_at,
         firmware_version=None,
+        hardware=None,
         path_hash_mode=None,
         txdelay=None,
         direct_txdelay=None,
@@ -662,15 +667,15 @@ class ContactDB:
         self._conn.execute(
             """
             INSERT INTO repeater_config (
-                public_key, queried_at, firmware_version,
+                public_key, queried_at, firmware_version, hardware,
                 path_hash_mode, txdelay, direct_txdelay, rxdelay,
                 flood_max, flood_max_unscoped, flood_max_advert,
                 region_default, dutycycle
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                public_key, queried_at, firmware_version,
+                public_key, queried_at, firmware_version, hardware,
                 path_hash_mode, txdelay, direct_txdelay, rxdelay,
                 flood_max, flood_max_unscoped, flood_max_advert,
                 region_default, dutycycle

@@ -91,6 +91,24 @@ cd /home/meshcore/trace-mon
 
 NODE="node_XX"
 IP_SERVER="Y.Y.Y.Y"
+
+#
+# Log su file degli errori di questo script, in aggiunta all'echo su
+# stdout (che raggiunge comunque l'email di cron, se MAILTO è
+# configurato) — così un fallimento resta visibile anche sui nodi dove
+# cron non invia email per i job falliti. File dedicato agli script di
+# manutenzione lanciati da cron (distinto da trace-mon.log, che è il
+# log del daemon), ruotato da logrotate insieme a trace-mon.log (stessa
+# stanza in config/logrotate.conf).
+#
+LOGFILE="/home/meshcore/trace-mon/logs/cron-errors.log"
+mkdir -p "$(dirname "$LOGFILE")"
+
+log_err() {
+    echo "$1"
+    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$LOGFILE"
+}
+
 YEAR=$(date +"%Y")
 MONTH=$(date +"%m")
 MONTH=$((10#$MONTH - 1))
@@ -114,14 +132,14 @@ FILEOUTZIP="trace-$YEAR-$MONTH.json.gz"
 #
 
 if [ ! -f data/trace.json ]; then
-    echo "Errore: data/trace.json non trovato, backup annullato."
+    log_err "Errore: data/trace.json non trovato, backup annullato."
     exit 1
 fi
 
 cp data/trace.json "backup/$FILEOUT"
 
 if [ $? -ne 0 ]; then
-    echo "Errore durante la copia di data/trace.json in backup/$FILEOUT"
+    log_err "Errore durante la copia di data/trace.json in backup/$FILEOUT"
     exit 1
 fi
 
@@ -130,7 +148,7 @@ sleep 10
 gzip "backup/$FILEOUT"
 
 if [ $? -ne 0 ] || [ ! -f "backup/$FILEOUTZIP" ]; then
-    echo "Errore durante la compressione di backup/$FILEOUT"
+    log_err "Errore durante la compressione di backup/$FILEOUT"
     exit 1
 fi
 
@@ -149,7 +167,7 @@ cd /home/meshcore/trace-mon/backup
 scp -P 15450 "$FILEOUTZIP" trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
 
 if [ $? -ne 0 ]; then
-    echo "Errore durante l'invio di $FILEOUTZIP al Collettore (il backup locale resta comunque disponibile in backup/)."
+    log_err "Errore durante l'invio di $FILEOUTZIP al Collettore (il backup locale resta comunque disponibile in backup/)."
     exit 1
 fi
 
@@ -166,6 +184,23 @@ cd /home/meshcore/trace-mon
 NODE="node_XX"
 IP_SERVER="Y.Y.Y.Y"
 SNAPSHOT="data/contacts_export.db"
+
+#
+# Log su file degli errori di questo script, in aggiunta all'echo su
+# stdout (che raggiunge comunque l'email di cron, se MAILTO è
+# configurato) — così un fallimento resta visibile anche sui nodi dove
+# cron non invia email per i job falliti. File dedicato agli script di
+# manutenzione lanciati da cron (distinto da trace-mon.log, che è il
+# log del daemon), ruotato da logrotate insieme a trace-mon.log (stessa
+# stanza in config/logrotate.conf).
+#
+LOGFILE="/home/meshcore/trace-mon/logs/cron-errors.log"
+mkdir -p "$(dirname "$LOGFILE")"
+
+log_err() {
+    echo "$1"
+    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$LOGFILE"
+}
 
 #
 # Se il daemon non ha ancora creato il DB (es. subito dopo
@@ -190,14 +225,14 @@ rm -f "$SNAPSHOT"
 sqlite3 data/contacts.db "VACUUM INTO '$SNAPSHOT'"
 
 if [ $? -ne 0 ]; then
-    echo "Errore durante la creazione dello snapshot di contacts.db"
+    log_err "Errore durante la creazione dello snapshot di contacts.db"
     exit 1
 fi
 
 scp -P 15450 "$SNAPSHOT" trace-mon@$IP_SERVER:/home/trace-mon/data/$NODE/contacts.db
 
 if [ $? -ne 0 ]; then
-    echo "Errore durante l'invio di $SNAPSHOT al Collettore"
+    log_err "Errore durante l'invio di $SNAPSHOT al Collettore"
     exit 1
 fi
 
@@ -215,6 +250,23 @@ NODE="node_XX"
 IP_SERVER="Y.Y.Y.Y"
 
 #
+# Log su file degli errori di questo script, in aggiunta all'echo su
+# stdout (che raggiunge comunque l'email di cron, se MAILTO è
+# configurato) — così un fallimento resta visibile anche sui nodi dove
+# cron non invia email per i job falliti. File dedicato agli script di
+# manutenzione lanciati da cron (distinto da trace-mon.log, che è il
+# log del daemon), ruotato da logrotate insieme a trace-mon.log (stessa
+# stanza in config/logrotate.conf).
+#
+LOGFILE="/home/meshcore/trace-mon/logs/cron-errors.log"
+mkdir -p "$(dirname "$LOGFILE")"
+
+log_err() {
+    echo "$1"
+    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$LOGFILE"
+}
+
+#
 # Rotazione: esporta il mese appena concluso da path_observations
 # (dentro data/contacts.db) in backup/path_observations-YYYY-MM.json.gz,
 # rimuove quelle righe dalla tabella live, compatta il DB. Va eseguito
@@ -225,7 +277,7 @@ IP_SERVER="Y.Y.Y.Y"
 ./tools/rotate_path_observations.py
 
 if [ $? -ne 0 ]; then
-    echo "Errore durante la rotazione di path_observations"
+    log_err "Errore durante la rotazione di path_observations"
     exit 1
 fi
 
@@ -238,7 +290,7 @@ fi
 ./tools/rotate_repeater_neighbours.py
 
 if [ $? -ne 0 ]; then
-    echo "Errore durante la rotazione di repeater_neighbours"
+    log_err "Errore durante la rotazione di repeater_neighbours"
     exit 1
 fi
 
@@ -276,7 +328,7 @@ if [ -f "$FILEOUTZIP" ]; then
     scp -P 15450 $FILEOUTZIP trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
 
     if [ $? -ne 0 ]; then
-        echo "Errore durante l'invio di $FILEOUTZIP al Collettore"
+        log_err "Errore durante l'invio di $FILEOUTZIP al Collettore"
         SCP_FAILED=1
     fi
 fi
@@ -285,7 +337,7 @@ if [ -f "$FILEOUTZIP2" ]; then
     scp -P 15450 $FILEOUTZIP2 trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
 
     if [ $? -ne 0 ]; then
-        echo "Errore durante l'invio di $FILEOUTZIP2 al Collettore"
+        log_err "Errore durante l'invio di $FILEOUTZIP2 al Collettore"
         SCP_FAILED=1
     fi
 fi
@@ -307,10 +359,27 @@ cd /home/meshcore/trace-mon
 NODE="node_XX"
 IP_SERVER="Y.Y.Y.Y"
 
+#
+# Log su file degli errori di questo script, in aggiunta all'echo su
+# stdout (che raggiunge comunque l'email di cron, se MAILTO è
+# configurato) — così un fallimento resta visibile anche sui nodi dove
+# cron non invia email per i job falliti. File dedicato agli script di
+# manutenzione lanciati da cron (distinto da trace-mon.log, che è il
+# log del daemon), ruotato da logrotate insieme a trace-mon.log (stessa
+# stanza in config/logrotate.conf).
+#
+LOGFILE="/home/meshcore/trace-mon/logs/cron-errors.log"
+mkdir -p "$(dirname "$LOGFILE")"
+
+log_err() {
+    echo "$1"
+    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$LOGFILE"
+}
+
 ./main_trace.py
 
 if [ $? -ne 0 ]; then
-    echo "Errore durante l'esecuzione di main_trace.py"
+    log_err "Errore durante l'esecuzione di main_trace.py"
     exit 1
 fi
 
@@ -319,7 +388,7 @@ cd /home/meshcore/trace-mon/data
 scp -P 15450 trace.json trace-mon@$IP_SERVER:/home/trace-mon/data/$NODE
 
 if [ $? -ne 0 ]; then
-    echo "Errore durante l'invio di trace.json al Collettore"
+    log_err "Errore durante l'invio di trace.json al Collettore"
     exit 1
 fi
 

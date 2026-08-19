@@ -592,11 +592,25 @@ body.dark #neighborRegionDump {
    Sostituisce l'attributo HTML nativo title sugli span per-hop di
    Trace/Nodes: title non ha equivalente touch sui dispositivi
    mobili (nessun concetto di hover) — serve un tooltip reale
-   gestito via JS (initTooltips() in app.js), attivato sia da
-   mouseover (desktop) sia da tap (mobile). Stile ricalcato sul
-   tooltip nativo del browser, invariato tra light/dark mode come
-   fanno i tooltip nativi stessi (non seguono il tema della pagina).
+   gestito via JS (initTooltips() in app.js). Apertura/chiusura
+   dipendono solo da mouseover/mouseout (niente handler "click"
+   parallelo): sui browser mobili il tap sintetizza già questa
+   coppia di eventi al primo tocco sull'elemento, esattamente come
+   nel tooltip di riferimento (onmouseover/onmouseleave su
+   push-status.js) — stesso piazzamento "appena sotto l'etichetta"
+   ancorato all'elemento invece che al cursore. Usato anche per le
+   spiegazioni sui campi delle tabelle Device Status/Repeaters (vedi
+   data-tooltip sui <th> in renderDeviceStatusTable()/
+   renderNeighborData()) — stesso meccanismo, non solo per Trace/
+   Nodes. Stile (colori/sfondo) ricalcato sul tooltip nativo del
+   browser, invariato tra light/dark mode come fanno i tooltip nativi
+   stessi (non seguono il tema della pagina).
 ========================= */
+
+[data-tooltip] {
+
+    cursor: help;
+}
 
 .tooltip-bubble {
 
@@ -614,7 +628,11 @@ body.dark #neighborRegionDump {
 
     line-height: 1.4;
 
-    white-space: nowrap;
+    white-space: normal;
+
+    max-width: min(320px, 90vw);
+
+    word-break: break-word;
 
     pointer-events: none;
 

@@ -476,36 +476,69 @@ function buildPathTooltipHtml(
 // span sono generati dinamicamente via innerHTML, un binding diretto
 // andrebbe perso ad ogni ri-render della tabella.
 //
+// Placement e interazione ricalcati sul tooltip Bootstrap-like di
+// riferimento (push-status.js: show()/hide() agganciati a
+// onmouseover/onmouseleave, tooltip ancorato all'elemento invece che
+// al cursore): quello schema funziona bene anche su mobile perché i
+// browser mobili, al primo tap su un elemento, sintetizzano proprio
+// una sequenza mouseover→mouseout (simulazione dell'hover), senza
+// bisogno di alcun handler touch dedicato. La versione precedente qui
+// aggiungeva ANCHE un handler "click" per il toggle su mobile: sullo
+// stesso tap, il browser genera prima il mouseover sintetico (che
+// apriva il tooltip e impostava activeTarget) e poi il click sintetico
+// subito dopo, che — trovando activeTarget già uguale al target —
+// lo richiudeva immediatamente. Il tooltip lampeggiava e spariva
+// all'istante: è la causa della scarsa usabilità su touch. Bastava
+// affidarsi solo a mouseover/mouseout, come fa il riferimento, per
+// evitare la corsa fra i due handler.
+//
+// La posizione resta ancorata al rettangolo dell'elemento (non al
+// puntatore) e il tooltip viene appeso a document.body con
+// position:fixed anziché come figlio in-flow dell'elemento: alcune
+// tabelle (es. #pathTable) hanno overflow-y:auto con altezza
+// limitata, e un tooltip assoluto annidato lì dentro verrebbe
+// tagliato dal contenitore che scrolla. Restare a livello di body con
+// coordinate calcolate dal target riproduce lo stesso "si apre appena
+// sotto l'etichetta" del riferimento, ma senza il rischio di clipping.
+//
 function initTooltips() {
 
     let bubble = null;
     let activeTarget = null;
 
-    function positionTooltip(x, y) {
+    function positionTooltip(target) {
 
         if (!bubble) {
             return;
         }
 
-        const offset = 12;
-        const rect = bubble.getBoundingClientRect();
+        const margin = 4;
+        const targetRect = target.getBoundingClientRect();
+        const bubbleRect = bubble.getBoundingClientRect();
 
-        let left = x + offset;
-        let top = y + offset;
+        let left = targetRect.left;
+        let top = targetRect.bottom + margin;
 
-        if (left + rect.width > window.innerWidth) {
-            left = x - rect.width - offset;
+        if (left + bubbleRect.width > window.innerWidth - margin) {
+            left = window.innerWidth - bubbleRect.width - margin;
         }
 
-        if (top + rect.height > window.innerHeight) {
-            top = y - rect.height - offset;
+        if (left < margin) {
+            left = margin;
+        }
+
+        if (top + bubbleRect.height > window.innerHeight - margin) {
+            // Non c'è spazio sotto: lo si ribalta sopra l'elemento,
+            // come il flip verticale del riferimento (max-width/
+            // posizionamento statico che segue il flusso).
+            top = targetRect.top - bubbleRect.height - margin;
         }
 
         bubble.style.left = left + "px";
         bubble.style.top = top + "px";
     }
 
-    function showTooltip(target, x, y) {
+    function showTooltip(target) {
 
         const text =
             target.getAttribute("data-tooltip");
@@ -522,7 +555,7 @@ function initTooltips() {
 
         document.body.appendChild(bubble);
 
-        positionTooltip(x, y);
+        positionTooltip(target);
 
         activeTarget = target;
     }
@@ -538,10 +571,14 @@ function initTooltips() {
     }
 
     //
-    // Desktop — mouseover/mouseout invece di mouseenter/mouseleave:
-    // questi ultimi non risalgono dai figli (niente bubbling),
-    // indispensabile qui perché il listener è su document, non
-    // sul singolo span.
+    // mouseover/mouseout invece di mouseenter/mouseleave: questi
+    // ultimi non risalgono dai figli (niente bubbling), indispensabile
+    // qui perché il listener è su document, non sul singolo span.
+    // Come nel riferimento, sono gli UNICI due eventi da cui dipende
+    // apertura/chiusura — niente handler "click" parallelo: sui
+    // browser mobili il tap li sintetizza già entrambi (mouseover al
+    // tocco, mouseout al tocco successivo altrove), quindi coprono
+    // anche il touch senza bisogno d'altro.
     //
     document.addEventListener(
         "mouseover",
@@ -550,23 +587,8 @@ function initTooltips() {
             const target =
                 e.target.closest("[data-tooltip]");
 
-            if (target) {
-                showTooltip(target, e.clientX, e.clientY);
-            }
-        }
-    );
-
-    document.addEventListener(
-        "mousemove",
-        e => {
-
-            if (
-                bubble &&
-                activeTarget &&
-                activeTarget.contains(e.target)
-            ) {
-
-                positionTooltip(e.clientX, e.clientY);
+            if (target && target !== activeTarget) {
+                showTooltip(target);
             }
         }
     );
@@ -575,42 +597,15 @@ function initTooltips() {
         "mouseout",
         e => {
 
-            if (e.target.closest("[data-tooltip]")) {
-                hideTooltip();
-            }
-        }
-    );
-
-    //
-    // Mobile — tap per aprire/chiudere, tap altrove per chiudere.
-    // click copre sia il touch reale (i browser mobile emettono
-    // click dopo un tap) sia il click del mouse su desktop, qui
-    // innocuo dato che lì il tooltip è già aperto da mouseover.
-    //
-    document.addEventListener(
-        "click",
-        e => {
-
             const target =
                 e.target.closest("[data-tooltip]");
 
-            if (!target) {
+            if (
+                target &&
+                target === activeTarget &&
+                !target.contains(e.relatedTarget)
+            ) {
                 hideTooltip();
-                return;
-            }
-
-            if (activeTarget === target) {
-                hideTooltip();
-            }
-            else {
-                const rect =
-                    target.getBoundingClientRect();
-
-                showTooltip(
-                    target,
-                    rect.left,
-                    rect.bottom
-                );
             }
         }
     );
@@ -2502,24 +2497,24 @@ function renderDeviceStatusTable(
     // stessa cosa nonostante il nome "Errors" di uno richiami l'altro.
     //
     table.innerHTML = `
-        <tr><th>Updated</th><td>${formatSecsAgo(secsAgo)}</td></tr>
-        <tr><th>Battery</th><td>${status.battery_mv != null ? (status.battery_mv / 1000).toFixed(2) + "V" : "n/a"}</td></tr>
-        <tr><th>Uptime</th><td>${formatDurationLong(status.uptime_secs)}</td></tr>
-        <tr><th>Noise Floor</th><td>${status.noise_floor != null ? status.noise_floor + " dBm" : "n/a"}</td></tr>
-        <tr><th>Last RSSI</th><td>${status.last_rssi != null ? status.last_rssi + " dBm" : "n/a"}</td></tr>
-        <tr><th>Last SNR</th><td>${status.last_snr != null ? status.last_snr + " dB" : "n/a"}</td></tr>
-        <tr><th>TX Queue</th><td>${status.queue_len != null ? status.queue_len + " / 16" : "n/a"}</td></tr>
-        <tr><th>Error Flags (bitmask)</th><td>${status.errors ?? "n/a"}</td></tr>
-        <tr><th>Packets Received</th><td>${status.recv != null ? status.recv + " pkts" : "n/a"}</td></tr>
-        <tr><th>Packets Sent</th><td>${status.sent != null ? status.sent + " pkts" : "n/a"}</td></tr>
-        <tr><th>Sent (Flood | Direct)</th><td>${status.flood_tx != null ? status.flood_tx + " pkts" : "n/a"} | ${status.direct_tx != null ? status.direct_tx + " pkts" : "n/a"}</td></tr>
-        <tr><th>Received (Flood | Direct)</th><td>${status.flood_rx != null ? status.flood_rx + " pkts" : "n/a"} | ${status.direct_rx != null ? status.direct_rx + " pkts" : "n/a"}</td></tr>
-        <tr><th>Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : "n/a"}</td></tr>
-        <tr><th>CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.recv)}</td></tr>
-        <tr><th>Airtime (TX | RX)</th><td>${formatDurationLong(status.tx_air_secs)} | ${formatDurationLong(status.rx_air_secs)}</td></tr>
-        <tr><th>Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.tx_air_secs, status.rx_air_secs, status.uptime_secs)}</td></tr>
-        <tr><th>TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.tx_air_secs, status.uptime_secs)}</td></tr>
-        <tr><th>Device</th><td>${status.model ?? "n/a"} running ${status.fw_build ?? "n/a"}/${status.fw_version ?? "n/a"}</td></tr>
+        <tr><th data-tooltip="Tempo trascorso dall'ultimo aggiornamento dei dati del companion locale mostrati in questa tabella (letti a intervalli da trace-mon, non in tempo reale).">Updated</th><td>${formatSecsAgo(secsAgo)}</td></tr>
+        <tr><th data-tooltip="Tensione della batteria, riportata dal device in millivolt e convertita qui in Volt.">Battery</th><td>${status.battery_mv != null ? (status.battery_mv / 1000).toFixed(2) + "V" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Tempo trascorso dall'ultimo avvio del device, nel formato giorni/ore/minuti.">Uptime</th><td>${formatDurationLong(status.uptime_secs)}</td></tr>
+        <tr><th data-tooltip="Rumore di fondo del canale radio misurato dal chip, in dBm. Valori più negativi indicano un canale più silenzioso; un innalzamento persistente segnala interferenze o canale affollato.">Noise Floor</th><td>${status.noise_floor != null ? status.noise_floor + " dBm" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Potenza del segnale (RSSI, in dBm) dell'ultimo pacchetto ricevuto. Più vicino a 0 = segnale più forte.">Last RSSI</th><td>${status.last_rssi != null ? status.last_rssi + " dBm" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Rapporto segnale/rumore (SNR, in dB) dell'ultimo pacchetto ricevuto: quanto il segnale utile emerge sul rumore di fondo. Valori più alti indicano una ricezione più pulita.">Last SNR</th><td>${status.last_snr != null ? status.last_snr + " dB" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Numero di pacchetti attualmente in coda in attesa di trasmissione, sul totale della coda disponibile. Una coda spesso piena indica che il canale radio non riesce a smaltire il traffico alla velocità con cui viene generato.">TX Queue</th><td>${status.queue_len != null ? status.queue_len + " / 16" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Bitmask di eventi del dispatcher radio a basso livello (es. coda piena, timeout CAD, timeout di avvio ricezione) — NON un conteggio di pacchetti, né lo stesso dato di &quot;Receive Errors (CRC Fail)&quot; qui sotto nonostante il nome simile.">Error Flags (bitmask)</th><td>${status.errors ?? "n/a"}</td></tr>
+        <tr><th data-tooltip="Totale dei pacchetti ricevuti dal boot che hanno superato il controllo CRC e sono arrivati al livello mesh (somma di flood + direct).">Packets Received</th><td>${status.recv != null ? status.recv + " pkts" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Totale dei pacchetti trasmessi dal boot (somma di flood + direct).">Packets Sent</th><td>${status.sent != null ? status.sent + " pkts" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Pacchetti trasmessi suddivisi per modalità di instradamento: in flood (rilanciati da tutti i nodi che li sentono) o diretti (instradati verso un percorso specifico).">Sent (Flood | Direct)</th><td>${status.flood_tx != null ? status.flood_tx + " pkts" : "n/a"} | ${status.direct_tx != null ? status.direct_tx + " pkts" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Pacchetti ricevuti suddivisi per la modalità di instradamento con cui sono arrivati: flood o diretti.">Received (Flood | Direct)</th><td>${status.flood_rx != null ? status.flood_rx + " pkts" : "n/a"} | ${status.direct_rx != null ? status.direct_rx + " pkts" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Pacchetti fisicamente ricevuti dal chip radio (preambolo/sync/header validi) il cui payload però ha fallito il controllo CRC in lettura. Non indica solo collisioni: anche segnale debole, interferenze o un pacchetto troncato producono lo stesso effetto.">Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : "n/a"}</td></tr>
+        <tr><th data-tooltip="Percentuale di pacchetti fisicamente ricevuti persi per errore CRC: Receive Errors / (Packets Received + Receive Errors) × 100. Mostra n/a se non è stato fisicamente ricevuto alcun pacchetto.">CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.recv)}</td></tr>
+        <tr><th data-tooltip="Tempo cumulativo, dall'avvio, passato rispettivamente a trasmettere e a ricevere pacchetti effettivi (non il tempo totale con la radio accesa).">Airtime (TX | RX)</th><td>${formatDurationLong(status.tx_air_secs)} | ${formatDurationLong(status.rx_air_secs)}</td></tr>
+        <tr><th data-tooltip="Percentuale di uptime in cui il canale è stato occupato da traffico, proprio in TX più altrui rilevato in RX: (Airtime TX + Airtime RX) / Uptime × 100. Indica quanto è congestionata la mesh nei dintorni, non il rispetto di un limite normativo.">Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.tx_air_secs, status.rx_air_secs, status.uptime_secs)}</td></tr>
+        <tr><th data-tooltip="Percentuale di uptime passata in trasmissione: Airtime TX / Uptime × 100. Solo TX: confrontabile direttamente con &quot;Duty Cycle&quot; nella tabella Config dei Repeaters (anch'esso solo TX) per vedere quanto ci si avvicina al limite impostato.">TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.tx_air_secs, status.uptime_secs)}</td></tr>
+        <tr><th data-tooltip="Modello del device companion e versione/build del firmware in esecuzione.">Device</th><td>${status.model ?? "n/a"} running ${status.fw_build ?? "n/a"}/${status.fw_version ?? "n/a"}</td></tr>
     `;
 }
 
@@ -3817,31 +3812,31 @@ function renderNeighborData(
 
         statusTable.innerHTML =
             "<tr><td>No status data available.</td></tr>" +
-            `<tr><th>Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>`;
+            `<tr><th data-tooltip="Differenza tra l'orologio dichiarato dal repeater e quello di questo host, in secondi. Positivo = orologio del repeater avanti. Uno scarto di giorni segnala tipicamente un repeater senza RTC esterno mai risincronizzato.">Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>`;
     }
 
     else {
 
         statusTable.innerHTML = `
-            <tr><th>Queried At</th><td>${formatUnixTime(status.queried_at)}</td></tr>
-            <tr><th>Battery</th><td>${(status.bat / 1000).toFixed(2)}V</td></tr>
-            <tr><th>Uptime</th><td>${formatDurationLong(status.uptime)}</td></tr>
-            <tr><th>Noise Floor</th><td>${status.noise_floor} dBm</td></tr>
-            <tr><th>Last RSSI</th><td>${status.last_rssi} dBm</td></tr>
-            <tr><th>Last SNR</th><td>${status.last_snr} dB</td></tr>
-            <tr><th>TX Queue Length</th><td>${status.tx_queue_len}</td></tr>
-            <tr><th>Packets Received</th><td>${status.nb_recv} pkts</td></tr>
-            <tr><th>Packets Sent</th><td>${status.nb_sent} pkts</td></tr>
-            <tr><th>Sent (Flood | Direct)</th><td>${status.sent_flood} pkts | ${status.sent_direct} pkts</td></tr>
-            <tr><th>Received (Flood | Direct)</th><td>${status.recv_flood} pkts | ${status.recv_direct} pkts</td></tr>
-            <tr><th>Duplicates (Direct | Flood)</th><td>${status.direct_dups} pkts | ${status.flood_dups} pkts</td></tr>
-            <tr><th>Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : "n/a"}</td></tr>
-            <tr><th>CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.nb_recv)}</td></tr>
-            <tr><th>Full Events</th><td>${status.full_evts}</td></tr>
-            <tr><th>Airtime (TX | RX)</th><td>${formatDurationLong(status.airtime)} | ${formatDurationLong(status.rx_airtime)}</td></tr>
-            <tr><th>Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.airtime, status.rx_airtime, status.uptime)}</td></tr>
-            <tr><th>TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.airtime, status.uptime)}</td></tr>
-            <tr><th>Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>
+            <tr><th data-tooltip="Data e ora dell'ultima interrogazione riuscita a questo repeater. Le richieste con esito negativo (timeout, permesso ACL mancante o rimosso) non producono una nuova riga: qui resta sempre visibile l'ultimo dato disponibile, con la sua età.">Queried At</th><td>${formatUnixTime(status.queried_at)}</td></tr>
+            <tr><th data-tooltip="Tensione della batteria, riportata dal device in millivolt e convertita qui in Volt.">Battery</th><td>${(status.bat / 1000).toFixed(2)}V</td></tr>
+            <tr><th data-tooltip="Tempo trascorso dall'ultimo avvio del device, nel formato giorni/ore/minuti.">Uptime</th><td>${formatDurationLong(status.uptime)}</td></tr>
+            <tr><th data-tooltip="Rumore di fondo del canale radio misurato dal chip, in dBm. Valori più negativi indicano un canale più silenzioso; un innalzamento persistente segnala interferenze o canale affollato.">Noise Floor</th><td>${status.noise_floor} dBm</td></tr>
+            <tr><th data-tooltip="Potenza del segnale (RSSI, in dBm) dell'ultimo pacchetto ricevuto. Più vicino a 0 = segnale più forte.">Last RSSI</th><td>${status.last_rssi} dBm</td></tr>
+            <tr><th data-tooltip="Rapporto segnale/rumore (SNR, in dB) dell'ultimo pacchetto ricevuto: quanto il segnale utile emerge sul rumore di fondo. Valori più alti indicano una ricezione più pulita.">Last SNR</th><td>${status.last_snr} dB</td></tr>
+            <tr><th data-tooltip="Numero di pacchetti attualmente in coda sul repeater in attesa di trasmissione. Una coda spesso piena indica che il canale radio non riesce a smaltire il traffico alla velocità con cui viene generato.">TX Queue Length</th><td>${status.tx_queue_len}</td></tr>
+            <tr><th data-tooltip="Totale dei pacchetti ricevuti dal boot che hanno superato il controllo CRC e sono arrivati al livello mesh (somma di flood + direct).">Packets Received</th><td>${status.nb_recv} pkts</td></tr>
+            <tr><th data-tooltip="Totale dei pacchetti trasmessi dal boot (somma di flood + direct).">Packets Sent</th><td>${status.nb_sent} pkts</td></tr>
+            <tr><th data-tooltip="Pacchetti trasmessi suddivisi per modalità di instradamento: in flood (rilanciati da tutti i nodi che li sentono) o diretti (instradati verso un percorso specifico).">Sent (Flood | Direct)</th><td>${status.sent_flood} pkts | ${status.sent_direct} pkts</td></tr>
+            <tr><th data-tooltip="Pacchetti ricevuti suddivisi per la modalità di instradamento con cui sono arrivati: flood o diretti.">Received (Flood | Direct)</th><td>${status.recv_flood} pkts | ${status.recv_direct} pkts</td></tr>
+            <tr><th data-tooltip="Pacchetti ricevuti CORRETTAMENTE (CRC valido) ma già visti in precedenza — deduplica a livello mesh, non un errore radio. Mutuamente esclusivo da &quot;Receive Errors (CRC Fail)&quot;: un pacchetto o fallisce il CRC (non può mai risultare duplicato) o lo supera (dove può risultare nuovo o duplicato).">Duplicates (Direct | Flood)</th><td>${status.direct_dups} pkts | ${status.flood_dups} pkts</td></tr>
+            <tr><th data-tooltip="Pacchetti fisicamente ricevuti dal chip radio (preambolo/sync/header validi) il cui payload però ha fallito il controllo CRC in lettura. Non indica solo collisioni: anche segnale debole, interferenze o un pacchetto troncato producono lo stesso effetto.">Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : "n/a"}</td></tr>
+            <tr><th data-tooltip="Percentuale di pacchetti fisicamente ricevuti persi per errore CRC: Receive Errors / (Packets Received + Receive Errors) × 100. Mostra n/a se non è stato fisicamente ricevuto alcun pacchetto.">CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.nb_recv)}</td></tr>
+            <tr><th data-tooltip="Numero di volte in cui la coda di trasmissione del repeater era piena e un pacchetto non ha potuto essere accodato — indicatore di saturazione sotto carico.">Full Events</th><td>${status.full_evts}</td></tr>
+            <tr><th data-tooltip="Tempo cumulativo, dall'avvio, passato rispettivamente a trasmettere e a ricevere pacchetti effettivi (non il tempo totale con la radio accesa).">Airtime (TX | RX)</th><td>${formatDurationLong(status.airtime)} | ${formatDurationLong(status.rx_airtime)}</td></tr>
+            <tr><th data-tooltip="Percentuale di uptime in cui il canale è stato occupato da traffico, proprio in TX più altrui rilevato in RX: (Airtime TX + Airtime RX) / Uptime × 100. Indica quanto è congestionata la mesh nei dintorni, non il rispetto di un limite normativo.">Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.airtime, status.rx_airtime, status.uptime)}</td></tr>
+            <tr><th data-tooltip="Percentuale di uptime passata in trasmissione: Airtime TX / Uptime × 100. Solo TX: confrontabile direttamente con &quot;Duty Cycle&quot; nella tabella Config dei Repeaters (anch'esso solo TX) per vedere quanto ci si avvicina al limite impostato.">TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.airtime, status.uptime)}</td></tr>
+            <tr><th data-tooltip="Differenza tra l'orologio dichiarato dal repeater e quello di questo host, in secondi. Positivo = orologio del repeater avanti. Uno scarto di giorni segnala tipicamente un repeater senza RTC esterno mai risincronizzato.">Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>
         `;
     }
 
@@ -3897,16 +3892,16 @@ function renderNeighborData(
     else {
 
         configTable.innerHTML = `
-            <tr><th>Firmware Version</th><td>${config.firmware_version ?? "n/a"}</td></tr>
-            <tr><th>Path Hash Mode</th><td>${config.path_hash_mode ?? "n/a"}</td></tr>
-            <tr><th>TX Delay (Flood)</th><td>${config.txdelay ?? "n/a"}</td></tr>
-            <tr><th>TX Delay (Direct)</th><td>${config.direct_txdelay ?? "n/a"}</td></tr>
-            <tr><th>RX Delay</th><td>${config.rxdelay ?? "n/a"}</td></tr>
-            <tr><th>Flood Max Hops</th><td>${config.flood_max ?? "n/a"}</td></tr>
-            <tr><th>Flood Max Hops (Unscoped)</th><td>${config.flood_max_unscoped ?? "n/a"}</td></tr>
-            <tr><th>Flood Max Hops (Advert)</th><td>${config.flood_max_advert ?? "n/a"}</td></tr>
-            <tr><th>Default Region</th><td>${config.region_default ?? "n/a"}</td></tr>
-            <tr><th>Duty Cycle</th><td>${config.dutycycle != null ? `${config.dutycycle}%` : "n/a"}</td></tr>
+            <tr><th data-tooltip="Versione e build del firmware in esecuzione sul repeater, riportata dal comando CLI &quot;ver&quot; (richiede login con permesso admin nell'ACL).">Firmware Version</th><td>${config.firmware_version ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Dimensione in byte dell'hash usato per identificare i pacchetti in flood (0 = 1 byte/256 ID unici, 1 = 2 byte/65.536 ID, 2 = 3 byte). Un hash più corto pesa meno nel pacchetto ma satura prima lo spazio di ID unici su reti con molto traffico flood.">Path Hash Mode</th><td>${config.path_hash_mode ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Fattore che scala il ritardo casuale prima di ritrasmettere un pacchetto flood: quando più repeater vicini sentono lo stesso pacchetto, ciascuno attende un tempo casuale prima di rilanciarlo, per evitare che ritrasmettano tutti insieme collidendo. 0 disabilita il ritardo.">TX Delay (Flood)</th><td>${config.txdelay ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Come &quot;TX Delay (Flood)&quot; ma per i pacchetti instradati direttamente verso un hop specifico: valore tipicamente più basso perché meno nodi competono per ritrasmettere lo stesso pacchetto.">TX Delay (Direct)</th><td>${config.direct_txdelay ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Funzione sperimentale: i pacchetti flood ricevuti con segnale debole vengono trattenuti brevemente in una coda di ritardo, dando la precedenza ai repeater che li hanno ricevuti con segnale forte, per ridurre ritrasmissioni ridondanti.">RX Delay</th><td>${config.rxdelay ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Numero massimo di salti (hop) che un pacchetto instradato in flood può percorrere prima di essere scartato.">Flood Max Hops</th><td>${config.flood_max ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Come &quot;Flood Max Hops&quot;, ma applicato ai pacchetti flood privi di un ambito/regione (transport code) specifico.">Flood Max Hops (Unscoped)</th><td>${config.flood_max_unscoped ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Numero massimo di salti per i soli pacchetti di advert (annuncio di presenza del nodo) in flood — di norma un limite più basso rispetto al traffico flood generico.">Flood Max Hops (Advert)</th><td>${config.flood_max_advert ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Regione radio predefinita usata dal repeater quando un pacchetto non ne specifica una esplicitamente.">Default Region</th><td>${config.region_default ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Autolimitazione imposta dal firmware stesso: dopo ogni trasmissione, il repeater si impone un silenzio proporzionale al tempo appena trasmesso, per rispettare i limiti normativi di banda (es. 10% sotto 868MHz in Europa). Riguarda solo il TX, mai la ricezione — non è una media misurata: confrontalo con &quot;TX Duty Cycle (observed)&quot; in Status, non con &quot;Airtime % (mesh)&quot; che include anche l'RX.">Duty Cycle</th><td>${config.dutycycle != null ? `${config.dutycycle}%` : "n/a"}</td></tr>
         `;
     }
 

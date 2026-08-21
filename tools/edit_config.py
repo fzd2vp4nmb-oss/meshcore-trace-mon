@@ -485,8 +485,14 @@ def cmd_list_show(args):
     data = load_config()
     items = get_path(data, args.path) or []
 
-    for i, item in enumerate(items):
-        print(f"{i}: {item}")
+    #
+    # Nessun numero d'ordine davanti agli elementi: la modifica/rimozione
+    # avviene indicando il testo esatto dell'elemento, non un indice —
+    # un numero qui indurrebbe a pensare (erroneamente) che si possa
+    # scegliere per posizione, com'è invece per i menu con scelta 1/2/3.
+    #
+    for item in items:
+        print(f"- {item}")
 
 
 def cmd_list_add(args):
@@ -542,12 +548,14 @@ def cmd_trace_path_list(args):
     data = load_config()
     entries = get_path(data, "trace.paths") or []
 
-    for i, entry in enumerate(entries):
+    # V. nota in cmd_list_show: nessun numero d'ordine, la selezione
+    # avviene per testo esatto del path, non per indice.
+    for entry in entries:
 
         path, enabled = parse_path_entry(entry)
         status = "abilitato" if enabled else "disabilitato"
 
-        print(f"{i}: {path} — {status}")
+        print(f"- {path} — {status}")
 
 
 def cmd_trace_path_add(args):
@@ -644,8 +652,10 @@ def cmd_repeater_list(args):
     data = load_config()
     repeaters = get_path(data, "neighbor_monitoring.repeaters") or []
 
-    for i, r in enumerate(repeaters):
-        print(f"{i}: {r.get('name', '?')}")
+    # V. nota in cmd_list_show: nessun numero d'ordine, la selezione
+    # avviene per nome esatto del repeater, non per indice.
+    for r in repeaters:
+        print(f"- {r.get('name', '?')}")
 
 
 def cmd_repeater_add(args):

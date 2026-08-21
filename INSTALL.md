@@ -460,12 +460,9 @@ per non perdere informazioni importanti.
 
 ### Tutti i servizi sono abilitati di default
 
-La sezione `services:` di `config.yaml` (generata da `setup.sh` con
-tutti e sei i servizi — system, trace, advert, bot, contact_sync,
-neighbor_monitor — impostati su `enabled: true`) si disattiva voce
-per voce con `config.sh` (§13), non serve editarla a mano. Il
-questionario non chiede quali servizi attivare, parte sempre con
-tutti accesi.
+Al primo setup la sezione `services:` attiva tutti i servizi di
+default; per poterli disattivare esiste un editor dedicato mostrato
+in seguito.
 
 ---
 

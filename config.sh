@@ -447,6 +447,34 @@ menu_logging() {
 }
 
 # ============================================================
+# Allinea al template (docs/ARCHITECTURE.md §45) — aggiunge a
+# config.yaml solo le chiavi che config/config.yaml.template definisce
+# ma che qui non ci sono ancora (es. un parametro introdotto da una
+# versione più recente del codice, non ancora presente su
+# un'installazione già in uso). Non tocca MAI una chiave già presente
+# né una lista (path tracciati, repeater, regioni bot, servizi) — per
+# quelle restano i menu dedicati sopra.
+# ============================================================
+menu_align() {
+
+    echo
+    echo "--- Allinea al template ---"
+    echo "Confronta config.yaml con config/config.yaml.template e"
+    echo "aggiunge solo le chiavi mancanti, senza toccare nulla di già"
+    echo "presente (personalizzazioni incluse)."
+    echo
+
+    output=$(engine align)
+    echo "$output"
+
+    if [[ "$output" != *"già allineato"* ]]; then
+        CHANGES_MADE=1
+    fi
+
+    pause
+}
+
+# ============================================================
 # Menu principale
 # ============================================================
 while true; do
@@ -460,6 +488,7 @@ while true; do
     echo "  5) Repeater interrogati"
     echo "  6) Servizi"
     echo "  7) Logging"
+    echo "  8) Allinea al template (aggiungi parametri mancanti)"
     echo "  0) Esci"
     read -p "Scelta: " main_choice || { echo; break; }
 
@@ -471,6 +500,7 @@ while true; do
         5) menu_repeaters ;;
         6) menu_services ;;
         7) menu_logging ;;
+        8) menu_align ;;
         0) break ;;
         *) echo "Scelta non valida." ;;
     esac

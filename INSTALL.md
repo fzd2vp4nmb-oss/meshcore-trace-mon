@@ -456,6 +456,22 @@ Se rilanci `setup.sh` in un secondo momento, ti chiede conferma
 prima di sovrascrivere qualunque file già generato — puoi rilanciarlo
 in sicurezza anche solo per rigenerare un pezzo specifico.
 
+**Attenzione se hai già personalizzato `config.yaml` con `config.sh`
+(§13)**: il prompt di conferma per `config/config.yaml` è **distinto**
+da quello per gli script di manutenzione (Parte 1) e da quello per
+`trace-web.service` (Parte 3) — rispondere "sì" anche a QUELLO
+specifico prompt **sovrascrive l'intero file** con i valori del
+questionario, perdendo silenziosamente ogni personalizzazione fatta in
+seguito con `config.sh` che vada oltre le poche domande del
+questionario (altri path tracciati, altri repeater, retry/intervalli
+cambiati, regioni del bot aggiunte, livello di log, servizi
+disattivati). Se stai rilanciando `setup.sh` solo per un altro motivo
+(es. il Node ID/IP del server, §14.3), **rispondi "no"** quando ti
+chiede di sovrascrivere `config/config.yaml` — quel file non serve
+toccarlo per quello scopo. Per aggiungere un parametro nuovo non
+coperto dal menu, senza perdere le personalizzazioni già fatte, usa
+invece "8) Allinea al template" nel menu di `config.sh` (§13).
+
 ### Tutti i servizi sono abilitati di default
 
 La sezione `services:` di `config.yaml` (generata da `setup.sh` con
@@ -584,6 +600,15 @@ crea automaticamente un backup del file precedente e verifica che il
 risultato sia valido prima di considerarlo definitivo. Al termine,
 propone di riavviare `trace-mon.service` per applicare le modifiche.
 
+**Se una versione più recente del progetto introduce un nuovo
+parametro** che il menu sopra non copre ancora, la voce **"8) Allinea
+al template"** aggiunge a `config.yaml` solo i parametri mancanti
+(con i valori proposti dal progetto), senza toccare nulla di già
+presente — in particolare senza toccare le personalizzazioni già
+fatte con questo stesso menu. È l'alternativa sicura a rilanciare
+`setup.sh`, che invece azzererebbe quelle personalizzazioni (v.
+l'avviso al §10).
+
 ---
 
 ## 14. Collegarsi al server Collector
@@ -638,6 +663,11 @@ manutenzione già generati (`backup.sh`, `contact_sync.sh`,
 `rotate_contacts.sh`, `trace.sh`) — rispondi di sì. Quando
 richiesto, inserisci esattamente il Node ID e l'IP del server
 comunicati dall'admin al passo 14.2.
+
+Il questionario prosegue poi chiedendoti se sovrascrivere anche
+`config/config.yaml` (Parte 2) e `trace-web.service` (Parte 3): per
+questo scopo (aggiornare solo Node ID/IP del server) non ti servono,
+rispondi "no" a entrambi — v. l'avviso al §10 sul motivo.
 
 ---
 

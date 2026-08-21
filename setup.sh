@@ -2,13 +2,23 @@
 #
 # setup.sh — genera da zero tutti i file specifici della tua
 # installazione (script di manutenzione, config.yaml,
-# trace-web.service). Il contenuto di questi file vive interamente
-# dentro questo script (heredoc) — nel repository NON esistono copie
-# "template" separate: git clone non ti dà backup.sh, trace.sh,
+# trace-web.service). git clone non ti dà backup.sh, trace.sh,
 # contact_sync.sh, rotate_contacts.sh, config.yaml, trace-web.service,
 # li crea questo script (elenco completo corretto in code review
 # 2026-08-20, Rev.6 — mancavano contact_sync.sh/rotate_contacts.sh,
 # generati dallo stesso loop write_maint_script() degli altri due).
+#
+# Il contenuto degli script di manutenzione e di trace-web.service
+# vive interamente dentro questo script (heredoc) — nessuna copia
+# "template" separata nel repository per quei file. config.yaml è
+# invece l'ECCEZIONE (dal 2026-08-21, v. docs/ARCHITECTURE.md §45):
+# il suo template vive in config/config.yaml.template, letto sia da
+# questo script (sostituzione dei placeholder __TOKEN__ via sed, Parte
+# 2 sotto) sia da tools/edit_config.py (comando `align` di config.sh,
+# per aggiungere a un config.yaml già in uso le chiavi introdotte da
+# un template più recente senza toccare quelle già presenti) — un'unica
+# fonte di verità per i valori di default, invece di due copie
+# destinate a divergere in silenzio.
 #
 # Va eseguito UNA VOLTA dopo il git clone, dalla root del progetto
 # (~/trace-mon). trace-mon.service invece è già nel repository così
@@ -40,6 +50,25 @@ confirm_overwrite() {
         [Yy]*) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+#
+# Rende sicuro un valore da inserire come testo di sostituzione in un
+# comando sed con delimitatore '#' (v. Parte 2 sotto, generazione di
+# config.yaml da config/config.yaml.template). A differenza delle
+# sostituzioni NODE_ID/IP_SERVER più sotto (protette solo da un
+# formato di input ristretto, non da escaping — v. commento lì), i
+# valori qui (host TCP, device seriale, indirizzo BLE, path da
+# tracciare, nome del repeater) sono testo libero digitato
+# dall'utente, senza un formato ristretto da validare: un valore che
+# contenesse '\', '#' (il delimitatore scelto) o '&' (testo-matchato
+# in sed) corromperebbe altrimenti config.yaml in modo silenzioso —
+# non un errore, un dato sbagliato scritto senza avviso. Escape
+# esplicito invece di restrizione del formato, quindi, per non dover
+# inventare un formato valido per campi che non ne hanno uno naturale.
+#
+sed_escape() {
+    printf '%s' "$1" | sed -e 's/[\&#]/\\&/g'
 }
 
 #
@@ -906,106 +935,32 @@ if confirm_overwrite "config/config.yaml"; then
     mkdir -p config
 
     #
-    # Heredoc con delimitatore NON quotato (CONFIG_EOF, non
-    # 'CONFIG_EOF') — qui VOGLIAMO che setup.sh interpoli subito le
-    # variabili $TCP_HOST ecc., a differenza degli script sopra:
-    # config.yaml non ha variabili proprie da preservare letterali,
-    # è dati statici.
+    # config.yaml viene generato da config/config.yaml.template
+    # (v. docs/ARCHITECTURE.md §45), non più da un heredoc interno a
+    # questo script — sostituzione dei placeholder __TOKEN__ via sed,
+    # ognuno reso sicuro da sed_escape() sopra. I campi non richiesti
+    # per il tipo di connessione scelto (es. SERIAL_DEVICE se
+    # CONN_TYPE=tcp) restano vuoti in questa sessione di setup.sh: qui
+    # sotto si applica esplicitamente lo stesso valore di default che
+    # il vecchio heredoc applicava con ${VAR:-default}, così l'output
+    # resta identico a prima per ogni combinazione di scelte.
     #
-    cat > config/config.yaml << CONFIG_EOF
-connection:
-  type: $CONN_TYPE
-  max_reconnect_attempts: 5
-  recovery_retry_interval: 30
-  heartbeat_interval: 15   # secondi tra un health-check attivo e l'altro
-  heartbeat_timeout: 5     # timeout del singolo get_bat() di verifica
+    TPL_TCP_HOST="${TCP_HOST:-<connection-tcp-host>}"
+    TPL_TCP_PORT="${TCP_PORT:-5000}"
+    TPL_SERIAL_DEVICE="${SERIAL_DEVICE:-/dev/ttyUSB0}"
+    TPL_SERIAL_BAUDRATE="${SERIAL_BAUDRATE:-115200}"
+    TPL_BLE_ADDRESS="${BLE_ADDRESS:-AA:BB:CC:DD:EE:FF}"
 
-  tcp:
-    host: ${TCP_HOST:-<connection-tcp-host>}
-    port: ${TCP_PORT:-5000}
-
-  serial:
-    device: ${SERIAL_DEVICE:-/dev/ttyUSB0}
-    baudrate: ${SERIAL_BAUDRATE:-115200}
-
-  ble:
-    address: ${BLE_ADDRESS:-AA:BB:CC:DD:EE:FF}
-
-trace:
-  enabled: true
-  output_file: data/trace.json
-  interval: 10
-  timeout: 15
-  backup: true
-
-  # Ogni entry può portare un suffisso ,true/,false per abilitare o
-  # disabilitare il path senza rimuoverlo (utile se una tratta radio
-  # diventa temporaneamente non disponibile) — nessun suffisso
-  # equivale a ,true. Aggiungi/rimuovi/attiva altri path con
-  # config.sh dopo l'installazione, invece di editare qui a mano.
-  paths:
-    - "$TRACE_PATH,true"
-
-bot:
-  enabled: true
-  channel_name: "#bot"
-  max_reply_length: 152
-  known_regions:
-    - "europe"
-    - "it"
-
-logging:
-  level: INFO
-  file: logs/trace-mon.log
-  console: false
-
-contacts:
-  enabled: true
-  db_file: data/contacts.db
-  sync_interval: 3600
-
-neighbor_monitoring:
-  # Nessun parametro di cadenza qui: la cadenza è quella dell'unica
-  # entry di crontab che lancia main_neighbor_monitor.py — coerente
-  # col pattern già usato per trace/advert (vedi
-  # docs/NEIGHBOR_MONITORING.md §4/§6).
-  interval: 5   # secondi di attesa tra un repeater e il successivo, se più di uno
-  max_retries: 3   # tentativi per singola interrogazione radio fallita, prima di passare oltre
-
-  repeaters:
-    - name: "$REPEATER_NAME"
-
-services:
-  - name: system
-    enabled: true
-    module: system.service
-    class: SystemService
-
-  - name: trace
-    enabled: true
-    module: trace.service
-    class: TraceService
-
-  - name: advert
-    enabled: true
-    module: advert.service
-    class: AdvertService
-
-  - name: bot
-    enabled: true
-    module: bot.service
-    class: BotService
-
-  - name: contact_sync
-    enabled: true
-    module: contact_sync.service
-    class: ContactSyncService
-
-  - name: neighbor_monitor
-    enabled: true
-    module: neighbor_monitor.service
-    class: NeighborMonitorService
-CONFIG_EOF
+    sed \
+        -e "s#__CONN_TYPE__#$(sed_escape "$CONN_TYPE")#" \
+        -e "s#__TCP_HOST__#$(sed_escape "$TPL_TCP_HOST")#" \
+        -e "s#__TCP_PORT__#$(sed_escape "$TPL_TCP_PORT")#" \
+        -e "s#__SERIAL_DEVICE__#$(sed_escape "$TPL_SERIAL_DEVICE")#" \
+        -e "s#__SERIAL_BAUDRATE__#$(sed_escape "$TPL_SERIAL_BAUDRATE")#" \
+        -e "s#__BLE_ADDRESS__#$(sed_escape "$TPL_BLE_ADDRESS")#" \
+        -e "s#__TRACE_PATH__#$(sed_escape "$TRACE_PATH")#" \
+        -e "s#__REPEATER_NAME__#$(sed_escape "$REPEATER_NAME")#" \
+        config/config.yaml.template > config/config.yaml
 
     #
     # Permessi ristretti (code review 2026-08-20, §3.7) — config.yaml

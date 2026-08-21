@@ -7,14 +7,22 @@ Motore di modifica per config/config.yaml, usato da config.sh
 (l'interfaccia a menu interattiva) — non pensato per essere invocato
 direttamente dall'utente, un comando per ogni operazione atomica.
 
-A differenza di setup.sh/generate_config.py (che GENERANO config.yaml
-da zero, sostituzione testuale su un template noto), qui si MODIFICA
-un file che potrebbe già essere stato toccato a mano nel frattempo —
-serve un parser YAML vero (PyYAML), non sostituzione testuale.
+A differenza di setup.sh (che GENERA config.yaml da zero, sostituzione
+testuale su config/config.yaml.template), qui si MODIFICA un file che
+potrebbe già essere stato toccato a mano nel frattempo — serve un
+parser YAML vero (PyYAML), non sostituzione testuale.
+
+(Nota storica, corretta il 2026-08-21, docs/ARCHITECTURE.md §45: questo
+docstring citava in precedenza "setup.sh/generate_config.py" e un
+template "config.yaml.example" — nessuno dei due è mai esistito
+nell'albero, probabilmente riferimenti a un'architettura precedente mai
+realizzata. Da questa sessione config/config.yaml.template esiste
+davvero, letto sia da setup.sh sia dal comando `align` più sotto — lo
+stesso file, non due copie separate.)
 
 Conseguenza nota: PyYAML non preserva i commenti alla riserializzazione.
-Le spiegazioni che nel template (config.yaml.example) stavano accanto
-a ciascun parametro qui sono raccolte in un unico blocco fisso
+Le spiegazioni che nel template (config/config.yaml.template) stanno
+accanto a ciascun parametro qui sono raccolte in un unico blocco fisso
 (HEADER_COMMENT) scritto in cima al file ad ogni salvataggio — non
 per parametro, ma un riferimento centrale valido per l'intero file.
 
@@ -54,6 +62,34 @@ from core.trace_paths import parse_path_entry, format_path_entry
 CONFIG_PATH = Path("config/config.yaml")
 
 BACKUP_DIR = Path("config/backup")
+
+#
+# Fonte dei valori di default per il comando `align` (v. cmd_align()
+# sotto) — lo stesso file che setup.sh usa per generare config.yaml da
+# zero (docs/ARCHITECTURE.md §45). Un file mancante non è un errore
+# fatale per gli altri comandi (get/set/ecc. non ne hanno bisogno),
+# solo per `align` stesso.
+#
+TEMPLATE_PATH = Path("config/config.yaml.template")
+
+#
+# Path che nel template compaiono come placeholder __TOKEN__
+# (connection.tcp.host, ecc.) — istanza-specifici, mai popolabili con
+# un valore sensato dal template. In pratica `align` non li propone
+# mai comunque (walk_template_scalars() salta ogni chiave dentro una
+# lista, e queste sono tutte già popolate da setup.sh al momento della
+# generazione), ma l'elenco esplicito resta come rete di sicurezza
+# leggibile: se uno di questi risultasse davvero assente, è un segnale
+# di un config.yaml anomalo da sistemare a mano (o con setup.sh), non
+# qualcosa che `align` deve riempire da solo con un placeholder.
+#
+INSTANCE_SPECIFIC_PATHS = frozenset({
+    "connection.tcp.host",
+    "connection.tcp.port",
+    "connection.serial.device",
+    "connection.serial.baudrate",
+    "connection.ble.address",
+})
 
 #
 # Permessi ristretti su config.yaml e sui suoi backup (code review
@@ -740,6 +776,95 @@ def cmd_service_set_enabled(args):
     save_config(data, backup_path)
 
 
+def walk_template_scalars(node, prefix=()):
+    """
+    Genera (dotted_path, valore) per ogni FOGLIA SCALARE del template
+    — ricorre nei dizionari, ma si ferma subito su una lista (v.
+    cmd_align() per il perché: le liste vanno sempre gestite con i
+    sottocomandi/menu dedicati, mai fuse automaticamente da `align`).
+    Questo significa che un'intera sezione lista-valued (es.
+    bot.known_regions, trace.paths, neighbor_monitoring.repeaters,
+    services) non viene MAI proposta da `align`, nemmeno se
+    completamente assente dal config.yaml corrente — comportamento
+    scelto deliberatamente, non un limite da correggere: la fusione di
+    liste (dove va inserito un nuovo elemento? con quali valori?) è un
+    problema diverso e più rischioso di quello che `align` risolve
+    (aggiungere scalari mancanti), fuori scope di questo comando.
+    """
+
+    if isinstance(node, dict):
+
+        for key, value in node.items():
+            yield from walk_template_scalars(value, prefix + (key,))
+
+    elif isinstance(node, list):
+        return
+
+    else:
+        yield (".".join(prefix), node)
+
+
+def cmd_align(args):
+    """
+    "Allinea al template" (docs/ARCHITECTURE.md §45) — inserisce in
+    config.yaml SOLO le chiavi scalari che config/config.yaml.template
+    definisce ma che nel file corrente non ci sono ancora (es. un
+    parametro introdotto da una versione più recente del codice).
+
+    Garanzie, per costruzione:
+    - non sovrascrive MAI una chiave già presente, qualunque sia il
+      suo valore (anche se diverso dal default del template — è
+      esattamente il caso di una personalizzazione fatta con
+      config.sh, che va sempre preservata);
+    - non tocca MAI una lista (walk_template_scalars() non vi entra);
+    - stessa sicurezza degli altri comandi che scrivono: backup,
+      scrittura atomica, validazione (via backup_config()/
+      save_config(), invariate) — ma solo se c'è davvero qualcosa da
+      aggiungere: a differenza degli altri comandi, un `align` che non
+      trova nulla di mancante non crea un backup inutile.
+    """
+
+    if not TEMPLATE_PATH.exists():
+
+        print(
+            f"ERRORE: {TEMPLATE_PATH} non trovato — impossibile "
+            f"allineare senza il template.",
+            file=sys.stderr
+        )
+
+        sys.exit(1)
+
+    with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
+        template = yaml.safe_load(f)
+
+    data = load_config()
+
+    added = []
+
+    for path, template_value in walk_template_scalars(template):
+
+        if path in INSTANCE_SPECIFIC_PATHS:
+            continue
+
+        if get_path(data, path) is not None:
+            continue
+
+        set_path(data, path, template_value)
+        added.append((path, template_value))
+
+    if not added:
+        print("config.yaml già allineato al template — nessuna chiave mancante.")
+        return
+
+    for path, value in added:
+        print(f"AGGIUNTA: {path} = {value!r}")
+
+    backup_path = backup_config()
+    save_config(data, backup_path)
+
+    print(f"Totale: {len(added)} chiave/i aggiunta/e.")
+
+
 def main():
 
     parser = argparse.ArgumentParser(description="Motore di modifica config.yaml")
@@ -808,6 +933,9 @@ def main():
     p.add_argument("name")
     p.add_argument("value")
     p.set_defaults(func=cmd_service_set_enabled)
+
+    p = sub.add_parser("align")
+    p.set_defaults(func=cmd_align)
 
     args = parser.parse_args()
     args.func(args)

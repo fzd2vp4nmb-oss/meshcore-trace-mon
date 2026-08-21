@@ -1,0 +1,128 @@
+# =====================================================================
+# config/config.yaml.template — MeshCore trace-mon
+#
+# Fonte unica dei valori di default per config/config.yaml. Due
+# consumatori distinti leggono questo stesso file, per non avere due
+# copie della stessa decisione (v. docs/ARCHITECTURE.md §45):
+#
+# 1. setup.sh (Parte 2) lo usa per GENERARE config/config.yaml da
+#    zero — sostituzione testuale dei placeholder __TOKEN__ (tipo di
+#    connessione, dettagli host/device/indirizzo, path da tracciare,
+#    nome del repeater) coi valori raccolti dal questionario
+#    interattivo, via sed. Nessuna dipendenza da PyYAML in questo
+#    passaggio (setup.sh resta eseguibile anche prima che .venv
+#    esista).
+#
+# 2. tools/edit_config.py (comando `align`, richiamato dal menu
+#    "Allinea al template" di config.sh) lo legge con PyYAML per
+#    sapere quali chiavi DOVREBBERO esistere in un config.yaml già in
+#    uso, e ne inserisce SOLO quelle mancanti — mai sovrascrive una
+#    chiave già presente, mai tocca una lista (trace.paths,
+#    neighbor_monitoring.repeaters, bot.known_regions, services), che
+#    vanno gestite con i sottocomandi/menu dedicati. Per questo i
+#    valori placeholder qui sotto (__TCP_HOST__ ecc.) non vengono mai
+#    scritti da `align` in un config.yaml reale: quelle chiavi sono
+#    sempre già popolate da setup.sh al momento della generazione.
+#
+# Chiavi che il codice legge con un default a livello di codice (es.
+# daemon.socket_path, daemon.dispatch_timeout — v. §44/§45) NON
+# compaiono qui, per scelta deliberata: restano assenti dal file
+# finché nessuno le imposta esplicitamente.
+#
+# Non è YAML valido da usare direttamente com'è (contiene i
+# placeholder __TOKEN__) — va sempre processato da setup.sh o letto
+# da tools/edit_config.py, mai copiato a mano in config/config.yaml.
+# =====================================================================
+
+connection:
+  type: __CONN_TYPE__
+  max_reconnect_attempts: 5
+  recovery_retry_interval: 30
+  heartbeat_interval: 15   # secondi tra un health-check attivo e l'altro
+  heartbeat_timeout: 5     # timeout del singolo get_bat() di verifica
+
+  tcp:
+    host: __TCP_HOST__
+    port: __TCP_PORT__
+
+  serial:
+    device: __SERIAL_DEVICE__
+    baudrate: __SERIAL_BAUDRATE__
+
+  ble:
+    address: __BLE_ADDRESS__
+
+trace:
+  enabled: true
+  output_file: data/trace.json
+  interval: 10
+  timeout: 15
+  backup: true
+
+  # Ogni entry può portare un suffisso ,true/,false per abilitare o
+  # disabilitare il path senza rimuoverlo (utile se una tratta radio
+  # diventa temporaneamente non disponibile) — nessun suffisso
+  # equivale a ,true. Aggiungi/rimuovi/attiva altri path con
+  # config.sh dopo l'installazione, invece di editare qui a mano.
+  paths:
+    - "__TRACE_PATH__,true"
+
+bot:
+  enabled: true
+  channel_name: "#bot"
+  max_reply_length: 152
+  known_regions:
+    - "europe"
+    - "it"
+
+logging:
+  level: INFO
+  file: logs/trace-mon.log
+  console: false
+
+contacts:
+  enabled: true
+  db_file: data/contacts.db
+  sync_interval: 3600
+
+neighbor_monitoring:
+  # Nessun parametro di cadenza qui: la cadenza è quella dell'unica
+  # entry di crontab che lancia main_neighbor_monitor.py — coerente
+  # col pattern già usato per trace/advert (vedi
+  # docs/NEIGHBOR_MONITORING.md §4/§6).
+  interval: 5   # secondi di attesa tra un repeater e il successivo, se più di uno
+  max_retries: 3   # tentativi per singola interrogazione radio fallita, prima di passare oltre
+
+  repeaters:
+    - name: "__REPEATER_NAME__"
+
+services:
+  - name: system
+    enabled: true
+    module: system.service
+    class: SystemService
+
+  - name: trace
+    enabled: true
+    module: trace.service
+    class: TraceService
+
+  - name: advert
+    enabled: true
+    module: advert.service
+    class: AdvertService
+
+  - name: bot
+    enabled: true
+    module: bot.service
+    class: BotService
+
+  - name: contact_sync
+    enabled: true
+    module: contact_sync.service
+    class: ContactSyncService
+
+  - name: neighbor_monitor
+    enabled: true
+    module: neighbor_monitor.service
+    class: NeighborMonitorService

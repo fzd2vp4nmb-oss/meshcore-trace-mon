@@ -378,16 +378,38 @@ function parseTraceContent(
             // userebbero case diversi per lo stesso nodo logico,
             // frammentando linkSeries/linkStats in serie separate.
             //
-            links.push(
-                {
+            // Guardia json.path[0]?.hash (verifica completa
+            // 2026-08-21 — v. ARCHITECTURE.md §52): un record con
+            // path[0] privo di hash (payload malformato ma JSON
+            // valido) faceva lanciare TypeError qui, fuori dal
+            // try/catch di JSON.parse più sopra — l'eccezione risaliva
+            // fino al catch generico della route, facendo fallire
+            // l'intera richiesta (e, se il record incriminato era in
+            // un archivio .gz, quel mese restava permanentemente
+            // inaccessibile). Stesso stile difensivo già usato subito
+            // sotto per gli hop intermedi (`!prev?.hash || !curr?.hash`)
+            // e per l'ultimo hop (`lastHop?.hash`): se manca l'hash si
+            // omette solo questo singolo link, non l'intero record.
+            // Stesso identico difetto pre-esistente anche sul
+            // frontend Collettore (porting 1:1 di questo file, v.
+            // docs/CHANGES_frontend_collettore.md) — fix applicato a
+            // entrambi.
+            //
+            if (
+                json.path[0]?.hash
+            ) {
 
-                    label:
-                        `SRC→${json.path[0].hash.toLowerCase()}`,
+                links.push(
+                    {
 
-                    snr:
-                        json.path[0].snr
-                }
-            );
+                        label:
+                            `SRC→${json.path[0].hash.toLowerCase()}`,
+
+                        snr:
+                            json.path[0].snr
+                    }
+                );
+            }
 
             for (
                 let i = 1;

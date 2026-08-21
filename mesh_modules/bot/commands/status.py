@@ -44,7 +44,10 @@ class StatusCommand(BotCommand):
             return FALLBACK_MESSAGE
 
         try:
-            async with ctx.engine.command_lock:
+            # acquire_command_lock() invece dell'accesso diretto al
+            # lock (Finding 1/5, review affidabilità 2026-08-21 — v.
+            # ARCHITECTURE.md §49).
+            async with ctx.engine.acquire_command_lock("bot:status_command_get_bat"):
                 result = await ctx.engine.mesh.commands.get_bat()
 
             if result.type == EventType.ERROR:

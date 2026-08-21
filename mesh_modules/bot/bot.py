@@ -58,12 +58,33 @@ UNKNOWN_OUT_PATH_VALUES = (OUT_PATH_UNKNOWN, -1)
 # rileva esplicitamente il caso ambiguo invece di sceglierne uno alla
 # cieca. Restringere la finestra qui riduce la probabilità che due
 # mittenti diversi collidano sullo stesso sender_timestamp (risoluzione
-# di un secondo): 3s invece di 15, ampiamente sufficiente rispetto ai
-# 0.3s di attesa in _on_channel_message più il margine osservato
-# empiricamente per RX_LOG_DATA "a ridosso" di CHANNEL_MSG_RECV.
+# di un secondo): 3s è ampiamente sufficiente rispetto al tetto massimo
+# di CHANNEL_SCOPE_CORRELATION_TIMEOUT (0.3s, sotto) più il margine
+# osservato empiricamente per RX_LOG_DATA "a ridosso" di
+# CHANNEL_MSG_RECV.
 #
 CORRELATION_TTL = 3
 DM_DEDUP_TTL = 60
+
+#
+# Tetto massimo di attesa per la correlazione RX_LOG_DATA ->
+# CHANNEL_MSG_RECV in _on_channel_message() (Finding 4, review
+# affidabilità 2026-08-21 — v. ARCHITECTURE.md §50). Fino a questo fix
+# era un'attesa CIECA e fissa (asyncio.sleep(0.3)) prima di ogni
+# risoluzione di scope, pagata da OGNI messaggio di canale — anche
+# quando l'informazione era già disponibile o arrivava quasi subito.
+# Ora è solo il tetto massimo di un'attesa basata su evento
+# (asyncio.Event per sender_timestamp, segnalato da _on_log_data()):
+# si procede SUBITO appena l'informazione arriva (o è già presente),
+# questo valore scatta solo se non arriva affatto entro la finestra.
+# Stesso valore numerico di prima (0.3s), deliberatamente, per non
+# cambiare il caso peggiore già osservato empiricamente — cambia solo
+# il caso comune, ora molto più reattivo. V. ARCHITECTURE.md §50 anche
+# per il compromesso esplicito sulla rilevazione di ambiguità
+# (candidati multipli collidenti sullo stesso sender_timestamp, v.
+# _resolve_scope_for_message più sotto) che questo cambio comporta.
+#
+CHANNEL_SCOPE_CORRELATION_TIMEOUT = 0.3
 
 #
 # Lunghezza massima di sender_name prima di costruire il prefisso
@@ -251,6 +272,19 @@ class BotModule:
         self._pending_scope_info = {}
 
         #
+        # Un asyncio.Event per sender_timestamp, creato on-demand da
+        # _on_channel_message() quando l'informazione di scope non è
+        # ancora disponibile e serve attendere che arrivi (Finding 4,
+        # review affidabilità 2026-08-21 — v. ARCHITECTURE.md §50,
+        # sostituisce l'attesa fissa asyncio.sleep(0.3) di prima). Di
+        # proprietà di chi aspetta, non un registro persistente: viene
+        # sempre rimosso da _on_channel_message() stesso appena finita
+        # l'attesa (successo o timeout) — nessuna pulizia periodica
+        # necessaria qui, a differenza di _pending_scope_info.
+        #
+        self._scope_info_events = {}
+
+        #
         # Dedup DM: chiave (pubkey_prefix, sender_timestamp), valore
         # timestamp di inserimento. I retry del mittente prima
         # dell'ACK condividono lo stesso sender_timestamp.
@@ -266,7 +300,22 @@ class BotModule:
         #
         self._rebind_tasks = set()
 
+        #
+        # Stato locale di "auto-fetch sospeso per una sessione CLI di
+        # neighbor_monitor in corso" (Finding 3, 2026-08-21 — v.
+        # ARCHITECTURE.md §48). Non è solo un rispecchiamento di
+        # Engine.active_cli_sessions: serve anche a start()/
+        # _rebind_async() per decidere se questa (ri)apertura deve
+        # NON avviare l'auto-fetch perché una sessione CLI era già
+        # attiva al momento del rebind (tipicamente una disconnessione
+        # avvenuta a metà di una sessione neighbor_monitor).
+        #
+        self._auto_fetch_paused = False
+
         self.engine.register_rebind(self._on_rebind)
+        self.engine.register_cli_session_listener(
+            self._on_cli_session_change
+        )
 
     async def start(self):
 
@@ -278,15 +327,36 @@ class BotModule:
         # ulteriore refresh viene comunque fatto prima di ogni
         # singolo lookup (vedi _on_contact_message) — questo qui
         # serve solo ad avere una cache non vuota fin dal primo
-        # istante. Serializzato con command_lock come ogni comando
-        # sulla connessione condivisa.
+        # istante. Serializzato con command_lock (via
+        # acquire_command_lock(), Finding 1/5 — v. ARCHITECTURE.md
+        # §49) come ogni comando sulla connessione condivisa.
         #
-        async with self.engine.command_lock:
+        async with self.engine.acquire_command_lock("bot:start_get_contacts"):
             await self.engine.mesh.commands.get_contacts()
 
         self._subscribe()
 
-        await self.engine.mesh.start_auto_message_fetching()
+        if self.engine.active_cli_sessions:
+
+            #
+            # Difesa in profondità, non un caso realmente
+            # raggiungibile oggi (neighbor_monitor è IPC-driven, v.
+            # ARCHITECTURE.md §2.1: nessuna richiesta esterna può
+            # essere già in corso prima che IPCServer sia in ascolto
+            # durante l'avvio del daemon) — ma mantiene vera
+            # l'invariante "mai avviare l'auto-fetch mentre una
+            # sessione CLI è marcata attiva" senza doverla dedurre
+            # dall'ordine di avvio dei moduli (Finding 3, §48).
+            #
+            self._auto_fetch_paused = True
+
+            log.info(
+                "BotModule: avvio con auto-fetch sospeso — sessione "
+                "CLI neighbor_monitor già attiva."
+            )
+
+        else:
+            await self.engine.mesh.start_auto_message_fetching()
 
         log.info(
             "BotModule: in ascolto su %s (idx=%s) e sui DM, comandi "
@@ -379,16 +449,99 @@ class BotModule:
         try:
             await self._resolve_channel()
 
-            async with self.engine.command_lock:
+            async with self.engine.acquire_command_lock("bot:rebind_get_contacts"):
                 await self.engine.mesh.commands.get_contacts()
 
             self._subscribe()
 
-            await self.engine.mesh.start_auto_message_fetching()
+            if self.engine.active_cli_sessions:
+
+                #
+                # Caso reale, non solo difesa in profondità: una
+                # disconnessione può avvenire a metà di una sessione
+                # CLI di neighbor_monitor — Engine.active_cli_sessions
+                # resta popolato finché quella sessione non esce dal
+                # proprio try/finally, indipendentemente dallo stato
+                # della connessione. Riavviare l'auto-fetch qui
+                # incondizionatamente lo farebbe ripartire su
+                # un'istanza mesh nuova senza che
+                # _on_cli_session_change(False) sia mai stato
+                # notificato per QUESTA sessione — riaprendo proprio
+                # nella finestra più delicata (una riconnessione) la
+                # stessa race che il fix esiste per chiudere (Finding
+                # 3, §48). Resta sospeso qui; la ripresa arriva
+                # comunque tramite il listener quando la sessione
+                # (fallita o meno per via della disconnessione) esce
+                # dal proprio finally.
+                #
+                self._auto_fetch_paused = True
+
+                log.info(
+                    "BotModule: rebind con auto-fetch sospeso — "
+                    "sessione CLI neighbor_monitor ancora attiva."
+                )
+
+            else:
+                await self.engine.mesh.start_auto_message_fetching()
 
         except Exception:
             log.exception(
                 "BotModule: rebind fallito."
+            )
+
+    async def _on_cli_session_change(self, active):
+        """
+        Registrata su Engine (Finding 3, 2026-08-21 — v.
+        ARCHITECTURE.md §48): sospende l'auto-fetch dei messaggi
+        finché almeno una sessione CLI di neighbor_monitor è in
+        corso, per non competere con essa su get_msg() a livello di
+        device — get_msg() PRELEVA il messaggio dalla coda del
+        device, non è un evento broadcast: se a vincere la corsa è
+        l'auto-fetch del bot invece di neighbor_monitor, quest'ultimo
+        non riceve mai la risposta che stava aspettando (Finding 3 di
+        REVIEW_AFFIDABILITA_2026-08-21.md).
+
+        Scelta di design esplicitamente confermata dall'utente,
+        coerente con un trade-off già in vigore nel progetto (v.
+        ARCHITECTURE.md §44: "sacrificio del BOT quando
+        neighbor_monitor occupa a lungo command_lock"): il bot resta
+        il consumatore meno prioritario del device. I messaggi/DM
+        diretti al bot restano semplicemente in coda SUL DEVICE (non
+        persi, non scartati — get_msg() li preleverà non appena
+        l'auto-fetch riprende) per la durata della sessione CLI,
+        stesso genere di attesa che il bot subisce già oggi per
+        l'invio delle proprie risposte quando si accoda dietro
+        neighbor_monitor su command_lock (Finding 1, non ancora
+        affrontato).
+        """
+
+        self._auto_fetch_paused = active
+
+        try:
+            if active:
+
+                await self.engine.mesh.stop_auto_message_fetching()
+
+                log.info(
+                    "BotModule: auto-fetch sospeso (sessione CLI "
+                    "neighbor_monitor in corso)."
+                )
+
+            else:
+
+                await self.engine.mesh.start_auto_message_fetching()
+
+                log.info(
+                    "BotModule: auto-fetch ripreso (nessuna sessione "
+                    "CLI neighbor_monitor più attiva)."
+                )
+
+        except Exception:
+            log.exception(
+                "BotModule: %s dell'auto-fetch fallita (active=%s) — "
+                "un rebind successivo lo riallineerà comunque.",
+                "sospensione" if active else "ripresa",
+                active
             )
 
     #
@@ -457,6 +610,23 @@ class BotModule:
                 "added_at": time.monotonic()
             }
         )
+
+        #
+        # Sveglia immediatamente un _on_channel_message() già in
+        # attesa per questo sender_timestamp, se esiste (Finding 4,
+        # review affidabilità 2026-08-21 — v. ARCHITECTURE.md §50).
+        # Se non c'è nessuna attesa in corso (RX_LOG_DATA arrivato
+        # PRIMA di CHANNEL_MSG_RECV, il caso comune per il commento
+        # originale su questa correlazione) non c'è nulla da
+        # svegliare — il candidato resta comunque in
+        # _pending_scope_info, letto subito senza alcuna attesa dal
+        # prossimo _on_channel_message() per lo stesso
+        # sender_timestamp.
+        #
+        scope_event = self._scope_info_events.get(sender_timestamp)
+
+        if scope_event is not None:
+            scope_event.set()
 
     def _resolve_scope_for_message(self, sender_timestamp, tag):
 
@@ -594,14 +764,60 @@ class BotModule:
             sender_name
         )
 
+        sender_timestamp = payload.get("sender_timestamp")
+
         #
-        # Piccola attesa: RX_LOG_DATA a volte arriva a ridosso di
-        # CHANNEL_MSG_RECV, non sempre prima.
+        # Attesa basata su evento invece di un'attesa fissa (Finding 4,
+        # review affidabilità 2026-08-21 — v. ARCHITECTURE.md §50):
+        # RX_LOG_DATA a volte arriva a ridosso di CHANNEL_MSG_RECV, non
+        # sempre prima. Se è già arrivato (già in _pending_scope_info)
+        # si procede SUBITO, senza attendere nulla. Altrimenti si
+        # attende un segnale esplicito da _on_log_data() — non un
+        # tempo fisso — con CHANNEL_SCOPE_CORRELATION_TIMEOUT come
+        # UNICO tetto massimo: stesso valore di prima (0.3s), quindi
+        # nessuna regressione sul caso peggiore, solo sul caso comune
+        # (ora molto più reattivo, non più un ritardo pagato da ogni
+        # singolo messaggio di canale indipendentemente da cosa serva
+        # davvero).
         #
-        await asyncio.sleep(0.3)
+        scope_event = self._scope_info_events.setdefault(
+            sender_timestamp,
+            asyncio.Event()
+        )
+
+        try:
+            if sender_timestamp not in self._pending_scope_info:
+                try:
+                    await asyncio.wait_for(
+                        scope_event.wait(),
+                        timeout=CHANNEL_SCOPE_CORRELATION_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    #
+                    # Nessun RX_LOG_DATA arrivato entro il tetto
+                    # massimo — comportamento identico a prima del
+                    # fix: _resolve_scope_for_message() sotto non
+                    # troverà candidati, loggherà e ritornerà None
+                    # (scope sconosciuto), gestito a valle da
+                    # _send_channel_reply() esattamente come oggi.
+                    #
+                    pass
+        finally:
+            #
+            # Rimosso qui, non da _on_log_data(): questo Event è di
+            # proprietà di QUESTA attesa, non un registro persistente
+            # — se un secondo RX_LOG_DATA per lo stesso
+            # sender_timestamp arriva DOPO che questa funzione ha già
+            # smesso di aspettare (successo o timeout), non c'è più
+            # nessuno interessato a QUESTO Event specifico: un futuro
+            # _on_channel_message() per lo stesso sender_timestamp, se
+            # mai arriva, ne creerà uno nuovo e troverà comunque quel
+            # candidato già in _pending_scope_info, invariato.
+            #
+            self._scope_info_events.pop(sender_timestamp, None)
 
         region = self._resolve_scope_for_message(
-            payload.get("sender_timestamp"),
+            sender_timestamp,
             tag
         )
 
@@ -667,7 +883,10 @@ class BotModule:
         else:
             scope_to_set = region
 
-        async with self.engine.command_lock:
+        # acquire_command_lock() invece dell'accesso diretto al lock
+        # (Finding 1/5, review affidabilità 2026-08-21 — v.
+        # ARCHITECTURE.md §49).
+        async with self.engine.acquire_command_lock("bot:send_channel_reply"):
 
             #
             # Prima di questo fix (code review 2026-08-20, §3.3), un
@@ -840,7 +1059,10 @@ class BotModule:
         # l'ultimo get_contacts() eseguito.
         #
         try:
-            async with self.engine.command_lock:
+            # acquire_command_lock() invece dell'accesso diretto al
+            # lock (Finding 1/5, review affidabilità 2026-08-21 — v.
+            # ARCHITECTURE.md §49).
+            async with self.engine.acquire_command_lock("bot:contact_message_refresh_contacts"):
                 await self.engine.mesh.commands.get_contacts()
 
         except Exception:
@@ -977,7 +1199,19 @@ class BotModule:
 
         text = _truncate_utf8_safe(text, self.max_reply_length)
 
-        async with self.engine.command_lock:
+        #
+        # Il sito esatto del Finding 1 (review affidabilità
+        # 2026-08-21 — v. ARCHITECTURE.md §49): send_msg_with_retry()
+        # qui sotto può tenere command_lock per l'intera sequenza di
+        # retry (fino a 3 tentativi, uno in flood dopo un
+        # reset_path() intermedio), superando abbondantemente il
+        # vecchio DEFAULT_IPC_TIMEOUT di 30s — acquire_command_lock()
+        # non cambia questo comportamento (resta la stessa scelta
+        # architetturale deliberata: un DM non viene interrotto a
+        # metà), ma rende diagnosticabile chi resta bloccato dietro
+        # di esso.
+        #
+        async with self.engine.acquire_command_lock("bot:send_dm_reply"):
 
             try:
                 event = await self.engine.mesh.commands.send_msg_with_retry(

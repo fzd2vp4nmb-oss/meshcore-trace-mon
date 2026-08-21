@@ -235,7 +235,12 @@ class MeshCoreDaemon:
         """
 
         try:
-            async with self.engine.command_lock:
+            # acquire_command_lock() invece dell'accesso diretto al
+            # lock (Finding 1/5, review affidabilità 2026-08-21 — v.
+            # ARCHITECTURE.md §49), per coerenza con ogni altro punto
+            # di produzione che invia un comando sulla connessione
+            # condivisa.
+            async with self.engine.acquire_command_lock("daemon:clock_sync_startup"):
                 result = await sync_clock(self.engine.mesh)
 
         except Exception:

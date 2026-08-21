@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 
 from meshcore.meshcore import MeshCore
 from meshcore.events import EventType
@@ -28,6 +29,10 @@ class Engine:
     da chi lo richiede, per evitare che comandi provenienti da
     percorsi diversi (IPC vs bot event-driven) finiscano per essere
     inviati in concorrenza sulla stessa connessione condivisa.
+    acquire_command_lock(label) (Finding 1/5, 2026-08-21 — v.
+    ARCHITECTURE.md §49) è il modo raccomandato di acquisirlo in
+    codice di produzione: stesso lock, con un log diagnostico se
+    l'attesa supera una soglia sospetta.
     """
 
     def __init__(self):
@@ -58,6 +63,26 @@ class Engine:
         self._connected = False
         self._recovery_task = None
         self._heartbeat_task = None
+
+        #
+        # Guardia esplicita di non-concorrenza per
+        # _run_heartbeat_check() (Finding 6, review affidabilità
+        # 2026-08-21 — v. ARCHITECTURE.md §51). _run_heartbeat_check()
+        # può essere invocato sia dal loop periodico
+        # (_heartbeat_loop, ogni heartbeat_interval) sia, come task
+        # "fire-and-forget" separato, da report_possible_failure()
+        # (chiamato da trace/bot/advert su un proprio comando
+        # fallito) — prima di questo fix, le due invocazioni non
+        # erano mutuamente esclusive tra loro (a differenza di quasi
+        # ogni altro accesso alla connessione, che passa da
+        # command_lock): l'invariante "al più un check alla volta"
+        # era solo dedotta dal comportamento osservato (get_bat()
+        # concorrenti ricevono lo stesso evento broadcast dal
+        # dispatcher, _start_recovery_loop() è già atomico), non resa
+        # esplicita nel codice. Vedi _run_heartbeat_check() per come
+        # viene usata.
+        #
+        self._heartbeat_check_in_progress = False
 
         #
         # Riferimenti ai task "fire-and-forget" creati da
@@ -102,6 +127,21 @@ class Engine:
         #
         self.command_lock = asyncio.Lock()
 
+        #
+        # Diagnostica dell'attesa su command_lock (Finding 1/5, review
+        # affidabilità 2026-08-21 — v. ARCHITECTURE.md §49).
+        # _command_lock_holder è l'etichetta (v. acquire_command_lock())
+        # di chi detiene il lock ora, o di chi lo ha rilasciato per
+        # ultimo se in questo momento nessuno lo detiene — così un
+        # NUOVO acquirente che ha dovuto attendere può segnalare "chi
+        # me lo ha tenuto occupato". _command_lock_waiters conta quanti
+        # chiamanti sono al momento bloccati in attesa di acquisirlo,
+        # per dare visibilità su "quanti sono in coda ora" (Finding 5),
+        # non solo su "quanto ha aspettato l'ultimo che ce l'ha fatta".
+        #
+        self._command_lock_holder = None
+        self._command_lock_waiters = 0
+
         self._rebind_callbacks = []
 
         #
@@ -117,11 +157,160 @@ class Engine:
         #
         self.active_cli_sessions = set()
 
-    def mark_cli_session_active(self, public_key):
-        self.active_cli_sessions.add(public_key)
+        #
+        # Callback registrate da chi deve reagire alla TRANSIZIONE tra
+        # "nessuna sessione CLI attiva" e "almeno una sessione CLI
+        # attiva" — non ad ogni singola chiave aggiunta/rimossa da
+        # active_cli_sessions sopra: con più sessioni in astratto
+        # concorrenti, conta solo il passaggio a/da insieme vuoto (v.
+        # mark_cli_session_active/done sotto). Stesso pattern di
+        # _rebind_callbacks/register_rebind, con una differenza
+        # importante: qui le callback sono coroutine e vengono
+        # ATTESE, non lanciate fire-and-forget — chi si sospende su
+        # questo segnale (BotModule, v. ARCHITECTURE.md §48) deve
+        # avere la garanzia che la sospensione sia già completa PRIMA
+        # che il chiamante di mark_cli_session_active() prosegua a
+        # inviare il proprio comando, altrimenti la finestra di corsa
+        # su get_msg() che il fix esiste per chiudere (Finding 3,
+        # 2026-08-21) resterebbe aperta per un istante — esattamente
+        # il tipo di "di solito arriva in tempo" su cui quello stesso
+        # finding metteva in guardia.
+        #
+        self._cli_session_listeners = []
 
-    def mark_cli_session_done(self, public_key):
+    def register_cli_session_listener(self, callback):
+        if callback not in self._cli_session_listeners:
+            self._cli_session_listeners.append(callback)
+
+    def unregister_cli_session_listener(self, callback):
+        if callback in self._cli_session_listeners:
+            self._cli_session_listeners.remove(callback)
+
+    async def _notify_cli_session_listeners(self, active):
+        for callback in list(self._cli_session_listeners):
+            try:
+                await callback(active)
+            except Exception:
+                log.exception(
+                    "CLI session listener fallita (active=%s) — "
+                    "proseguo comunque con le altre eventuali "
+                    "callback registrate.",
+                    active
+                )
+
+    async def mark_cli_session_active(self, public_key):
+        """
+        ASYNC (Finding 3, 2026-08-21 — prima era sincrona): il
+        chiamante (NeighborMonitorModule._query_cli_config()) deve
+        attenderne il completamento prima di procedere, così che una
+        sospensione richiesta da un listener (es. l'auto-fetch del
+        bot) sia già in vigore quando la sessione CLI invia il primo
+        comando — non solo "quasi sempre" in tempo. La notifica parte
+        solo alla transizione insieme-vuoto -> non-vuoto, cioè al
+        primo chiamante: se più sessioni fossero in astratto già
+        attive, i chiamanti successivi non ri-notificano.
+        """
+        was_empty = not self.active_cli_sessions
+        self.active_cli_sessions.add(public_key)
+        if was_empty:
+            await self._notify_cli_session_listeners(True)
+
+    async def mark_cli_session_done(self, public_key):
+        """
+        ASYNC per simmetria con mark_cli_session_active() (Finding 3,
+        2026-08-21). La notifica di "nessuna sessione più attiva"
+        parte solo quando l'ultima chiave viene rimossa — a differenza
+        della sospensione, qui non c'è un requisito di tempestività
+        stretta (il solo effetto pratico è la ripresa dell'auto-fetch
+        del bot, v. ARCHITECTURE.md §48): un ritardo di qualche
+        millisecondo nel riprenderla non riapre alcuna finestra di
+        corsa, prolunga solo di poco un'attesa già accettata.
+        """
         self.active_cli_sessions.discard(public_key)
+        if not self.active_cli_sessions:
+            await self._notify_cli_session_listeners(False)
+
+    #
+    # Soglia di attesa "sospetta" su command_lock (Finding 1, review
+    # affidabilità 2026-08-21 — v. ARCHITECTURE.md §49): un'attesa più
+    # breve di questa non produce alcun log — è contesa normale e
+    # innocua tra comandi brevi sulla stessa connessione condivisa, non
+    # un sintomo di nulla. Un ordine di grandezza sopra
+    # heartbeat_timeout (5s di default): i comandi locali al companion
+    # (get_bat, get_contacts) impiegano tipicamente una frazione di
+    # secondo, quindi un'attesa di secondi interi per uno di questi è
+    # già anomala; una vera sequenza di retry DM (Finding 1) la supera
+    # ampiamente.
+    #
+    COMMAND_LOCK_WAIT_WARNING_THRESHOLD = 5.0
+
+    @asynccontextmanager
+    async def acquire_command_lock(self, label):
+        """
+        Sostituisce `async with self.command_lock:` in ogni punto di
+        produzione che invia un comando sulla connessione condivisa
+        (Finding 1/5, review affidabilità 2026-08-21 — v.
+        ARCHITECTURE.md §49). `command_lock` in sé resta un
+        asyncio.Lock semplice, invariato — questo è un involucro
+        opzionale attorno ad esso, non un sostituto: nulla si rompe se
+        un chiamante continua ad accedervi direttamente (com'è ancora
+        il caso in alcuni fixture storici di test), semplicemente
+        senza la diagnostica sotto.
+
+        `label` è una stringa breve e leggibile che identifica IL
+        CHIAMANTE (per IPCServer, il comando IPC stesso, l'unica cosa
+        distintiva disponibile lì) — es. "bot:send_dm_reply",
+        "ipc:neighbor_monitor.query". Deliberatamente esplicita e
+        passata da ogni chiamante, mai dedotta automaticamente (da
+        asyncio.current_task(), per esempio): un'etichetta indovinata
+        sarebbe spesso fuorviante (più funzioni possono condividere lo
+        stesso task) — coerente con lo stile del resto del progetto,
+        che preferisce l'esplicito al "probabilmente giusto" (proprio
+        il tipo di scorciatoia che il Finding 3 di questa stessa
+        review aveva messo in guardia).
+
+        Logga un WARNING solo se l'attesa supera
+        COMMAND_LOCK_WAIT_WARNING_THRESHOLD — non ad ogni acquisizione,
+        altrimenti la contesa normale e innocua (due comandi brevi che
+        capitano quasi insieme) produrrebbe rumore costante, oscurando
+        proprio i casi che contano.
+        """
+
+        loop = asyncio.get_event_loop()
+        wait_start = loop.time()
+
+        self._command_lock_waiters += 1
+
+        try:
+            await self.command_lock.acquire()
+
+        finally:
+            self._command_lock_waiters -= 1
+
+        try:
+            wait_duration = loop.time() - wait_start
+
+            if wait_duration > self.COMMAND_LOCK_WAIT_WARNING_THRESHOLD:
+
+                log.warning(
+                    "command_lock: %s atteso %.1fs prima di essere "
+                    "ottenuto (ultimo detentore: %s; altri %d "
+                    "chiamante/i ancora in attesa in questo momento) — "
+                    "possibile causa di timeout IPC concorrenti "
+                    "apparentemente scorrelati, v. ARCHITECTURE.md §49.",
+                    label,
+                    wait_duration,
+                    self._command_lock_holder or
+                    "nessuno (primo comando dall'avvio)",
+                    self._command_lock_waiters
+                )
+
+            self._command_lock_holder = label
+
+            yield
+
+        finally:
+            self.command_lock.release()
 
     @property
     def connected(self):
@@ -320,45 +509,82 @@ class Engine:
         ):
             return
 
-        try:
+        if self._heartbeat_check_in_progress:
             #
-            # NON avvolto in command_lock, a differenza di ogni
-            # altro comando sulla connessione — scelta deliberata,
-            # non una svista. command_lock non ha timeout
-            # sull'acquisizione: se un altro comando è bloccato in
-            # attesa di risposta da un device già silenziosamente
-            # disconnesso (lo scenario stesso che l'heartbeat deve
-            # rilevare), tiene il lock indefinitamente. Se
-            # l'heartbeat dovesse aspettare lo stesso lock, non
-            # scatterebbe mai il recovery — il wait_for(timeout=...)
-            # qui sotto protegge solo la singola chiamata, non
-            # l'attesa del lock. L'heartbeat deve poter verificare la
-            # connessione indipendentemente da cosa sta bloccando
-            # altrove, quindi ha priorità sul resto.
+            # Guardia esplicita (Finding 6, review affidabilità
+            # 2026-08-21 — v. ARCHITECTURE.md §51): un check è già in
+            # corso (invocato dal loop periodico o da una precedente
+            # report_possible_failure()) — quello in corso copre già
+            # la stessa verifica che questa seconda chiamata farebbe,
+            # quindi si ritorna SUBITO, senza attendere nulla. Non è
+            # un asyncio.Lock deliberatamente: l'heartbeat non deve
+            # mai mettersi in coda dietro nient'altro, nemmeno dietro
+            # se stesso (stesso principio del NON passare da
+            # command_lock, vedi sotto) — un secondo chiamante che
+            # aspettasse il primo tradirebbe esattamente l'invariante
+            # "priorità sul resto" che questa funzione esiste per
+            # garantire. Il check già in corso, quando conclude,
+            # decide comunque lo stato della connessione ed eventuale
+            # recovery per entrambi i chiamanti — nessuna verifica
+            # va persa, solo una chiamata a get_bat() ridondante in
+            # meno.
             #
-            result = await asyncio.wait_for(
-                self.mesh.commands.get_bat(),
-                timeout=self.heartbeat_timeout
-            )
+            return
 
-            if result.type == EventType.ERROR:
-                raise RuntimeError(
-                    f"heartbeat error: {result.payload}"
+        self._heartbeat_check_in_progress = True
+
+        try:
+            try:
+                #
+                # NON avvolto in command_lock, a differenza di ogni
+                # altro comando sulla connessione — scelta deliberata,
+                # non una svista. command_lock non ha timeout
+                # sull'acquisizione: se un altro comando è bloccato in
+                # attesa di risposta da un device già silenziosamente
+                # disconnesso (lo scenario stesso che l'heartbeat deve
+                # rilevare), tiene il lock indefinitamente. Se
+                # l'heartbeat dovesse aspettare lo stesso lock, non
+                # scatterebbe mai il recovery — il wait_for(timeout=...)
+                # qui sotto protegge solo la singola chiamata, non
+                # l'attesa del lock. L'heartbeat deve poter verificare la
+                # connessione indipendentemente da cosa sta bloccando
+                # altrove, quindi ha priorità sul resto.
+                #
+                result = await asyncio.wait_for(
+                    self.mesh.commands.get_bat(),
+                    timeout=self.heartbeat_timeout
                 )
 
-            self._connected = True
+                if result.type == EventType.ERROR:
+                    raise RuntimeError(
+                        f"heartbeat error: {result.payload}"
+                    )
 
-        except Exception as e:
+                self._connected = True
 
-            log.warning(
-                "Heartbeat: il device non risponde (%s). "
-                "Connessione considerata caduta.",
-                e
-            )
+            except Exception as e:
 
-            self._connected = False
+                log.warning(
+                    "Heartbeat: il device non risponde (%s). "
+                    "Connessione considerata caduta.",
+                    e
+                )
 
-            self._start_recovery_loop()
+                self._connected = False
+
+                self._start_recovery_loop()
+
+        finally:
+            #
+            # Sempre eseguito, anche sotto CancelledError (es. questo
+            # check era in corso quando disconnect() ha cancellato il
+            # task che lo ospitava) — un finally gira comunque prima
+            # che la cancellazione propaghi, quindi la guardia non
+            # può restare bloccata a True per il resto della vita di
+            # Engine (la stessa istanza sopravvive a reconnect(),
+            # solo self.mesh viene sostituito).
+            #
+            self._heartbeat_check_in_progress = False
 
     def report_possible_failure(self):
         task = asyncio.create_task(

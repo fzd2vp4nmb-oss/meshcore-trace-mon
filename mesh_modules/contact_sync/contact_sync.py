@@ -369,7 +369,10 @@ class ContactSyncModule:
             # silenziosamente non aggiornata (dati precedenti, non
             # quelli del giro corrente) e nessun log segnalava nulla.
             #
-            async with self.engine.command_lock:
+            # acquire_command_lock() invece dell'accesso diretto al
+            # lock (Finding 1/5, review affidabilità 2026-08-21 — v.
+            # ARCHITECTURE.md §49).
+            async with self.engine.acquire_command_lock("contact_sync:full_sync_get_contacts"):
                 result = await self.engine.mesh.commands.get_contacts()
 
             if result.type == EventType.ERROR:
@@ -547,7 +550,12 @@ class ContactSyncModule:
         """
 
         try:
-            async with self.engine.command_lock:
+            # acquire_command_lock() invece dell'accesso diretto al
+            # lock (Finding 1/5, review affidabilità 2026-08-21 — v.
+            # ARCHITECTURE.md §49) — riusa il label già passato dal
+            # chiamante (v. _sync_device_status(): "stats_core",
+            # "stats_radio", ecc.) come etichetta del chiamante.
+            async with self.engine.acquire_command_lock(f"contact_sync:{label}"):
                 result = await factory()
 
             if result.type == EventType.ERROR:

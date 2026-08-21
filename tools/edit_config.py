@@ -92,6 +92,31 @@ INSTANCE_SPECIFIC_PATHS = frozenset({
 })
 
 #
+# Sezioni di primo livello DELIBERATAMENTE assenti dal template — il
+# pattern già documentato in docs/ARCHITECTURE.md §44/§45 per i
+# parametri con default a livello di codice (es. daemon.socket_path,
+# daemon.dispatch_timeout): il codice applica il proprio default finché
+# nessuno le imposta esplicitamente, e restano fuori dal template per
+# scelta esplicita, non per dimenticanza.
+#
+# Da quando `align` è diventato bidirezionale (rimuove anche le chiavi
+# non più nel template, non solo aggiunge quelle mancanti — v. finding
+# 2/§47, docs/ARCHITECTURE.md), questo elenco è la rete di sicurezza che
+# impedisce a `align` di confondere "sezione mai stata nel template, per
+# scelta" con "chiave rimossa dal template, da eliminare" — le due cose
+# sono indistinguibili da un semplice confronto struttura-per-struttura
+# tra config.yaml e il template. Un nuovo top-level che segue lo stesso
+# pattern (nuovo default a livello di codice, mai esposto nel template)
+# va aggiunto qui esplicitamente — stesso principio di
+# INSTANCE_SPECIFIC_PATHS sopra: una rete di sicurezza mantenuta a mano,
+# non derivata automaticamente, perché la distinzione è una scelta di
+# progetto, non un fatto strutturale del file.
+#
+TEMPLATE_EXEMPT_SECTIONS = frozenset({
+    "daemon",
+})
+
+#
 # Permessi ristretti su config.yaml e sui suoi backup (code review
 # 2026-08-20, §3.7) — non contengono segreti veri, ma includono
 # hostname/indirizzi interni della rete (connection.tcp.host, IP del
@@ -361,6 +386,29 @@ def set_path(data, dotted_path, value):
         node = node[key]
 
     node[keys[-1]] = value
+
+
+def remove_path(data, dotted_path):
+    """
+    Rimuove una foglia scalare per dotted_path, se presente. Usata solo
+    da cmd_align() per le chiavi non più presenti nel template (v.
+    find_prunable_scalars()) — non tocca mai un dizionario/lista
+    intermedio, solo l'ultima chiave del path, e non fa nulla (senza
+    errore) se il path non esiste già.
+    """
+
+    keys = dotted_path.split(".")
+    node = data
+
+    for key in keys[:-1]:
+
+        if not isinstance(node, dict) or key not in node:
+            return
+
+        node = node[key]
+
+    if isinstance(node, dict):
+        node.pop(keys[-1], None)
 
 
 def parse_bool(s):
@@ -814,24 +862,105 @@ def walk_template_scalars(node, prefix=()):
         yield (".".join(prefix), node)
 
 
+def find_prunable_scalars(data_node, template_node, prefix=()):
+    """
+    Operazione simmetrica di walk_template_scalars(): genera
+    (dotted_path, valore_attuale) per ogni chiave presente in
+    config.yaml (data_node) ma assente dal ramo corrispondente del
+    template (template_node) — es. le tre chiavi trace.enabled/
+    bot.enabled/contacts.enabled rimosse dal template il 2026-08-21
+    (finding 2, docs/ARCHITECTURE.md §47), rimaste però in ogni
+    config.yaml già esistente a quella data.
+
+    Tre garanzie di sicurezza, per non rompere il pattern già
+    documentato altrove (§44/§45) di parametri con default a livello
+    di codice, DELIBERATAMENTE assenti dal template finché nessuno li
+    imposta esplicitamente (es. daemon.dispatch_timeout scritto a mano
+    con `edit_config.py set`):
+
+    - al primo livello, ignora del tutto (nessuna rimozione, nessuna
+      discesa) ogni chiave elencata in TEMPLATE_EXEMPT_SECTIONS — è
+      l'UNICO modo per distinguere "sezione mai stata nel template, per
+      scelta esplicita" da "chiave rimossa dal template, da eliminare":
+      strutturalmente le due cose sono indistinguibili (in entrambi i
+      casi la chiave non compare nel template), quindi la differenza è
+      necessariamente una rete di sicurezza mantenuta a mano, non
+      qualcosa che si possa dedurre dal solo confronto dati/template;
+    - sotto al primo livello, `key not in template_node` è invece un
+      segnale sicuro di "questa foglia esisteva in una sezione che il
+      template DEFINISCE ancora, ma non più a questo path" (il caso
+      reale di trace.enabled/bot.enabled/contacts.enabled dentro
+      trace:/bot:/contacts:, tutte e tre sezioni tuttora presenti nel
+      template) — solo qui la chiave viene segnalata come orfana;
+    - si ferma su ogni lista del template esattamente come
+      walk_template_scalars() — le liste (trace.paths,
+      bot.known_regions, neighbor_monitoring.repeaters, services)
+      restano sempre ed esclusivamente di competenza dei sottocomandi
+      dedicati, mai toccate da align in nessuna delle due direzioni.
+
+    Un mismatch di tipo tra data e template alla stessa chiave (es. un
+    dict in un lato e uno scalare nell'altro — config.yaml corrotto o
+    modificato a mano in modo incompatibile) non viene mai risolto qui:
+    silenziosamente non produce nulla da rimuovere per quella chiave,
+    lasciata così com'è.
+    """
+
+    if not isinstance(data_node, dict) or not isinstance(template_node, dict):
+        return
+
+    for key, value in data_node.items():
+
+        path = prefix + (key,)
+
+        if not prefix and key in TEMPLATE_EXEMPT_SECTIONS:
+            continue
+
+        if key not in template_node:
+            yield (".".join(path), value)
+            continue
+
+        template_value = template_node[key]
+
+        if isinstance(template_value, list):
+            continue
+
+        if isinstance(value, dict) and isinstance(template_value, dict):
+            yield from find_prunable_scalars(value, template_value, path)
+
+
 def cmd_align(args):
     """
-    "Allinea al template" (docs/ARCHITECTURE.md §45) — inserisce in
-    config.yaml SOLO le chiavi scalari che config/config.yaml.template
-    definisce ma che nel file corrente non ci sono ancora (es. un
-    parametro introdotto da una versione più recente del codice).
+    "Allinea al template" (docs/ARCHITECTURE.md §45/§47) — allinea
+    config.yaml alla SUPERFICIE di chiavi scalari che
+    config/config.yaml.template definisce, in entrambe le direzioni:
+
+    - AGGIUNGE le chiavi che il template definisce ma che nel file
+      corrente non ci sono ancora (es. un parametro introdotto da una
+      versione più recente del codice);
+    - RIMUOVE le chiavi presenti nel file corrente ma non più definite
+      dal template (es. una chiave dismessa in una versione più
+      recente del codice — v. find_prunable_scalars()).
 
     Garanzie, per costruzione:
-    - non sovrascrive MAI una chiave già presente, qualunque sia il
-      suo valore (anche se diverso dal default del template — è
-      esattamente il caso di una personalizzazione fatta con
-      config.sh, che va sempre preservata);
-    - non tocca MAI una lista (walk_template_scalars() non vi entra);
+    - non sovrascrive MAI il VALORE di una chiave già presente in
+      entrambi, qualunque esso sia (anche se diverso dal default del
+      template — è esattamente il caso di una personalizzazione fatta
+      con config.sh, che va sempre preservata): align tocca solo la
+      PRESENZA/ASSENZA di una chiave, mai un valore già impostato;
+    - non tocca MAI una lista, né in aggiunta né in rimozione
+      (walk_template_scalars()/find_prunable_scalars() non vi
+      entrano — restano sempre di competenza dei sottocomandi/menu
+      dedicati);
+    - non tocca MAI una sezione elencata in TEMPLATE_EXEMPT_SECTIONS
+      (parametri con default a livello di codice, deliberatamente
+      fuori dal template — v. find_prunable_scalars() per il perché
+      questa non può essere una regola dedotta automaticamente, deve
+      essere un elenco esplicito);
     - stessa sicurezza degli altri comandi che scrivono: backup,
       scrittura atomica, validazione (via backup_config()/
       save_config(), invariate) — ma solo se c'è davvero qualcosa da
-      aggiungere: a differenza degli altri comandi, un `align` che non
-      trova nulla di mancante non crea un backup inutile.
+      cambiare: un `align` che non trova nulla da aggiungere né da
+      rimuovere non crea un backup inutile.
     """
 
     if not TEMPLATE_PATH.exists():
@@ -862,17 +991,25 @@ def cmd_align(args):
         set_path(data, path, template_value)
         added.append((path, template_value))
 
-    if not added:
-        print("config.yaml già allineato al template — nessuna chiave mancante.")
+    removed = list(find_prunable_scalars(data, template))
+
+    for path, _value in removed:
+        remove_path(data, path)
+
+    if not added and not removed:
+        print("config.yaml già allineato al template — nessuna modifica necessaria.")
         return
 
     for path, value in added:
         print(f"AGGIUNTA: {path} = {value!r}")
 
+    for path, value in removed:
+        print(f"RIMOSSA (non più nel template): {path} (era: {value!r})")
+
     backup_path = backup_config()
     save_config(data, backup_path)
 
-    print(f"Totale: {len(added)} chiave/i aggiunta/e.")
+    print(f"Totale: {len(added)} chiave/i aggiunta/e, {len(removed)} chiave/i rimossa/e.")
 
 
 def main():

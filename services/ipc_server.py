@@ -292,7 +292,24 @@ class IPCServer:
             # MeshCore usata anche dal bot, vanno processate una alla
             # volta indipendentemente da chi le origina.
             #
-            async with self.engine.command_lock:
+            # acquire_command_lock() invece dell'accesso diretto al
+            # lock (Finding 1/5, review affidabilità 2026-08-21 — v.
+            # ARCHITECTURE.md §49): logga se l'attesa qui supera una
+            # soglia sospetta, indicando chi la sta causando — es. un
+            # DM del bot in corso di invio (Finding 1) — così un
+            # comando IPC breve che scade lato client per colpa di
+            # questa contesa non è più privo di correlazione nei log.
+            # L'etichetta usa service.command della richiesta stessa:
+            # l'unica cosa distintiva disponibile a questo livello,
+            # comune a tutti i chiamanti IPC (trace/advert/system/
+            # neighbor_monitor/contact_sync).
+            #
+            lock_label = (
+                f"ipc:{request.get('service', '?')}."
+                f"{request.get('command', '?')}"
+            )
+
+            async with self.engine.acquire_command_lock(lock_label):
                 response = await self._dispatch_with_watchdog(
                     request,
                     reader

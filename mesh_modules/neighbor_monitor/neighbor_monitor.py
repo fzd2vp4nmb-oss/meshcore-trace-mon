@@ -614,9 +614,20 @@ class NeighborMonitorModule:
         lo stesso evento delle DM vere: senza questo registro
         BotModule non avrebbe modo di distinguerle (vedi
         BotModule._on_contact_message()).
+
+        mark_cli_session_active()/done() sono ATTESE esplicitamente
+        (Finding 3, 2026-08-21 — v. ARCHITECTURE.md §48): l'attesa su
+        mark_cli_session_active() garantisce che l'eventuale
+        sospensione dell'auto-fetch del bot (il vero scopo della
+        registrazione, non solo la classificazione già esistente in
+        BotModule._on_contact_message()) sia effettiva PRIMA che
+        send_login_sync() invii il primo comando — altrimenti
+        l'auto-fetch del bot potrebbe ancora "vincere" la corsa su
+        get_msg() per la risposta al login, la stessa race che questo
+        fix esiste per chiudere.
         """
 
-        self.engine.mark_cli_session_active(public_key)
+        await self.engine.mark_cli_session_active(public_key)
 
         try:
 
@@ -713,7 +724,7 @@ class NeighborMonitorModule:
 
         finally:
 
-            self.engine.mark_cli_session_done(public_key)
+            await self.engine.mark_cli_session_done(public_key)
 
     async def _send_cli_command(
         self,

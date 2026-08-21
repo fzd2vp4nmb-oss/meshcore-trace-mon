@@ -104,40 +104,29 @@ menu_trace() {
 
     while true; do
 
-        current_enabled=$(engine get trace.enabled)
         current_interval=$(engine get trace.interval)
         current_timeout=$(engine get trace.timeout)
 
         echo
-        echo "--- Trace (abilitato: $current_enabled) ---"
-        echo "  1) Attiva/disattiva trace (l'intero modulo)"
-        echo "  2) Elenca path configurati"
-        echo "  3) Aggiungi un path"
-        echo "  4) Rimuovi un path"
-        echo "  5) Attiva/disattiva un path esistente"
-        echo "  6) Imposta intervallo tra un path e il successivo (attuale: ${current_interval}s)"
-        echo "  7) Imposta timeout risposta TRACE_DATA (attuale: ${current_timeout}s)"
+        echo "--- Trace ---"
+        echo "(per attivare/disattivare l'intero modulo: menu 6 'Servizi')"
+        echo "  1) Elenca path configurati"
+        echo "  2) Aggiungi un path"
+        echo "  3) Rimuovi un path"
+        echo "  4) Attiva/disattiva un path esistente"
+        echo "  5) Imposta intervallo tra un path e il successivo (attuale: ${current_interval}s)"
+        echo "  6) Imposta timeout risposta TRACE_DATA (attuale: ${current_timeout}s)"
         echo "  0) Torna indietro"
         read -p "Scelta: " choice || { echo; return; }
 
         case "$choice" in
 
             1)
-                read -p "Abilitare trace? [y/N]: " yn
-                if [[ "$yn" =~ ^[Yy]$ ]]; then
-                    engine set trace.enabled true
-                else
-                    engine set trace.enabled false
-                fi
-                CHANGES_MADE=1
-                ;;
-
-            2)
                 engine trace-path-list
                 pause
                 ;;
 
-            3)
+            2)
                 echo "Formato path: aaaa,bbbb,aaaa (prefissi esadecimali separati da virgola)"
                 read -p "Nuovo path: " path
                 read -p "Abilitarlo subito? [Y/n]: " yn
@@ -150,14 +139,14 @@ menu_trace() {
                 CHANGES_MADE=1
                 ;;
 
-            4)
+            3)
                 engine trace-path-list
                 read -p "Path da rimuovere (solo il path, senza indicare lo stato): " path
                 engine trace-path-remove "$path"
                 CHANGES_MADE=1
                 ;;
 
-            5)
+            4)
                 engine trace-path-list
                 read -p "Path da attivare/disattivare (solo il path, senza indicare lo stato): " path
                 read -p "Abilitarlo? [y/N]: " yn
@@ -169,7 +158,7 @@ menu_trace() {
                 CHANGES_MADE=1
                 ;;
 
-            6)
+            5)
                 echo "Secondi di attesa tra un path e il successivo nello stesso giro (minimo 10)."
                 read -p "Intervallo [$current_interval]: " interval
                 interval="${interval:-$current_interval}"
@@ -177,7 +166,7 @@ menu_trace() {
                 CHANGES_MADE=1
                 ;;
 
-            7)
+            6)
                 echo "Secondi di attesa di una risposta TRACE_DATA prima di considerare il path fallito (minimo 10)."
                 read -p "Timeout [$current_timeout]: " timeout
                 timeout="${timeout:-$current_timeout}"
@@ -203,41 +192,29 @@ menu_bot() {
 
     while true; do
 
-        current_enabled=$(engine get bot.enabled)
-
         echo
-        echo "--- Bot (abilitato: $current_enabled) ---"
-        echo "  1) Attiva/disattiva"
-        echo "  2) Elenca regioni note"
-        echo "  3) Aggiungi una regione"
-        echo "  4) Rimuovi una regione"
+        echo "--- Bot ---"
+        echo "(per attivare/disattivare l'intero modulo: menu 6 'Servizi')"
+        echo "  1) Elenca regioni note"
+        echo "  2) Aggiungi una regione"
+        echo "  3) Rimuovi una regione"
         echo "  0) Torna indietro"
         read -p "Scelta: " choice || { echo; return; }
 
         case "$choice" in
 
             1)
-                read -p "Abilitare il bot? [y/N]: " yn
-                if [[ "$yn" =~ ^[Yy]$ ]]; then
-                    engine set bot.enabled true
-                else
-                    engine set bot.enabled false
-                fi
-                CHANGES_MADE=1
-                ;;
-
-            2)
                 engine list-show bot.known_regions
                 pause
                 ;;
 
-            3)
+            2)
                 read -p "Nuova regione (es. europe, it, fr): " region
                 engine list-add bot.known_regions "$region"
                 CHANGES_MADE=1
                 ;;
 
-            4)
+            3)
                 engine list-show bot.known_regions
                 read -p "Regione da rimuovere (testo esatto come mostrato sopra): " region
                 engine list-remove bot.known_regions "$region"
@@ -262,29 +239,18 @@ menu_contacts() {
 
     while true; do
 
-        current_enabled=$(engine get contacts.enabled)
         current_sync_interval=$(engine get contacts.sync_interval)
 
         echo
-        echo "--- Contacts (abilitato: $current_enabled) ---"
-        echo "  1) Attiva/disattiva"
-        echo "  2) Imposta intervallo di sync col device (attuale: ${current_sync_interval}s)"
+        echo "--- Contacts ---"
+        echo "(per attivare/disattivare l'intero modulo: menu 6 'Servizi')"
+        echo "  1) Imposta intervallo di sync col device (attuale: ${current_sync_interval}s)"
         echo "  0) Torna indietro"
         read -p "Scelta: " choice || { echo; return; }
 
         case "$choice" in
 
             1)
-                read -p "Abilitare contacts? [y/N]: " yn
-                if [[ "$yn" =~ ^[Yy]$ ]]; then
-                    engine set contacts.enabled true
-                else
-                    engine set contacts.enabled false
-                fi
-                CHANGES_MADE=1
-                ;;
-
-            2)
                 echo "Secondi tra un sync completo col device (get_contacts()) e il"
                 echo "successivo (minimo 60). Comunicazione locale, nessun impatto radio —"
                 echo "solo più scritture su contacts.db se abbassato molto."

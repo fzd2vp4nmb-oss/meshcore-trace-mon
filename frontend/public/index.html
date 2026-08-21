@@ -219,8 +219,20 @@ const btn =
    RESTORE THEME
 ========================= */
 
+//
+// safeLocalStorageGet/Set (definite in app.js, caricato sopra —
+// v. commento in cima ad app.js, code review 2026-08-20 §3.6) al
+// posto di localStorage diretto: questi due <script> inline erano
+// rimasti fuori da quel fix — in modalità privata (o con quota
+// superata) localStorage.getItem/setItem lanciano, interrompendo a
+// metà lo script e lasciando ad es. il click handler di
+// #backToNodesLink più sotto mai registrato (verifica completa
+// 2026-08-21 — v. ARCHITECTURE.md §52). Stesso difetto pre-esistente
+// anche sul frontend Collettore (index.html identico su questo
+// punto) — fix applicato a entrambi.
+//
 const savedTheme =
-    localStorage.getItem(
+    safeLocalStorageGet(
         "theme"
     );
 
@@ -248,7 +260,7 @@ btn.addEventListener(
             "dark"
         );
 
-        localStorage.setItem(
+        safeLocalStorageSet(
             "theme",
             document.body.classList.contains(
                 "dark"
@@ -318,7 +330,7 @@ document.querySelectorAll(
                 // chartRange, ecc.), così un refresh del browser
                 // resta sulla tab in cui eri.
                 //
-                localStorage.setItem(
+                safeLocalStorageSet(
                     "activeTab",
                     tabBtn.dataset.tab
                 );
@@ -407,7 +419,7 @@ document.querySelectorAll(
 ========================= */
 
 const savedTab =
-    localStorage.getItem(
+    safeLocalStorageGet(
         "activeTab"
     ) ||
     "tracePage";
@@ -460,7 +472,7 @@ document.getElementById(
                 "active"
             );
 
-        localStorage.setItem(
+        safeLocalStorageSet(
             "activeTab",
             "nodesPage"
         );

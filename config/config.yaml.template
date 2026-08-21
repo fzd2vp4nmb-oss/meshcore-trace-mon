@@ -53,7 +53,6 @@ connection:
     address: __BLE_ADDRESS__
 
 trace:
-  enabled: true
   output_file: data/trace.json
   interval: 10
   timeout: 15
@@ -68,7 +67,6 @@ trace:
     - "__TRACE_PATH__,true"
 
 bot:
-  enabled: true
   channel_name: "#bot"
   max_reply_length: 152
   known_regions:
@@ -81,7 +79,6 @@ logging:
   console: false
 
 contacts:
-  enabled: true
   db_file: data/contacts.db
   sync_interval: 3600
 

@@ -16,7 +16,7 @@ logs/*
 run/*
 !run/.gitkeep
 
-# Configurazione reale — mai committare, solo config.yaml.example va nel repo
+# Configurazione reale — mai committare, solo config.yaml.template va nel repo
 config/config.yaml
 
 # Mai in questo repo, nemmeno per errore — vive solo nel mirror privato

@@ -18,7 +18,7 @@ bootstrap()
 
 import asyncio
 
-from clients.ipc_client import IPCClient
+from tools.ipc_test_common import send_ipc_request
 
 #
 # Mappa dei valori 'type' osservati/documentati — completare se ne
@@ -69,8 +69,6 @@ def format_routing(out_path_len, out_path):
 
 async def main():
 
-    client = IPCClient()
-
     print()
     print("========================================")
     print("     MeshCore Daemon CONTACTS LIST")
@@ -80,7 +78,7 @@ async def main():
     print("Invio richiesta...")
     print()
 
-    response = await client.request(
+    response = await send_ipc_request(
         service="system",
         command="contacts"
     )
@@ -89,12 +87,21 @@ async def main():
         print(f"Errore: {response.get('message')}")
         return
 
-    result = response["result"]
+    #
+    # Accesso difensivo (code review 2026-08-20, §4) — questo è uno
+    # script diagnostico interattivo lanciato a mano da riga di
+    # comando: un accesso diretto con [] su un payload IPC malformato
+    # (bug lato daemon, versione disallineata) produrrebbe un
+    # KeyError grezzo invece di un messaggio chiaro. .get() con
+    # default rende l'errore leggibile senza cambiare comportamento
+    # nel caso normale.
+    #
+    result = response.get("result", {})
 
-    print(f"Totale contatti: {result['count']}")
+    print(f"Totale contatti: {result.get('count', '?')}")
     print()
 
-    for c in result["contacts"]:
+    for c in result.get("contacts", []):
 
         print("-" * 60)
         print(f"Nome         : {c.get('adv_name')}")

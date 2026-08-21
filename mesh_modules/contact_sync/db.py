@@ -1,7 +1,10 @@
 import sqlite3
 import time
 
+from contextlib import contextmanager
 from pathlib import Path
+
+from core.logger import log
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
@@ -246,6 +249,35 @@ MIGRATIONS = {
     }
 }
 
+#
+# Difesa in profondità (code review 2026-08-20, §3.4): i campi TEXT
+# sotto arrivano da fonte radio non autenticata (adv_name annunciato
+# da qualunque device in portata, path_hex/region_dump/firmware_
+# version/hardware restituiti dal repeater interrogato) e SQLite TEXT
+# non impone alcun limite di lunghezza. Il rischio si sposta a valle
+# nel frontend, che legge questi stessi campi (v. code review §1.1,
+# XSS — già corretto lato frontend con escapeHtml, ma un limite qui
+# resta una seconda linea di difesa indipendente, oltre a impedire
+# che un singolo campo anomalo gonfi eccessivamente il DB). I limiti
+# sono generosi rispetto a qualunque valore legittimo osservato, per
+# non rischiare di troncare dati reali.
+#
+MAX_ADV_NAME_LEN = 128
+MAX_PATH_HEX_LEN = 256
+MAX_REGION_DUMP_LEN = 4096
+MAX_CLI_TEXT_LEN = 128
+
+
+def _clamp_text(value, max_len):
+    """Tronca value a max_len caratteri se è una stringa più lunga;
+    None e non-stringhe passano invariati (validati/normalizzati
+    altrove, non responsabilità di questo helper)."""
+
+    if isinstance(value, str) and len(value) > max_len:
+        return value[:max_len]
+
+    return value
+
 
 class ContactDB:
     """
@@ -285,6 +317,39 @@ class ContactDB:
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA busy_timeout = 5000")
         self._conn.execute("PRAGMA foreign_keys = ON")
+
+        #
+        # synchronous=NORMAL invece del default FULL (valutazione
+        # usura storage, 2026-08-20) — raccomandazione standard di
+        # SQLite stessa per il modo WAL: in WAL, NORMAL resta sicuro
+        # contro la corruzione del database (l'atomicità è garantita
+        # dal WAL stesso) — l'unico rischio residuo è perdere le
+        # transazioni committate più di recente in caso di perdita di
+        # alimentazione improvvisa prima del prossimo checkpoint, non
+        # un danno al database, che resta comunque in uno stato
+        # consistente. Con FULL (mai cambiato finora), ogni singolo
+        # commit di questa connessione — una riga di
+        # path_observations per advert osservato (rate-limitata a
+        # MIN_PATH_OBSERVATION_INTERVAL=2s per nodo, v.
+        # contact_sync.py), più le scritture di
+        # NeighborMonitorWriter — forza un fsync separato. Con NORMAL,
+        # SQLite sincronizza solo ai checkpoint WAL, non ad ogni
+        # commit: riduce sensibilmente la frequenza di scritture
+        # forzate sul supporto fisico, rilevante per l'usura di una SD
+        # card/SSD sotto un pattern di tante piccole scritture
+        # frequenti. Applicato qui perché ContactDB è la connessione
+        # condivisa da ENTRAMBI i chiamanti che generano questo
+        # pattern (v. i due `ContactDB(...)` in
+        # contact_sync/contact_sync.py e
+        # neighbor_monitor/writer.py) — non tocca le connessioni
+        # sqlite3 separate aperte da tools/rotate_path_observations.py
+        # /tools/rotate_repeater_neighbours.py (operazioni mensili
+        # bulk, un solo VACUUM per esecuzione: la frequenza di commit
+        # non è il loro problema) né la connessione `sqlite3` a riga
+        # di comando usata da contact_sync.sh per `VACUUM INTO` (v.
+        # invece la fix in quello script per la sua parte).
+        #
+        self._conn.execute("PRAGMA synchronous = NORMAL")
         self._conn.executescript(SCHEMA)
         self._conn.commit()
 
@@ -324,7 +389,8 @@ class ContactDB:
         out_path_hash_mode=None,
         last_advert=None,
         lastmod=None,
-        seen_at=None
+        seen_at=None,
+        commit=True
     ):
         """
         Crea o aggiorna un nodo. I campi None non sovrascrivono un
@@ -333,9 +399,19 @@ class ContactDB:
         out_path/flags/ecc.) sia dal sync periodico via
         get_contacts() (che li porta tutti) — nessuna delle due
         sorgenti deve poter cancellare dati forniti dall'altra.
+
+        commit=False per usare questa chiamata dentro un blocco
+        transaction() più ampio (v. code review 2026-08-20, §3.4).
         """
 
         seen_at = seen_at or int(time.time())
+
+        #
+        # v. MAX_ADV_NAME_LEN — adv_name proviene dalla rete mesh,
+        # controllato dal device remoto (code review 2026-08-20,
+        # §3.4).
+        #
+        adv_name = _clamp_text(adv_name, MAX_ADV_NAME_LEN)
 
         self._conn.execute(
             """
@@ -365,7 +441,8 @@ class ContactDB:
             )
         )
 
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def insert_path_observation(
         self,
@@ -380,6 +457,12 @@ class ContactDB:
         rssi,
         snr
     ):
+
+        #
+        # v. MAX_PATH_HEX_LEN — path_hex proviene dalla rete mesh
+        # (code review 2026-08-20, §3.4).
+        #
+        path_hex = _clamp_text(path_hex, MAX_PATH_HEX_LEN)
 
         self._conn.execute(
             """
@@ -402,6 +485,35 @@ class ContactDB:
     def close(self):
         self._conn.close()
 
+    @contextmanager
+    def transaction(self):
+        """
+        Raggruppa più insert/upsert in un'unica transazione atomica
+        (code review 2026-08-20, §3.4) — prima ogni insert_repeater_*
+        committava indipendentemente: un crash o un'eccezione a metà
+        di un giro di polling repeater (es. un elemento neighbours
+        malformato) lasciava stato incoerente tra tabelle che il
+        chiamante considera un'unità logica (status/neighbours/
+        telemetry/... dello stesso queried_at). Le chiamate dentro il
+        blocco `with` devono passare commit=False ai metodi
+        insert_*/upsert_* che lo supportano (v. NeighborMonitorWriter
+        per l'uso) — il commit avviene una sola volta qui, alla fine,
+        o mai in caso di eccezione (rollback automatico).
+
+        Non annidabile: non usare transaction() dentro un altro
+        blocco transaction() sulla stessa connessione.
+        """
+
+        try:
+            yield self
+
+        except Exception:
+            self._conn.rollback()
+            raise
+
+        else:
+            self._conn.commit()
+
     def insert_repeater_status(
         self,
         public_key,
@@ -423,7 +535,8 @@ class ContactDB:
         direct_dups=None,
         flood_dups=None,
         rx_airtime=None,
-        recv_errors=None
+        recv_errors=None,
+        commit=True
     ):
         """
         Inserisce una riga di status per il repeater interrogato —
@@ -431,6 +544,9 @@ class ContactDB:
         sovrascritto — vedi docs/NEIGHBOR_MONITORING.md §5. Richiede
         che public_key sia già presente in nodes (FK) — il chiamante
         deve fare upsert_node() prima, se necessario.
+
+        commit=False per usare questa chiamata dentro un blocco
+        transaction() più ampio (v. code review 2026-08-20, §3.4).
         """
 
         self._conn.execute(
@@ -453,7 +569,8 @@ class ContactDB:
             )
         )
 
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def upsert_device_status(
         self,
@@ -536,17 +653,48 @@ class ContactDB:
         self,
         public_key,
         queried_at,
-        neighbours
+        neighbours,
+        commit=True
     ):
         """
         Inserisce tutte le righe neighbour di una query in un colpo
-        solo (executemany + singolo commit). 'neighbours' è la lista
-        così come restituita da fetch_all_neighbours() — dict con
-        chiavi 'pubkey' (prefisso, non chiave completa), 'secs_ago',
-        'snr'.
+        solo (executemany + singolo commit, salvo commit=False per
+        uso dentro transaction() — v. code review 2026-08-20, §3.4).
+        'neighbours' è la lista così come restituita da
+        fetch_all_neighbours() — dict con chiavi 'pubkey' (prefisso,
+        non chiave completa), 'secs_ago', 'snr'.
+
+        Prima di questo fix (code review 2026-08-20, §3.4), un solo
+        elemento con 'pubkey' None faceva fallire l'intero
+        executemany (violazione NOT NULL su neighbour_prefix) — con
+        perdita silenziosa di TUTTI i neighbours del giro, non solo
+        dell'elemento malformato. Gli elementi senza 'pubkey' vengono
+        ora scartati esplicitamente prima dell'insert, con un log
+        che elenca quanti sono stati scartati — i neighbours validi
+        dello stesso giro vengono comunque salvati.
         """
 
         if not neighbours:
+            return
+
+        valid_neighbours = [
+            n for n in neighbours
+            if n.get("pubkey")
+        ]
+
+        dropped = len(neighbours) - len(valid_neighbours)
+
+        if dropped:
+            log.warning(
+                "ContactDB: %d/%d elementi neighbour scartati "
+                "(pubkey mancante) per public_key=%s, queried_at=%s.",
+                dropped,
+                len(neighbours),
+                public_key,
+                queried_at
+            )
+
+        if not valid_neighbours:
             return
 
         rows = [
@@ -557,7 +705,7 @@ class ContactDB:
                 n.get("secs_ago"),
                 n.get("snr")
             )
-            for n in neighbours
+            for n in valid_neighbours
         ]
 
         self._conn.executemany(
@@ -570,20 +718,24 @@ class ContactDB:
             rows
         )
 
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def insert_repeater_telemetry(
         self,
         public_key,
         queried_at,
-        telemetry
+        telemetry,
+        commit=True
     ):
         """
         Inserisce tutti i canali telemetria di una query in un colpo
-        solo (executemany + singolo commit). 'telemetry' è la lista
-        così come restituita da req_telemetry_sync() — dict con
-        chiavi 'channel', 'type', 'value' (già decodificati dalla
-        libreria dal formato Cayenne LPP).
+        solo (executemany + singolo commit, salvo commit=False per
+        uso dentro transaction() — v. code review 2026-08-20, §3.4).
+        'telemetry' è la lista così come restituita da
+        req_telemetry_sync() — dict con chiavi 'channel', 'type',
+        'value' (già decodificati dalla libreria dal formato Cayenne
+        LPP).
         """
 
         if not telemetry:
@@ -610,23 +762,34 @@ class ContactDB:
             rows
         )
 
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def insert_repeater_region(
         self,
         public_key,
         queried_at,
-        region_dump
+        region_dump,
+        commit=True
     ):
         """
         Inserisce il dump regioni di una query — una sola riga per
         query (a differenza di neighbours/telemetry, non è una lista
         di elementi). 'region_dump' è la stringa così come
         restituita da req_regions_sync(), testo grezzo non parsato.
+
+        commit=False per usare questa chiamata dentro un blocco
+        transaction() più ampio (v. code review 2026-08-20, §3.4).
         """
 
         if not region_dump:
             return
+
+        #
+        # v. MAX_REGION_DUMP_LEN — region_dump proviene dal repeater
+        # interrogato via radio (code review 2026-08-20, §3.4).
+        #
+        region_dump = _clamp_text(region_dump, MAX_REGION_DUMP_LEN)
 
         self._conn.execute(
             """
@@ -638,7 +801,8 @@ class ContactDB:
             (public_key, queried_at, region_dump)
         )
 
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def insert_repeater_config(
         self,
@@ -654,7 +818,8 @@ class ContactDB:
         flood_max_unscoped=None,
         flood_max_advert=None,
         region_default=None,
-        dutycycle=None
+        dutycycle=None,
+        commit=True
     ):
         """
         Inserisce una riga di configurazione CLI per il repeater —
@@ -662,7 +827,18 @@ class ContactDB:
         volta), come repeater_status. Ogni parametro può essere None
         indipendentemente dagli altri se quel singolo comando non ha
         ricevuto risposta.
+
+        commit=False per usare questa chiamata dentro un blocco
+        transaction() più ampio (v. code review 2026-08-20, §3.4).
         """
+
+        #
+        # v. MAX_CLI_TEXT_LEN — firmware_version/hardware provengono
+        # dal repeater interrogato via CLI radio (code review
+        # 2026-08-20, §3.4).
+        #
+        firmware_version = _clamp_text(firmware_version, MAX_CLI_TEXT_LEN)
+        hardware = _clamp_text(hardware, MAX_CLI_TEXT_LEN)
 
         self._conn.execute(
             """
@@ -682,14 +858,16 @@ class ContactDB:
             )
         )
 
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def insert_repeater_clock(
         self,
         public_key,
         queried_at,
         remote_clock,
-        skew_seconds
+        skew_seconds,
+        commit=True
     ):
         """
         Inserisce una riga di scarto orologio — una sola riga per
@@ -698,6 +876,9 @@ class ContactDB:
         dal chiamante (remote_clock - queried_at), non ricalcolato
         qui, per usare esattamente lo stesso queried_at con cui viene
         salvata la riga.
+
+        commit=False per usare questa chiamata dentro un blocco
+        transaction() più ampio (v. code review 2026-08-20, §3.4).
         """
 
         self._conn.execute(
@@ -710,4 +891,5 @@ class ContactDB:
             (public_key, queried_at, remote_clock, skew_seconds)
         )
 
-        self._conn.commit()
+        if commit:
+            self._conn.commit()

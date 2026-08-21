@@ -29,10 +29,27 @@ Restart=always
 RestartSec=5
 
 #
-# Arresto pulito
+# Arresto pulito (code review 2026-08-20, Rev5) — TimeoutStopSec deve
+# restare superiore a SHUTDOWN_HANDLERS_TIMEOUT (30s, in
+# services/ipc_server.py: attesa di eventuali handler IPC ancora in
+# corso — es. un comando neighbor_monitor che tiene ancora
+# Engine.command_lock, v. §1.3 delle review) più un margine per il
+# successivo Engine.disconnect() (cancellazione task
+# heartbeat/recovery + chiusura pulita della connessione al
+# companion). Con il precedente TimeoutStopSec=15, systemd inviava
+# SIGKILL PRIMA che daemon.py potesse anche solo iniziare ad attendere
+# quei 30s: MeshCoreDaemon.stop() veniva interrotto a metà,
+# Engine.disconnect() non veniva mai eseguito (connessione al
+# companion non chiusa in modo pulito) e nessuno dei log "IPC Server:
+# in attesa di N handler..."/"...procedo comunque con lo shutdown"
+# aveva mai la possibilità di essere scritto — lo shutdown "ordinato"
+# introdotto apposta per questo scenario (§3.1) non poteva mai
+# completarsi come previsto, proprio nel caso (handler bloccato) per
+# cui era stato pensato. 45s = 30s (SHUTDOWN_HANDLERS_TIMEOUT) + 15s
+# di margine per il resto di stop().
 #
 KillSignal=SIGTERM
-TimeoutStopSec=15
+TimeoutStopSec=45
 
 #
 # Hardening

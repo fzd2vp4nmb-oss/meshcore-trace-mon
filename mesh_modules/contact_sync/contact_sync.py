@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import time
 
 from meshcore.events import EventType
@@ -6,6 +7,24 @@ from meshcore.events import EventType
 from core.config import config
 from core.logger import log
 from mesh_modules.contact_sync.db import ContactDB
+
+#
+# Rate-limit minimo per (public_key, path_hex) su path_observations
+# (code review 2026-08-20, §3.4; corretto in chiave nella stessa
+# giornata — v. commento in _on_log_data() per il dettaglio completo
+# dell'errore e della correzione). Per design ogni ADVERT genera una
+# riga (percorsi multipli per lo stesso nodo sono dati voluti, non
+# deduplicati — docs/CONTACT_MANAGEMENT.md), ma senza alcun limite un
+# nodo/percorso che trasmette ad alta frequenza (guasto o doloso) può
+# far crescere la tabella più rapidamente della rotazione mensile,
+# fino a esaurire lo storage SD del Raspberry Pi. 2 secondi è
+# ampiamente sotto la cadenza di qualunque ripetizione legittima dello
+# STESSO percorso osservata sul campo — scarta solo un flusso
+# anormalmente rapido sullo stesso nodo E sullo stesso percorso, non
+# riduce mai la diversità di percorso (locale vs. via RPT remoto) che
+# è invece il dato che questo meccanismo deve preservare.
+#
+MIN_PATH_OBSERVATION_INTERVAL = 2
 
 
 class ContactSyncModule:
@@ -49,7 +68,81 @@ class ContactSyncModule:
 
         self._sync_task = None
 
+        #
+        # Riferimenti ai task di rebind creati da _on_rebind() (code
+        # review 2026-08-20, §3.1) — a differenza di _sync_task (già
+        # correttamente salvato come attributo), questi non erano mai
+        # mantenuti: rischio di garbage collection imprevedibile
+        # prima del completamento, sconsigliato esplicitamente dalla
+        # documentazione asyncio. Il set si autopulisce a task finito.
+        #
+        self._rebind_tasks = set()
+
+        #
+        # Ultimo timestamp (locale, time.time()) di path_observation
+        # accettata, per chiave (public_key, path_hex) — v.
+        # MIN_PATH_OBSERVATION_INTERVAL sopra (corretta nella chiave
+        # il 2026-08-20, stessa giornata dell'introduzione: la prima
+        # versione usava solo public_key, scartando erroneamente
+        # anche percorsi diversi per lo stesso nodo). Solo in memoria,
+        # si azzera a ogni riavvio del daemon (accettabile: il caso da
+        # prevenire è un flusso continuo durante l'esecuzione, non il
+        # singolo evento subito dopo un riavvio).
+        #
+        self._last_path_obs_at = {}
+
+        #
+        # Serializza l'accesso a self.db/self._conn tra le chiamate
+        # concorrenti a _run_db() (verifica logica post-deploy
+        # 2026-08-20, in aggiunta al §3.4 sotto) — self.db.transaction()
+        # (v. db.py) tiene aperta una transazione multi-statement con
+        # commit posticipato per garantire atomicità tra le insert di
+        # un singolo giro di polling repeater. La connessione sqlite3
+        # è condivisa (check_same_thread=False) e ha UN'UNICA
+        # transazione implicita: senza questo lock, l'executor di
+        # default (multi-thread) può interlacciare _on_advert() con
+        # _full_sync()/_sync_device_status() sullo stesso self._conn,
+        # e un commit dell'uno può chiudere prematuramente la
+        # transazione multi-step dell'altro, vanificando proprio la
+        # garanzia di atomicità introdotta dal §3.4. Il lock avvolge
+        # solo l'attesa dell'executor (non query CPU-bound), quindi
+        # non reintroduce il blocco dell'event loop che il §3.4 voleva
+        # eliminare — le altre coroutine del daemon restano libere di
+        # girare mentre una chiamata DB è in coda o in corso.
+        #
+        self._db_lock = asyncio.Lock()
+
         self.engine.register_rebind(self._on_rebind)
+
+    async def _run_db(self, func, *args, **kwargs):
+        """
+        Esegue una chiamata sincrona a ContactDB (sqlite3, driver
+        bloccante) in un thread executor invece che direttamente
+        nell'event loop del daemon (code review 2026-08-20, §3.4) —
+        con busy_timeout=5000, un conflitto di lock (es. con
+        tools/rotate_path_observations.py sullo stesso file da un
+        processo separato) può far attendere la connessione fino a
+        5 secondi interi: eseguita in linea nel loop, quell'attesa
+        blocca l'intero daemon (non solo ContactSyncModule, anche
+        RX mesh/bot/IPC, che condividono lo stesso loop). L'executor
+        di default (ThreadPoolExecutor implicito di asyncio) è
+        sufficiente: si tratta di query sqlite3, non CPU-bound.
+
+        self._db_lock serializza le chiamate tra loro (v. commento
+        su self._db_lock in __init__) — self._conn è condivisa e ha
+        una sola transazione implicita, quindi due chiamate concorrenti
+        su thread diversi dell'executor possono altrimenti interlacciare
+        commit/insert di giri di polling differenti.
+        """
+
+        async with self._db_lock:
+
+            loop = asyncio.get_event_loop()
+
+            return await loop.run_in_executor(
+                None,
+                functools.partial(func, *args, **kwargs)
+            )
 
     async def start(self):
 
@@ -80,8 +173,13 @@ class ContactSyncModule:
 
     def _on_rebind(self, mesh):
 
-        asyncio.create_task(
+        task = asyncio.create_task(
             self._rebind_async()
+        )
+
+        self._rebind_tasks.add(task)
+        task.add_done_callback(
+            self._rebind_tasks.discard
         )
 
     async def _rebind_async(self):
@@ -111,7 +209,8 @@ class ContactSyncModule:
             return
 
         try:
-            self.db.upsert_node(
+            await self._run_db(
+                self.db.upsert_node,
                 public_key=public_key,
                 adv_name=payload.get("adv_name"),
                 node_type=payload.get("adv_type"),
@@ -120,13 +219,87 @@ class ContactSyncModule:
                 seen_at=payload.get("recv_time")
             )
 
-            self.db.insert_path_observation(
+            #
+            # CORREZIONE (2026-08-20, stessa giornata) — la versione
+            # originale di questo rate-limit (code review 2026-08-20,
+            # §3.4) usava come chiave SOLO public_key, senza guardare
+            # il percorso: scartava quindi anche una seconda
+            # osservazione con un path_hex DIVERSO dalla precedente,
+            # se arrivata entro MIN_PATH_OBSERVATION_INTERVAL. Questo
+            # confliggeva direttamente con una decisione di design già
+            # presa e documentata (v. docs/CONTACT_MANAGEMENT.md,
+            # sezione sul meccanismo di acquisizione, la nota col
+            # test "diretto + ripetuto da 0d28"): le ricezioni
+            # multiple dello stesso advert per percorsi FISICI DIVERSI
+            # sono dati voluti, non rumore da filtrare — rappresentano
+            # la ridondanza reale della rete (es. un nodo che arriva
+            # sia diretto sia ripetuto da un RPT, il caso d'uso
+            # esplicito di trace-mon). Il rate-limit doveva colpire
+            # solo il flusso anomalo di ripetizioni dello STESSO
+            # percorso, non la diversità di percorso in sé — un errore
+            # di analisi (bug introdotto contro una decisione già
+            # approvata), non un cambiamento di requisiti.
+            #
+            # Fix: chiave del rate-limit estesa a (public_key,
+            # path_hex) invece del solo public_key. Così due
+            # osservazioni con path_hex diverso per lo stesso nodo non
+            # si scartano mai a vicenda, indipendentemente dai tempi;
+            # solo la ripetizione dello STESSO percorso entro
+            # MIN_PATH_OBSERVATION_INTERVAL viene ancora scartata — il
+            # caso originale che il rate-limit doveva prevenire (un
+            # nodo/percorso che trasmette troppo rapidamente).
+            # L'identità del nodo (upsert_node sopra) resta comunque
+            # sempre aggiornata, indipendentemente dall'esito di
+            # questo controllo, come da prima.
+            #
+            # In memoria, si azzera a ogni riavvio/rebind del daemon
+            # (già frequente, v. commento su _last_path_obs_at
+            # nell'__init__): la cardinalità aggiuntiva data da
+            # (nodo, percorso) invece di solo nodo resta comunque
+            # trascurabile in pratica.
+            #
+            path_hex = payload.get("path") or ""
+            path_key = (public_key, path_hex)
+
+            now_local = time.time()
+            last_at = self._last_path_obs_at.get(path_key, 0)
+
+            if now_local - last_at < MIN_PATH_OBSERVATION_INTERVAL:
+
+                log.info(
+                    "ContactSyncModule: path_observation scartata "
+                    "per %s, percorso '%s' (rate-limit, %.1fs "
+                    "dall'ultima accettata per questo stesso "
+                    "percorso).",
+                    public_key,
+                    path_hex,
+                    now_local - last_at
+                )
+
+                return
+
+            self._last_path_obs_at[path_key] = now_local
+
+            await self._run_db(
+                self.db.insert_path_observation,
                 public_key=public_key,
                 observed_at=payload.get("recv_time"),
                 adv_timestamp=payload.get("adv_timestamp"),
                 pkt_hash=payload.get("pkt_hash"),
-                path_hex=payload.get("path") or "",
-                hop_count=payload.get("path_len", 0),
+                path_hex=path_hex,
+                #
+                # payload.get("path_len", 0) usava il default solo
+                # se la chiave era ASSENTE, non se il valore era
+                # esplicitamente None (code review 2026-08-20, §3.4)
+                # — un payload con "path_len": None violava il
+                # vincolo NOT NULL su hop_count, con
+                # insert_path_observation() che falliva DOPO che
+                # upsert_node() era già stato committato (nodo
+                # aggiornato, osservazione di path persa). "or 0"
+                # normalizza sia il caso assente sia None allo stesso
+                # default 0, senza alterare un path_len legittimo.
+                #
+                hop_count=payload.get("path_len") or 0,
                 route_type=payload.get("route_typename"),
                 transport_code=payload.get("transport_code"),
                 rssi=payload.get("rssi"),
@@ -146,7 +319,33 @@ class ContactSyncModule:
 
             await asyncio.sleep(self.sync_interval)
 
-            await self._full_sync()
+            #
+            # Rete di sicurezza: _full_sync() protegge già ogni sua
+            # singola operazione fallibile (get_contacts(), ogni
+            # upsert_node(), upsert_device_status(), vedi sotto), ma
+            # questo loop è un task standalone il cui esito non viene
+            # mai atteso/controllato da nessun altro componente — se
+            # una qualunque eccezione dovesse comunque sfuggire (bug
+            # futuro, cambio di comportamento della libreria), non
+            # deve poter interrompere per sempre l'intero sync
+            # periodico in modo silenzioso (v. code review
+            # 2026-08-20, §2.5: prima di questo fix, un'eccezione
+            # sfuggita a metà di _full_sync() terminava il task senza
+            # alcun log applicativo — solo l'handler di default di
+            # asyncio, tipicamente invisibile in produzione — mentre
+            # il resto del servizio (RX_LOG_DATA) restava attivo,
+            # mascherando il guasto).
+            #
+            try:
+                await self._full_sync()
+
+            except Exception:
+                log.exception(
+                    "ContactSyncModule: giro di sync periodico "
+                    "interrotto da un errore non previsto — il "
+                    "prossimo giro (tra %ss) verrà comunque tentato.",
+                    self.sync_interval
+                )
 
     async def _full_sync(self):
 
@@ -158,8 +357,32 @@ class ContactSyncModule:
             # (sync_interval) e può altrimenti sovrapporsi a un
             # comando IPC/bot in corso sulla stessa connessione.
             #
+            # get_contacts() (a differenza degli altri comandi "_sync"
+            # usati altrove in questo file, v. _get_stats_safe()) non
+            # è pre-unwrappato dalla libreria: su timeout/fallimento
+            # non solleva mai un'eccezione, ritorna un
+            # Event(ERROR, ...) grezzo (verificato leggendo
+            # meshcore_py/commands/contact.py — code review 2026-08-20,
+            # audit successivo al Finding 2 di una review indipendente).
+            # Il solo except Exception sotto non lo intercettava mai:
+            # un timeout passava per "riuscito", mesh.contacts restava
+            # silenziosamente non aggiornata (dati precedenti, non
+            # quelli del giro corrente) e nessun log segnalava nulla.
+            #
             async with self.engine.command_lock:
-                await self.engine.mesh.commands.get_contacts()
+                result = await self.engine.mesh.commands.get_contacts()
+
+            if result.type == EventType.ERROR:
+
+                log.warning(
+                    "ContactSyncModule: get_contacts() fallita durante "
+                    "il sync periodico (%s) — mesh.contacts non "
+                    "aggiornata, dati del giro precedente ancora "
+                    "validi per questo ciclo.",
+                    result.payload
+                )
+
+                return
 
         except Exception:
             log.exception(
@@ -184,7 +407,8 @@ class ContactSyncModule:
         for c in contacts.values():
 
             try:
-                self.db.upsert_node(
+                await self._run_db(
+                    self.db.upsert_node,
                     public_key=c.get("public_key"),
                     adv_name=c.get("adv_name"),
                     node_type=c.get("type"),
@@ -212,7 +436,26 @@ class ContactSyncModule:
             count
         )
 
-        await self._sync_device_status(now)
+        try:
+            await self._sync_device_status(now)
+
+        except Exception:
+            #
+            # A differenza di ogni altra scrittura DB in questo file
+            # (upsert_node in loop, sotto _get_stats_safe),
+            # upsert_device_status() non era protetta: un errore qui
+            # (es. 'database is locked' per contesa temporanea con
+            # uno script di manutenzione, superiore al busy_timeout)
+            # interrompeva silenziosamente l'intero sync periodico
+            # (v. code review 2026-08-20, §2.5). Il device_status
+            # resta semplicemente non aggiornato per questo giro —
+            # stesso comportamento onesto già documentato sopra per
+            # il caso "tutte e quattro le query fallite".
+            #
+            log.exception(
+                "ContactSyncModule: sync di device_status fallito "
+                "per questo giro."
+            )
 
     async def _sync_device_status(self, now):
         """
@@ -267,7 +510,8 @@ class ContactSyncModule:
         packets = packets or {}
         device_info = device_info or {}
 
-        self.db.upsert_device_status(
+        await self._run_db(
+            self.db.upsert_device_status,
             updated_at=now,
             battery_mv=core.get("battery_mv"),
             uptime_secs=core.get("uptime_secs"),

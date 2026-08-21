@@ -27,7 +27,10 @@ class ContactSyncService:
         # Il costruttore del servizio non può essere asincrono, ma
         # l'avvio richiede chiamate al device — parte in background.
         #
-        asyncio.create_task(
+        # Riferimento mantenuto sull'istanza (code review 2026-08-20,
+        # §3.1) — v. mesh_modules/bot/service.py per la motivazione.
+        #
+        self._start_task = asyncio.create_task(
             self._start()
         )
 

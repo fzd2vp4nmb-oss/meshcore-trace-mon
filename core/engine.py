@@ -60,6 +60,34 @@ class Engine:
         self._heartbeat_task = None
 
         #
+        # Riferimenti ai task "fire-and-forget" creati da
+        # report_possible_failure() (code review 2026-08-20, §3.1) —
+        # asyncio non garantisce che un task senza riferimenti
+        # sopravviva fino al completamento (rischio di garbage
+        # collection imprevedibile, sconsigliato esplicitamente dalla
+        # documentazione asyncio). Il set si autopulisce a fine task.
+        #
+        self._background_tasks = set()
+
+        #
+        # Flag impostato ESCLUSIVAMENTE da disconnect() (mai da
+        # _teardown_mesh(), condiviso anche con reconnect() di
+        # routine — un reconnect() di routine deve poter continuare a
+        # far ripartire il recovery normalmente). Impedisce in modo
+        # sincrono, indipendentemente da come lo scheduler asyncio
+        # interfoglia i task, che un _start_recovery_loop() chiamato
+        # DOPO che disconnect() ha già dichiarato concluso il proprio
+        # lavoro possa comunque creare un nuovo _recovery_task
+        # orfano — race concreta tra un task in background avviato da
+        # report_possible_failure() (es. trace.py/bot.py/advert.py su
+        # un comando fallito) e uno shutdown in corso: cancellare e
+        # attendere i task esistenti (vedi disconnect()) chiude il
+        # caso comune, ma non basta da solo a coprire ogni possibile
+        # timing di consegna della cancellazione.
+        #
+        self._shutting_down = False
+
+        #
         # Serializza le esecuzioni di reconnect(): se più trigger lo
         # richiamano quasi in contemporanea, solo la prima esegue
         # davvero il lavoro.
@@ -105,31 +133,74 @@ class Engine:
 
     async def connect(self):
 
+        #
+        # Protetto dallo stesso _reconnect_lock di reconnect() (code
+        # review 2026-08-20, §4) — prima connect() non acquisiva
+        # alcun lock, a differenza di reconnect(): un avvio (connect())
+        # che si sovrapponesse a un ciclo di recovery già in corso
+        # (reconnect(), es. triggerato da un heartbeat fallito
+        # arrivato a ridosso dell'avvio) avrebbe potuto far eseguire
+        # _create_mesh() due volte in concorrenza, con due connessioni
+        # MeshCore create ma solo una tracciata in self.mesh (l'altra
+        # persa, mai chiusa). Il controllo "if self.connected" resta
+        # fuori dal lock come fast-path per il caso comune (già
+        # connesso, nessuna contesa) — solo il percorso che crea
+        # davvero la connessione è serializzato.
+        #
         if self.connected:
             return self.mesh
 
-        log.info(
-            "Opening %s connection...",
-            self.connection_type.upper()
-        )
+        async with self._reconnect_lock:
 
-        self.mesh = await self._create_mesh()
+            if self.connected:
+                return self.mesh
 
-        self._subscribe_connection_events()
-
-        self._connected = True
-
-        if self._heartbeat_task is None:
-            self._heartbeat_task = asyncio.create_task(
-                self._heartbeat_loop()
+            log.info(
+                "Opening %s connection...",
+                self.connection_type.upper()
             )
 
-        log.info(
-            "%s connection established.",
-            self.connection_type.upper()
-        )
+            self.mesh = await self._create_mesh()
 
-        return self.mesh
+            self._subscribe_connection_events()
+
+            self._connected = True
+
+            if self._heartbeat_task is None:
+                self._heartbeat_task = asyncio.create_task(
+                    self._heartbeat_loop()
+                )
+
+            log.info(
+                "%s connection established.",
+                self.connection_type.upper()
+            )
+
+            return self.mesh
+
+    #
+    # Timeout attorno all'intera creazione/apertura della connessione
+    # (code review 2026-08-20, Rev.6, §4 — verificato leggendo il
+    # sorgente di meshcore_py, non assunto): MeshCore.create_tcp()/
+    # create_ble() delegano l'apertura del socket/canale a
+    # TCPConnection.connect()/BLEConnection.connect(), NESSUNO dei due
+    # ha un proprio timeout (loop.create_connection()/BleakClient.connect()
+    # chiamati senza alcun asyncio.wait_for) — un host irraggiungibile
+    # che non rifiuta subito la connessione (es. firewall che scarta i
+    # pacchetti invece di rispondere RST) può bloccare questa chiamata
+    # indefinitamente. Solo create_serial() ha un timeout proprio
+    # (10.0s di default, in SerialConnection.connect()). Dopo l'apertura
+    # del trasporto, l'handshake applicativo (send_appstart(), dentro
+    # MeshCore.connect()) ha comunque un timeout proprio di libreria
+    # (CommandHandler.DEFAULT_TIMEOUT = 15.0s) — questo wrapper deve
+    # quindi restare più ampio di 15s per non tagliare un handshake
+    # lento ma legittimo. 30s scelto per coerenza con
+    # DEFAULT_IPC_TIMEOUT già usato altrove nel progetto per operazioni
+    # di rete senza un valore più specifico (clients/ipc_client.py).
+    # Protegge sia connect() (avvio) sia reconnect() (recovery loop),
+    # che condividono entrambi questo stesso metodo.
+    #
+    CREATE_MESH_TIMEOUT = 30.0
 
     async def _create_mesh(self):
 
@@ -142,7 +213,7 @@ class Engine:
 
         if self.connection_type == "tcp":
 
-            return await MeshCore.create_tcp(
+            coro = MeshCore.create_tcp(
                 host=config["connection.tcp.host"],
                 port=config["connection.tcp.port"],
                 **common_kwargs
@@ -150,7 +221,7 @@ class Engine:
 
         elif self.connection_type == "serial":
 
-            return await MeshCore.create_serial(
+            coro = MeshCore.create_serial(
                 port=config["connection.serial.device"],
                 baudrate=config["connection.serial.baudrate"],
                 **common_kwargs
@@ -158,7 +229,7 @@ class Engine:
 
         elif self.connection_type == "ble":
 
-            return await MeshCore.create_ble(
+            coro = MeshCore.create_ble(
                 address=config["connection.ble.address"],
                 **common_kwargs
             )
@@ -168,6 +239,24 @@ class Engine:
             raise RuntimeError(
                 f"Tipo di connessione non supportato: {self.connection_type}"
             )
+
+        try:
+            return await asyncio.wait_for(
+                coro,
+                timeout=self.CREATE_MESH_TIMEOUT
+            )
+
+        except asyncio.TimeoutError:
+
+            log.error(
+                "Apertura connessione %s: nessuna risposta entro %ss, "
+                "abbandono il tentativo (verrà ritentato dal recovery "
+                "loop se in corso).",
+                self.connection_type.upper(),
+                self.CREATE_MESH_TIMEOUT
+            )
+
+            raise
 
     def _subscribe_connection_events(self):
 
@@ -272,8 +361,13 @@ class Engine:
             self._start_recovery_loop()
 
     def report_possible_failure(self):
-        asyncio.create_task(
+        task = asyncio.create_task(
             self._run_heartbeat_check()
+        )
+
+        self._background_tasks.add(task)
+        task.add_done_callback(
+            self._background_tasks.discard
         )
 
     def register_rebind(self, callback):
@@ -285,6 +379,21 @@ class Engine:
             self._rebind_callbacks.remove(callback)
 
     def _start_recovery_loop(self):
+
+        #
+        # Controllo sincrono, primo statement: blocca l'avvio di un
+        # nuovo recovery loop se disconnect() è già in corso o
+        # concluso, indipendentemente da CHI chiama questo metodo o
+        # da QUANDO arriva la chiamata rispetto alla cancellazione
+        # dei task esistenti (vedi commento su self._shutting_down in
+        # __init__). Non dipende dal fatto che una CancelledError
+        # venga consegnata in tempo.
+        #
+        if self._shutting_down:
+            log.info(
+                "Recovery loop ignorato: shutdown già in corso."
+            )
+            return
 
         if (
             self._recovery_task is not None and
@@ -335,13 +444,68 @@ class Engine:
 
     async def disconnect(self):
 
+        #
+        # Prima di questo fix (code review 2026-08-20, §3.1),
+        # .cancel() veniva chiamato senza mai attendere l'effettiva
+        # terminazione dei task prima di procedere con
+        # _teardown_mesh(): una race concreta era possibile tra lo
+        # shutdown pulito e un tentativo di riconnessione ancora in
+        # volo nella finestra tra cancel() e la terminazione
+        # effettiva del task (es. _recovery_loop() nel mezzo di un
+        # self.reconnect() quando arriva la cancellazione).
+        # CancelledError è l'esito atteso qui, non un errore.
+        #
+        # Impostato per PRIMA cosa, prima di ogni cancellazione (fix
+        # successivo a Rev.6, code review 2026-08-20 — vedi
+        # ARCHITECTURE.md §30): self._recovery_task/
+        # self._heartbeat_task NON sono gli unici task che possono
+        # chiamare _start_recovery_loop(). report_possible_failure()
+        # (chiamato da trace.py/bot.py/advert.py su un comando
+        # fallito) avvia un _run_heartbeat_check() "fire-and-forget"
+        # tracciato in self._background_tasks: se fallisce DOPO che
+        # disconnect() ha già cancellato/atteso i task noti a quel
+        # momento, il suo except Exception chiamerebbe comunque
+        # _start_recovery_loop(), creando un _recovery_task orfano
+        # che riconnette realmente il device dopo che il daemon
+        # crede lo shutdown concluso. Solo disconnect() imposta
+        # questo flag — MAI _teardown_mesh(), condiviso con
+        # reconnect() di routine, che deve continuare a poter
+        # riavviare il recovery normalmente.
+        #
+        self._shutting_down = True
+
+        tasks_to_await = []
+
         if self._recovery_task is not None:
             self._recovery_task.cancel()
+            tasks_to_await.append(self._recovery_task)
             self._recovery_task = None
 
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
+            tasks_to_await.append(self._heartbeat_task)
             self._heartbeat_task = None
+
+        #
+        # Stessa cancellazione anche per i task "fire-and-forget" di
+        # report_possible_failure() (fix successivo a Rev.6, code
+        # review 2026-08-20 — vedi ARCHITECTURE.md §30) — chiude il
+        # caso comune (task ancora in sospensione quando
+        # arriva disconnect()); il flag self._shutting_down sopra
+        # copre invece il caso in cui uno di questi task sia già
+        # oltre il proprio await e stia per richiamare
+        # _start_recovery_loop() indipendentemente da questa
+        # cancellazione.
+        #
+        for task in list(self._background_tasks):
+            task.cancel()
+            tasks_to_await.append(task)
+
+        if tasks_to_await:
+            await asyncio.gather(
+                *tasks_to_await,
+                return_exceptions=True
+            )
 
         log.info("Closing MeshCore connection...")
 

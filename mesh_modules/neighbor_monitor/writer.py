@@ -34,123 +34,148 @@ class NeighborMonitorWriter:
         public_key = result["public_key"]
 
         #
-        # Garantisce che la FK su nodes sia sempre soddisfatta, anche
-        # se questo repeater non ha ancora un advert osservato
-        # localmente — usa gli stessi dati già risolti da
-        # get_contacts() lato daemon. Non sovrascrive dati più
-        # completi già presenti (stesso COALESCE di upsert_node()
-        # usato dal sync periodico).
+        # Tutte le scritture di questo giro sono raggruppate in
+        # un'unica transazione atomica (code review 2026-08-20, §3.4)
+        # — prima ogni insert_repeater_* committava indipendentemente:
+        # un'eccezione a metà (es. un errore di disco/lock) poteva
+        # lasciare stato incoerente tra tabelle che si considerano
+        # un'unità logica dello stesso queried_at. Con commit=False
+        # su ogni chiamata, il commit avviene una sola volta qui
+        # sotto — o mai, con rollback automatico, se una qualunque
+        # delle chiamate solleva un'eccezione.
         #
-        self.db.upsert_node(
-            public_key=public_key,
-            adv_name=result.get("adv_name"),
-            seen_at=queried_at
-        )
-
-        status = result.get("status")
-
-        if status:
+        with self.db.transaction():
 
             #
-            # pubkey_pre non è una colonna di repeater_status —
-            # l'identità del repeater è già la FK public_key, non va
-            # duplicata.
+            # Garantisce che la FK su nodes sia sempre soddisfatta,
+            # anche se questo repeater non ha ancora un advert
+            # osservato localmente — usa gli stessi dati già risolti
+            # da get_contacts() lato daemon. Non sovrascrive dati più
+            # completi già presenti (stesso COALESCE di upsert_node()
+            # usato dal sync periodico).
             #
-            status_fields = {
-                k: v
-                for k, v in status.items()
-                if k != "pubkey_pre"
-            }
-
-            self.db.insert_repeater_status(
+            self.db.upsert_node(
                 public_key=public_key,
-                queried_at=queried_at,
-                **status_fields
+                adv_name=result.get("adv_name"),
+                seen_at=queried_at,
+                commit=False
             )
 
-        neighbours = result.get("neighbours")
+            status = result.get("status")
 
-        if neighbours:
+            if status:
 
-            self.db.insert_repeater_neighbours(
-                public_key=public_key,
-                queried_at=queried_at,
-                neighbours=neighbours.get(
-                    "neighbours",
-                    []
+                #
+                # pubkey_pre non è una colonna di repeater_status —
+                # l'identità del repeater è già la FK public_key, non
+                # va duplicata.
+                #
+                status_fields = {
+                    k: v
+                    for k, v in status.items()
+                    if k != "pubkey_pre"
+                }
+
+                self.db.insert_repeater_status(
+                    public_key=public_key,
+                    queried_at=queried_at,
+                    commit=False,
+                    **status_fields
                 )
-            )
 
-        #
-        # A differenza di neighbours (dict con chiave "neighbours"),
-        # req_telemetry_sync() restituisce già direttamente la lista
-        # dei canali — nessun livello di incapsulamento da spacchettare.
-        #
-        telemetry = result.get("telemetry")
+            neighbours = result.get("neighbours")
 
-        if telemetry:
+            if neighbours:
 
-            self.db.insert_repeater_telemetry(
-                public_key=public_key,
-                queried_at=queried_at,
-                telemetry=telemetry
-            )
+                self.db.insert_repeater_neighbours(
+                    public_key=public_key,
+                    queried_at=queried_at,
+                    neighbours=neighbours.get(
+                        "neighbours",
+                        []
+                    ),
+                    commit=False
+                )
 
-        #
-        # A differenza di telemetry/neighbours, region non richiede
-        # ACL (AnonReqType) — può riuscire anche quando status
-        # fallisce. Scritta in una tabella indipendente proprio per
-        # questo: nessun accoppiamento a status.queried_at.
-        #
-        region = result.get("region")
+            #
+            # A differenza di neighbours (dict con chiave
+            # "neighbours"), req_telemetry_sync() restituisce già
+            # direttamente la lista dei canali — nessun livello di
+            # incapsulamento da spacchettare.
+            #
+            telemetry = result.get("telemetry")
 
-        if region:
+            if telemetry:
 
-            self.db.insert_repeater_region(
-                public_key=public_key,
-                queried_at=queried_at,
-                region_dump=region
-            )
+                self.db.insert_repeater_telemetry(
+                    public_key=public_key,
+                    queried_at=queried_at,
+                    telemetry=telemetry,
+                    commit=False
+                )
 
-        #
-        # Stesso principio di region: requisito di permesso diverso
-        # (login+admin, non solo ACL) — tabella indipendente, nessun
-        # accoppiamento a status.queried_at. config è sempre un dict
-        # con tutte le chiavi presenti se il login è riuscito (anche
-        # con singoli valori a None) — None solo se il login stesso
-        # è fallito, nel qual caso non c'è nulla da scrivere.
-        #
-        config = result.get("config")
+            #
+            # A differenza di telemetry/neighbours, region non
+            # richiede ACL (AnonReqType) — può riuscire anche quando
+            # status fallisce. Scritta in una tabella indipendente
+            # proprio per questo: nessun accoppiamento a
+            # status.queried_at (restano comunque nella stessa
+            # transazione atomica del giro).
+            #
+            region = result.get("region")
 
-        if config:
+            if region:
 
-            self.db.insert_repeater_config(
-                public_key=public_key,
-                queried_at=queried_at,
-                **config
-            )
+                self.db.insert_repeater_region(
+                    public_key=public_key,
+                    queried_at=queried_at,
+                    region_dump=region,
+                    commit=False
+                )
 
-        #
-        # Stesso gate ACL di region (AnonReqType, nessun permesso
-        # richiesto) — tabella indipendente per lo stesso motivo.
-        # skew_seconds calcolato qui con lo STESSO queried_at con cui
-        # la riga viene salvata, non con l'istante originale della
-        # richiesta radio (che può differire di una manciata di
-        # secondi per via del giro IPC) — coerenza con le altre
-        # tabelle, tutte ancorate a questo singolo queried_at.
-        #
-        clock = result.get("clock")
+            #
+            # Stesso principio di region: requisito di permesso
+            # diverso (login+admin, non solo ACL) — tabella
+            # indipendente, nessun accoppiamento a status.queried_at.
+            # config è sempre un dict con tutte le chiavi presenti se
+            # il login è riuscito (anche con singoli valori a None) —
+            # None solo se il login stesso è fallito, nel qual caso
+            # non c'è nulla da scrivere.
+            #
+            config = result.get("config")
 
-        if clock:
+            if config:
 
-            remote_clock = clock.get("remote_clock")
+                self.db.insert_repeater_config(
+                    public_key=public_key,
+                    queried_at=queried_at,
+                    commit=False,
+                    **config
+                )
 
-            self.db.insert_repeater_clock(
-                public_key=public_key,
-                queried_at=queried_at,
-                remote_clock=remote_clock,
-                skew_seconds=remote_clock - queried_at
-            )
+            #
+            # Stesso gate ACL di region (AnonReqType, nessun permesso
+            # richiesto) — tabella indipendente per lo stesso motivo.
+            # skew_seconds calcolato qui con lo STESSO queried_at con
+            # cui la riga viene salvata, non con l'istante originale
+            # della richiesta radio (che può differire di una
+            # manciata di secondi per via del giro IPC) — coerenza
+            # con le altre tabelle, tutte ancorate a questo singolo
+            # queried_at.
+            #
+            clock = result.get("clock")
+
+            if clock:
+
+                remote_clock = clock.get("remote_clock")
+
+                self.db.insert_repeater_clock(
+                    public_key=public_key,
+                    queried_at=queried_at,
+                    remote_clock=remote_clock,
+                    skew_seconds=remote_clock - queried_at,
+                    commit=False
+                )
 
     def close(self):
         self.db.close()

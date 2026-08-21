@@ -152,7 +152,28 @@ def rotate(db_path, backup_dir, year, month, start_ts, end_ts):
         # di essere l'unica operazione in corso sulla connessione,
         # SQLite lo gestisce da sé.
         #
-        conn.execute("VACUUM")
+        # Protetto da sqlite3.OperationalError (code review 2026-08-20,
+        # §3.8) — su hardware Raspberry Pi lento, o in caso di
+        # contesa residua con un altro processo, VACUUM può fallire o
+        # bloccarsi per secondi/minuti; prima un errore qui interrompeva
+        # con un traceback grezzo l'intero script — ma a questo punto
+        # l'archiviazione e il DELETE sono GIÀ committati con successo
+        # (il dato è al sicuro): un VACUUM fallito significa solo che
+        # il file DB non si compatta in questo giro, non una perdita
+        # di dati. Va quindi solo loggato, non deve far fallire la
+        # rotazione già riuscita.
+        #
+        try:
+            conn.execute("VACUUM")
+
+        except sqlite3.OperationalError:
+            log.exception(
+                "rotate_path_observations: VACUUM fallito dopo "
+                "l'archiviazione di %04d-%02d (dati comunque al "
+                "sicuro, il DB resta solo temporaneamente non "
+                "compattato).",
+                year, month
+            )
 
         log.info(
             "rotate_path_observations: archiviate %d righe (%04d-%02d) "
@@ -199,7 +220,57 @@ def main():
 
     backup_dir = PROJECT_ROOT / "backup"
 
-    if args.year and args.month:
+    #
+    # Validazione --year/--month (code review 2026-08-20, §3.8):
+    # prima, passare solo uno dei due argomenti veniva ignorato in
+    # silenzio (ricadeva sul mese precedente di default, senza alcun
+    # avviso) e valori fuori range arrivavano crudi al costruttore
+    # datetime(), con un traceback poco leggibile invece di un
+    # messaggio d'errore chiaro.
+    #
+    if (args.year is None) != (args.month is None):
+        log.error(
+            "rotate_path_observations: --year e --month vanno passati "
+            "insieme, non uno alla volta."
+        )
+        sys.exit(1)
+
+    if args.year is not None and args.month is not None:
+
+        if not (1 <= args.month <= 12):
+            log.error(
+                "rotate_path_observations: --month non valido (%d), "
+                "deve essere 1-12.",
+                args.month
+            )
+            sys.exit(1)
+
+        if not (2000 <= args.year <= 2100):
+            log.error(
+                "rotate_path_observations: --year non valido (%d), "
+                "atteso un valore ragionevole (2000-2100).",
+                args.year
+            )
+            sys.exit(1)
+
+        #
+        # Protezione dal mese corrente (§3.8): una rotazione manuale
+        # eseguita per errore sul mese in corso (o su un mese futuro)
+        # rimuoverebbe da path_observations dati non ancora completi,
+        # e la successiva rotazione automatica del mese giusto non
+        # potrebbe più recuperarli — perdita permanente.
+        #
+        now = datetime.now(timezone.utc)
+
+        if (args.year, args.month) >= (now.year, now.month):
+            log.error(
+                "rotate_path_observations: rifiuto di archiviare "
+                "%04d-%02d, e' il mese corrente o un mese futuro "
+                "(oggi: %04d-%02d). Si puo' archiviare solo un mese "
+                "gia' concluso.",
+                args.year, args.month, now.year, now.month
+            )
+            sys.exit(1)
 
         start = datetime(args.year, args.month, 1, tzinfo=timezone.utc)
 

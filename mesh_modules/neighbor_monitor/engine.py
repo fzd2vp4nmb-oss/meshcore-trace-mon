@@ -74,19 +74,60 @@ class NeighborMonitorEngine:
             response = await self.client.request(
                 service="neighbor_monitor",
                 command="run",
-                repeater_name=name
+                repeater_name=name,
+                #
+                # Caso peggiore noto e documentato (v. code review
+                # 2026-08-20, §1.3): con neighbor_monitoring.max_retries
+                # e CLI_RESPONSE_TIMEOUT=10s fissi, una singola
+                # interrogazione (fino a ~12 comandi CLI) su un
+                # repeater irraggiungibile può restare legittimamente
+                # in corso, sotto Engine.command_lock, per diversi
+                # minuti prima di arrendersi. Un timeout IPC troppo
+                # stretto qui farebbe fallire il client con un falso
+                # "daemon bloccato" mentre il daemon sta solo
+                # esaurendo i retry come da design — 15 minuti sono
+                # un margine deliberatamente generoso rispetto al
+                # worst-case teorico (~10 minuti). Se in futuro §1.3
+                # viene affrontato riducendo il worst-case (es. un
+                # timeout complessivo per repeater indipendente dal
+                # prodotto retry×timeout), questo valore andrà
+                # ridotto di conseguenza.
+                #
+                ipc_timeout=900
             )
 
-            if response["status"] == "ok":
+            #
+            # Accesso difensivo a "status"/"result" (code review
+            # 2026-08-20, §4) — v. TraceEngine.run() per la
+            # motivazione: un payload IPC malformato non deve far
+            # fallire con un KeyError grezzo l'intera campagna,
+            # ripete qui lo stesso trattamento già applicato lì.
+            #
+            if response.get("status") == "ok":
 
-                self.writer.write(
-                    response["result"]
-                )
+                #
+                # Un errore di I/O/DB qui prima di questo fix (code
+                # review 2026-08-20, §3.2) interrompeva l'intero
+                # batch invece del solo repeater corrente.
+                #
+                try:
+                    self.writer.write(
+                        response.get("result", {})
+                    )
 
-                log.info(
-                    "NeighborMonitorEngine: %s salvato in contacts.db.",
-                    name
-                )
+                    log.info(
+                        "NeighborMonitorEngine: %s salvato in "
+                        "contacts.db.",
+                        name
+                    )
+
+                except Exception:
+                    log.exception(
+                        "NeighborMonitorEngine: scrittura in "
+                        "contacts.db fallita per %s — proseguo con "
+                        "i repeater successivi.",
+                        name
+                    )
 
             else:
 

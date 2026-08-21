@@ -4,6 +4,7 @@ import random
 from meshcore.events import EventType
 from core.config import config
 from core.logger import log
+from core.event_correlation import wait_for_matching_event
 
 class TraceModule:
     """
@@ -72,33 +73,23 @@ class TraceModule:
         richiesto.
         """
 
-        loop = asyncio.get_event_loop()
-        deadline = loop.time() + timeout
-
-        while True:
-
-            remaining = deadline - loop.time()
-
-            if remaining <= 0:
-                raise asyncio.TimeoutError()
-
-            event = await asyncio.wait_for(
-                self._queue.get(),
-                remaining
-            )
-
-            event_tag = event.payload.get("tag")
-
-            if event_tag == expected_tag:
-                return event
-
+        def _on_discard(event):
             log.info(
                 "TRACE: %s TRACE_DATA scartato (tag=%s, atteso "
                 "%s) — non è la risposta a questa richiesta.",
                 tag,
-                event_tag,
+                event.payload.get("tag"),
                 expected_tag
             )
+
+        return await wait_for_matching_event(
+            get_next=self._queue.get,
+            is_match=lambda event: (
+                event.payload.get("tag") == expected_tag
+            ),
+            timeout=timeout,
+            on_discard=_on_discard
+        )
 
     async def trace(
         self,

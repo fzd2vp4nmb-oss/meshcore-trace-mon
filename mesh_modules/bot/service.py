@@ -29,7 +29,12 @@ class BotService:
         # risoluzione del canale richiede una chiamata al device —
         # il setup vero e proprio parte in background.
         #
-        asyncio.create_task(
+        # Riferimento mantenuto sull'istanza (code review 2026-08-20,
+        # §3.1) — un task senza riferimenti può essere garbage
+        # collected in modo imprevedibile prima del completamento
+        # (sconsigliato esplicitamente dalla documentazione asyncio).
+        #
+        self._start_task = asyncio.create_task(
             self._start()
         )
 

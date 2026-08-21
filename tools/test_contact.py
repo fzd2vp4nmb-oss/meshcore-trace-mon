@@ -19,10 +19,19 @@ import argparse
 import asyncio
 from pprint import pprint
 
-from clients.ipc_client import IPCClient
+from tools.ipc_test_common import send_ipc_request
 from mesh_modules.bot.commands.path import split_path_hops
 
-OUT_PATH_UNKNOWN = 255
+#
+# 255 e -1 indicano entrambi "routing non ancora noto" (code review
+# 2026-08-20, §3.8) — stesso byte 0xFF, interpretato come signed da
+# meshcore_py in alcuni percorsi e come unsigned in altri; prima
+# veniva controllato solo 255, quindi un -1 cadeva nel ramo
+# "out_path_len == 0" sottostante e veniva etichettato erroneamente
+# come "DIRECT (0 hop)" invece di "FLOOD (routing non ancora noto)".
+# Stessa costante già in uso in test_contact_list.py.
+#
+UNKNOWN_OUT_PATH_VALUES = (255, -1)
 
 
 def format_routing(out_path_len, out_path):
@@ -30,7 +39,7 @@ def format_routing(out_path_len, out_path):
     if out_path_len is None:
         return "sconosciuto (campo assente)"
 
-    if out_path_len == OUT_PATH_UNKNOWN:
+    if out_path_len in UNKNOWN_OUT_PATH_VALUES:
         return "FLOOD (routing non ancora noto)"
 
     if out_path_len == 0 or not out_path:
@@ -62,8 +71,6 @@ async def main():
 
     args = parser.parse_args()
 
-    client = IPCClient()
-
     request = (
         {"name": args.name}
         if args.name else
@@ -79,7 +86,7 @@ async def main():
     print("Invio richiesta...")
     print()
 
-    response = await client.request(
+    response = await send_ipc_request(
         service="system",
         command="contact",
         **request
@@ -93,7 +100,11 @@ async def main():
 
     if response.get("status") == "ok":
 
-        result = response["result"]
+        #
+        # Accesso difensivo (code review 2026-08-20, §4) — v. stessa
+        # nota in test_contact_list.py.
+        #
+        result = response.get("result", {})
 
         print(f"Contatto     : {result.get('adv_name')}")
         print(

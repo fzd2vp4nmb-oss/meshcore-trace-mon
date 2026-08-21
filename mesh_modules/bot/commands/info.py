@@ -16,13 +16,31 @@ class InfoCommand(BotCommand):
 
     name = "info"
 
+    #
+    # Finding 5, code review 2026-08-20: il budget veniva calcolato
+    # sottraendo len("Commands:") (9 caratteri, un residuo inglese mai
+    # emesso), mentre il prefisso REALMENTE anteposto nel return sotto
+    # era "Comandi disponibili:" (20 caratteri) -- uno scarto di 11
+    # caratteri tra calcolo interno e output reale. Effetto pratico
+    # mitigato da _truncate_utf8_safe() a valle (bot.py), ma il
+    # contatore "+N comandi omessi" calcolato qui poteva risultare
+    # disallineato rispetto a quanto davvero visibile dopo quel taglio
+    # esterno, in scenari con reply_budget stretto. Fix: un'unica
+    # costante usata sia per il calcolo del budget sia per il return,
+    # cosi le due cose non possono più divergere (stesso principio già
+    # in uso, per costruzione, in PathCommand -- "Path:" lì compare
+    # identico nei due punti, anche se non fattorizzato in una
+    # costante dedicata).
+    #
+    PREFIX = "Comandi disponibili:"
+
     async def handle(self, ctx):
 
         from mesh_modules.bot.commands.registry import COMMANDS
 
         names = sorted(f"!{n}" for n in COMMANDS.keys())
 
-        budget = max(ctx.reply_budget - len("Commands:"), 0)
+        budget = max(ctx.reply_budget - len(self.PREFIX), 0)
 
         shown = []
         total = 0
@@ -46,4 +64,4 @@ class InfoCommand(BotCommand):
         if omitted > 0:
             result += f" +{omitted}"
 
-        return f"Comandi disponibili:{result}"
+        return f"{self.PREFIX}{result}"

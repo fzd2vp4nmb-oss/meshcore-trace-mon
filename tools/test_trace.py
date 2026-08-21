@@ -18,7 +18,7 @@ bootstrap()
 import argparse
 import asyncio
 from pprint import pprint
-from clients.ipc_client import IPCClient
+from tools.ipc_test_common import send_ipc_request
 
 DEFAULT_TRACE_PATH = "0d28,3075,0d28"
 
@@ -43,7 +43,6 @@ async def main():
     )
 
     args = parser.parse_args()
-    client = IPCClient()
 
     print()
     print("========================================")
@@ -61,15 +60,26 @@ async def main():
     print()
 
     request = {
-        "service": "trace",
-        "command": "run",
         "path": args.path
     }
 
     if args.timeout is not None:
         request["timeout"] = args.timeout
 
-    response = await client.request(**request)
+    #
+    # Il timeout IPC lato client deve restare più ampio di quello
+    # (eventualmente custom) usato dal servizio 'trace' lato daemon
+    # per attendere TRACE_DATA — stesso margine di sicurezza usato
+    # in mesh_modules/trace/engine.py.
+    #
+    ipc_timeout = (args.timeout or 20) + 15
+
+    response = await send_ipc_request(
+        service="trace",
+        command="run",
+        ipc_timeout=ipc_timeout,
+        **request
+    )
 
     print("Response")
     print("----------------------------------------")

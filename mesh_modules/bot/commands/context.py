@@ -18,8 +18,9 @@ class CommandContext:
                      ARCHITECTURE.md).
     path_hex        Stringa esadecimale del path, già normalizzata:
                      canale -> payload['path']; DM -> contact['out_path'].
-                     None se il path non è noto (DM con
-                     out_path_len == 255, "instradamento sconosciuto").
+                     None se il path non è noto (DM con out_path_len
+                     255 o -1, "instradamento sconosciuto" — v.
+                     UNKNOWN_OUT_PATH_VALUES in bot.py).
     path_len        Numero di hop corrispondente a path_hex. None con
                      lo stesso significato di path_hex=None.
     rssi            RSSI rilevato, None se non disponibile (i DM non

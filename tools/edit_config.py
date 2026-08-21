@@ -28,6 +28,8 @@ Sicurezza built-in, per ogni comando che scrive:
 """
 
 import argparse
+import os
+import stat
 import sys
 import shutil
 from datetime import datetime
@@ -52,6 +54,69 @@ from core.trace_paths import parse_path_entry, format_path_entry
 CONFIG_PATH = Path("config/config.yaml")
 
 BACKUP_DIR = Path("config/backup")
+
+#
+# Permessi ristretti su config.yaml e sui suoi backup (code review
+# 2026-08-20, §3.7) — non contengono segreti veri, ma includono
+# hostname/indirizzi interni della rete (connection.tcp.host, IP del
+# Collettore nei backup meno recenti se mai stato lì, ecc.). 0600:
+# solo il proprietario (utente 'meshcore') può leggerli.
+#
+CONFIG_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0600
+
+#
+# Retention dei backup in config/backup/ (code review 2026-08-20,
+# §3.7) — prima nessuna pulizia periodica: ogni salvataggio da
+# config.sh aggiunge un file, mai rimosso, con accumulo silenzioso nel
+# tempo (40+ osservati). Mantiene solo gli N backup più recenti dopo
+# ogni salvataggio riuscito — non tocca il backup appena creato per
+# QUESTA operazione (sempre il più recente, quindi mai tra quelli
+# rimossi da questa stessa potatura).
+#
+MAX_CONFIG_BACKUPS = 20
+
+
+def _restrict_permissions(path):
+    """Applica CONFIG_FILE_MODE (0600) a path — errori non fatali
+    (es. filesystem che non supporta i permessi POSIX), solo
+    un avviso: non deve impedire il salvataggio della config."""
+
+    try:
+        path.chmod(CONFIG_FILE_MODE)
+
+    except OSError as e:
+        print(
+            f"AVVISO: impossibile impostare permessi 0600 su {path}: {e}",
+            file=sys.stderr
+        )
+
+
+def _prune_old_backups():
+    """Mantiene solo i MAX_CONFIG_BACKUPS backup più recenti in
+    BACKUP_DIR (code review 2026-08-20, §3.7). Fallimenti su un
+    singolo file (permessi, race con un altro processo) non
+    interrompono la potatura degli altri."""
+
+    if not BACKUP_DIR.is_dir():
+        return
+
+    backups = sorted(
+        BACKUP_DIR.glob("config.yaml.*.bak"),
+        key=lambda p: p.name,
+        reverse=True
+    )
+
+    for stale in backups[MAX_CONFIG_BACKUPS:]:
+
+        try:
+            stale.unlink()
+
+        except OSError as e:
+            print(
+                f"AVVISO: impossibile rimuovere il vecchio backup "
+                f"{stale}: {e}",
+                file=sys.stderr
+            )
 
 VALID_SERVICES = [
     "system", "trace", "advert", "bot", "contact_sync", "neighbor_monitor"
@@ -161,41 +226,76 @@ def backup_config():
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     backup_path = BACKUP_DIR / f"config.yaml.{timestamp}.bak"
 
+    #
+    # copy2 preserva anche i permessi del sorgente — se CONFIG_PATH è
+    # già 0600 (v. CONFIG_FILE_MODE, applicato da save_config() sotto
+    # a ogni salvataggio), il backup eredita automaticamente lo stesso
+    # permesso. _restrict_permissions() qui è comunque una seconda
+    # rete di sicurezza esplicita, per un'installazione dove
+    # config.yaml avesse ancora permessi più larghi da prima di questo
+    # fix (code review 2026-08-20, §3.7).
+    #
     shutil.copy2(CONFIG_PATH, backup_path)
+    _restrict_permissions(backup_path)
 
     return backup_path
 
 
 def save_config(data, backup_path):
     """
-    Scrive, poi rilegge per validare. Se la rilettura fallisce,
-    ripristina il backup e si ferma con un errore — mai un
-    config.yaml rotto sul disco, nemmeno per un istante che sopravviva
-    all'esecuzione di questo script.
+    Scrive in un file temporaneo nella stessa directory, lo rilegge
+    per validare, e solo se valido lo rinomina atomicamente al posto
+    di CONFIG_PATH (os.replace, atomico sullo stesso filesystem) —
+    mai un config.yaml rotto o troncato sul disco, nemmeno per un
+    istante, neanche in caso di crash A METÀ della scrittura stessa.
+
+    Prima di questo fix (code review 2026-08-20, §3.8), la scrittura
+    avveniva direttamente su CONFIG_PATH: la rilettura/ripristino
+    successivi presumevano che la scrittura fosse già andata a buon
+    fine, e non coprivano un crash proprio durante la scrittura (un
+    file troncato che impedisce il riavvio del daemon) — in
+    contraddizione con l'intento dichiarato nel docstring del modulo.
+    Con l'approccio atomico, se la validazione fallisce CONFIG_PATH
+    non è mai stato toccato: il ripristino dal backup non serve più,
+    basta scartare il file temporaneo.
     """
 
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+    tmp_path = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
+
+    with open(tmp_path, "w", encoding="utf-8") as f:
         f.write(HEADER_COMMENT)
         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False,
                         allow_unicode=True)
+        f.flush()
+        os.fsync(f.fileno())
 
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        with open(tmp_path, "r", encoding="utf-8") as f:
             yaml.safe_load(f)
 
     except yaml.YAMLError as e:
 
         print(
             f"ERRORE: il file scritto non è YAML valido ({e}). "
-            f"Ripristino il backup.",
+            f"Nessuna modifica applicata a {CONFIG_PATH} (backup "
+            f"comunque disponibile: {backup_path}).",
             file=sys.stderr
         )
 
-        shutil.copy2(backup_path, CONFIG_PATH)
+        tmp_path.unlink(missing_ok=True)
 
         sys.exit(1)
 
+    #
+    # v. CONFIG_FILE_MODE (code review 2026-08-20, §3.7).
+    #
+    _restrict_permissions(tmp_path)
+
+    os.replace(tmp_path, CONFIG_PATH)
+
     print(f"config.yaml aggiornato (backup: {backup_path})")
+
+    _prune_old_backups()
 
 
 def get_path(data, dotted_path):
@@ -306,6 +406,37 @@ def cmd_set(args):
 
     if not str(value).strip() and not isinstance(value, bool):
         print("ERRORE: il valore non può essere vuoto.", file=sys.stderr)
+        sys.exit(1)
+
+    #
+    # Validazione di schema (code review 2026-08-20, §4) — prima
+    # cmd_set accettava QUALUNQUE path e ci scriveva sopra un valore
+    # scalare (stringa/intero/bool) senza controllare cosa ci fosse
+    # già lì: 'set trace.paths qualcosa' o 'set
+    # neighbor_monitoring.repeaters qualcosa' avrebbe silenziosamente
+    # sovrascritto un'intera lista con una stringa, corrompendo
+    # config.yaml in un modo che il solo controllo YAML-valido di
+    # save_config() non intercetta (il file resta sintatticamente
+    # valido, solo semanticamente sbagliato) — l'errore si sarebbe
+    # manifestato più tardi e altrove, al prossimo avvio del daemon
+    # (es. TraceEngine che si aspetta una lista in trace.paths).
+    # Questo comando è pensato per valori scalari foglia; le liste
+    # hanno già i propri sottocomandi dedicati (trace-path-add/
+    # remove, repeater-add/remove) che le manipolano correttamente.
+    #
+    existing = get_path(data, args.path)
+
+    if isinstance(existing, (list, dict)):
+
+        print(
+            f"ERRORE: '{args.path}' è una struttura "
+            f"({'lista' if isinstance(existing, list) else 'oggetto'}), non "
+            f"un valore singolo — usa i sottocomandi dedicati "
+            f"(trace-path-add/remove, repeater-add/remove) invece di "
+            f"'set' per modificarla.",
+            file=sys.stderr
+        )
+
         sys.exit(1)
 
     backup_path = backup_config()

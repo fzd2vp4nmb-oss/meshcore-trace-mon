@@ -133,7 +133,24 @@ def rotate(db_path, backup_dir, year, month, start_ts, end_ts):
         )
         conn.commit()
 
-        conn.execute("VACUUM")
+        #
+        # Protetto da sqlite3.OperationalError (code review 2026-08-20,
+        # §3.8) — vedi rotate_path_observations.py per la motivazione
+        # completa: l'archiviazione e il DELETE sono già committati
+        # con successo a questo punto, un VACUUM fallito va solo
+        # loggato, non deve far fallire la rotazione già riuscita.
+        #
+        try:
+            conn.execute("VACUUM")
+
+        except sqlite3.OperationalError:
+            log.exception(
+                "rotate_repeater_neighbours: VACUUM fallito dopo "
+                "l'archiviazione di %04d-%02d (dati comunque al "
+                "sicuro, il DB resta solo temporaneamente non "
+                "compattato).",
+                year, month
+            )
 
         log.info(
             "rotate_repeater_neighbours: archiviate %d righe "
@@ -180,7 +197,50 @@ def main():
 
     backup_dir = PROJECT_ROOT / "backup"
 
-    if args.year and args.month:
+    #
+    # Validazione --year/--month + protezione dal mese corrente
+    # (code review 2026-08-20, §3.8) — identica a
+    # rotate_path_observations.py; qui ancora più critica perché
+    # repeater_neighbours rappresenta stato accumulato in RAM sul
+    # repeater, esplicitamente NON recuperabile da nessun'altra fonte
+    # una volta perso (v. docstring di modulo).
+    #
+    if (args.year is None) != (args.month is None):
+        log.error(
+            "rotate_repeater_neighbours: --year e --month vanno "
+            "passati insieme, non uno alla volta."
+        )
+        sys.exit(1)
+
+    if args.year is not None and args.month is not None:
+
+        if not (1 <= args.month <= 12):
+            log.error(
+                "rotate_repeater_neighbours: --month non valido (%d), "
+                "deve essere 1-12.",
+                args.month
+            )
+            sys.exit(1)
+
+        if not (2000 <= args.year <= 2100):
+            log.error(
+                "rotate_repeater_neighbours: --year non valido (%d), "
+                "atteso un valore ragionevole (2000-2100).",
+                args.year
+            )
+            sys.exit(1)
+
+        now = datetime.now(timezone.utc)
+
+        if (args.year, args.month) >= (now.year, now.month):
+            log.error(
+                "rotate_repeater_neighbours: rifiuto di archiviare "
+                "%04d-%02d, e' il mese corrente o un mese futuro "
+                "(oggi: %04d-%02d). Si puo' archiviare solo un mese "
+                "gia' concluso.",
+                args.year, args.month, now.year, now.month
+            )
+            sys.exit(1)
 
         start = datetime(args.year, args.month, 1, tzinfo=timezone.utc)
 

@@ -18,7 +18,7 @@ bootstrap()
 import argparse
 import asyncio
 from pprint import pprint
-from clients.ipc_client import IPCClient
+from tools.ipc_test_common import send_ipc_request
 
 async def main():
     parser = argparse.ArgumentParser(
@@ -26,7 +26,6 @@ async def main():
     )
 
     parser.parse_args()
-    client = IPCClient()
 
     print()
     print("========================================")
@@ -37,7 +36,7 @@ async def main():
     print("Invio richiesta...")
     print()
 
-    response = await client.request(
+    response = await send_ipc_request(
         service="system",
         command="status"
     )
@@ -50,7 +49,11 @@ async def main():
 
     if response.get("status") == "ok":
 
-        connected = response["result"]["connected"]
+        #
+        # Accesso difensivo (code review 2026-08-20, §4) — v. stessa
+        # nota in test_contact_list.py.
+        #
+        connected = response.get("result", {}).get("connected")
 
         print()
         print(

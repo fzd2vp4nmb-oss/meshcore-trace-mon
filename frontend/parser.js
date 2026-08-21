@@ -23,11 +23,30 @@ function extractRecords(content) {
 
     const records = [];
 
+    //
+    // Robustezza CRLF (code review 2026-08-20, §4) — in modalità
+    // multilinea (flag "m"), JavaScript riconosce SOLO "\n" come
+    // terminatore di riga per ^/$: se trace.json (o un archivio) è
+    // mai stato scritto/toccato con terminatori CRLF (es. editor
+    // Windows, un trasferimento che ha convertito i fine riga), ogni
+    // header restava seguito da un "\r" residuo subito prima del
+    // "\n" — un carattere non incluso in [a-fA-F0-9,:]+, quindi $
+    // non trovava mai match giusto lì e l'intero record veniva
+    // silenziosamente scartato (nessun errore, solo dati mancanti).
+    // Normalizzare CRLF/CR isolati a LF prima del parsing rende il
+    // risultato indipendente dai terminatori di riga del file.
+    //
+    const normalizedContent =
+        content.replace(
+            /\r\n?/g,
+            "\n"
+        );
+
     const headerRegex =
         /^(\d{8}_\d{6})\s+([a-fA-F0-9,:]+)$/gm;
 
     const matches =
-        [...content.matchAll(headerRegex)];
+        [...normalizedContent.matchAll(headerRegex)];
 
     for (
         let i = 0;
@@ -46,18 +65,31 @@ function extractRecords(content) {
             i <
             matches.length - 1
                 ? matches[i + 1].index
-                : content.length;
+                : normalizedContent.length;
 
         const rawPath =
             current[2];
 
+        //
+        // Normalizzazione case (code review 2026-08-20, §4) — i
+        // prefissi hex nell'header (current[2]) e quelli in
+        // json.path[].hash nel payload possono differire per
+        // maiuscole/minuscole a seconda della fonte (radio vs
+        // trace.sh storico): senza normalizzare, lo stesso path
+        // logico genererebbe due signature diverse in
+        // buildSignature() (una per "AAAA,BBBB", una per
+        // "aaaa,bbbb"), frammentando silenziosamente lo storico
+        // dello stesso path in due voci separate nella UI.
+        //
         const normalizedPath =
             (
-                !rawPath.includes(",") &&
-                rawPath.includes(":")
-            )
-                ? rawPath.split(":")[0]
-                : rawPath;
+                (
+                    !rawPath.includes(",") &&
+                    rawPath.includes(":")
+                )
+                    ? rawPath.split(":")[0]
+                    : rawPath
+            ).toLowerCase();
 
         records.push({
             timestampRaw:
@@ -67,7 +99,7 @@ function extractRecords(content) {
                 normalizedPath,
 
             payload:
-                content
+                normalizedContent
                     .substring(
                         start,
                         end
@@ -302,15 +334,55 @@ function parseTraceContent(
 
         if (
             json.path &&
-            json.path.length >
-                0
+            json.path.length ===
+                1
         ) {
+
+            /*
+             * path_len === 0 (contatto diretto): l'UNICO elemento
+             * di json.path è il "rientro senza hash" descritto in
+             * ARCHITECTURE.md §3 (l'ultimo elemento di path non ha
+             * mai 'hash'), non un hop con hash come per path più
+             * lunghi. Prima di questo fix (code review 2026-08-20,
+             * §3.5), json.path[0].hash era undefined qui e produceva
+             * un link "SRC→undefined". nodes[0] (il nodo configurato
+             * per questo trace, stessa fonte già usata dal ramo
+             * TIMEOUT sopra) è la destinazione nota e affidabile per
+             * il link diretto.
+             */
 
             links.push(
                 {
 
                     label:
-                        `SRC→${json.path[0].hash}`,
+                        `SRC→${nodes[0]}`,
+
+                    snr:
+                        json.path[0].snr
+                }
+            );
+
+        } else if (
+            json.path &&
+            json.path.length >
+                0
+        ) {
+
+            //
+            // .toLowerCase() sugli hash del payload (code review
+            // 2026-08-20, §4) — coerenza con la normalizzazione case
+            // già applicata a `nodes`/pathString in extractRecords():
+            // senza questo, le label dei link costruite qui
+            // (`json.path[].hash`) e quelle costruite nel ramo
+            // path.length===1 sopra (`nodes[0]`, già minuscolo)
+            // userebbero case diversi per lo stesso nodo logico,
+            // frammentando linkSeries/linkStats in serie separate.
+            //
+            links.push(
+                {
+
+                    label:
+                        `SRC→${json.path[0].hash.toLowerCase()}`,
 
                     snr:
                         json.path[0].snr
@@ -347,7 +419,7 @@ function parseTraceContent(
                     {
 
                         label:
-                            `${prev.hash}→${curr.hash}`,
+                            `${prev.hash.toLowerCase()}→${curr.hash.toLowerCase()}`,
 
                         snr:
                             curr.snr
@@ -378,7 +450,7 @@ function parseTraceContent(
                     {
 
                         label:
-                            `${lastHop.hash}→SRC`,
+                            `${lastHop.hash.toLowerCase()}→SRC`,
 
                         snr:
                             returnHop.snr

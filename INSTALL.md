@@ -517,12 +517,12 @@ Esempio di configurazione, con cadenze di partenza ragionevoli:
 # MeshCore Path Explorer
 #
 */30 * * * * /home/meshcore/trace-mon/trace.sh > /dev/null 2>&1
-7 */2 * * * /home/meshcore/trace-mon/neighbor_monitor.sh > /dev/null 2>&1
-15 */4 * * * /home/meshcore/trace-mon/floodadv.sh > /dev/null 2>&1
+5 */2 * * * /home/meshcore/trace-mon/neighbor_monitor.sh > /dev/null 2>&1
+15 3 * * * /home/meshcore/trace-mon/floodadv.sh > /dev/null 2>&1
 #
 # Maintenance
 #
-*/5 * * * * /home/meshcore/trace-mon/contact_sync.sh >> /home/meshcore/trace-mon/logs/contact_sync.log 2>&1
+*/5 * * * * /home/meshcore/trace-mon/contact_sync.sh > /dev/null 2>&1
 2 0 1 * * /home/meshcore/trace-mon/backup.sh > /dev/null 2>&1
 3 0 1 * * /home/meshcore/trace-mon/rotate_contacts.sh > /dev/null 2>&1
 10 3 * * 0 /usr/sbin/logrotate --state /home/meshcore/trace-mon/run/logrotate.status /home/meshcore/trace-mon/config/logrotate.conf
@@ -531,11 +531,14 @@ Esempio di configurazione, con cadenze di partenza ragionevoli:
 Cosa fa ciascuna riga:
 - **`trace.sh`** (ogni 30 minuti) — traccia il path configurato e
   invia il risultato al Collettore.
-- **`neighbor_monitor.sh`** (ogni 2 ore, al minuto 7) — interroga i
+- **`neighbor_monitor.sh`** (ogni 2 ore, al minuto 5) — interroga i
   repeater configurati (status, neighbours, telemetria, regioni,
-  configurazione — tab Repeaters).
-- **`floodadv.sh`** (ogni 4 ore, al minuto 15) — invia un advertisement
-  flood.
+  configurazione — tab Repeaters). Il minuto 5, distanziato da quello
+  di `trace.sh` (che gira a `:00`/`:30`), riduce il rischio che le due
+  esecuzioni si sovrappongano nel caso peggiore di `neighbor_monitor.sh`
+  (v. `docs/ARCHITECTURE.md`, code review 2026-08-20 §1.3).
+- **`floodadv.sh`** (una volta al giorno, alle 3:15) — invia un
+  advertisement flood.
 - **`contact_sync.sh`** (ogni 5 minuti) — sincronizza un'istantanea
   di `contacts.db` verso il Collettore.
 - **`backup.sh`** / **`rotate_contacts.sh`** (il giorno 1 di ogni
@@ -551,6 +554,17 @@ generi sulla rete. Osserva il comportamento della tua rete e stringi
 o allarga questi intervalli di conseguenza; le voci di manutenzione
 (`contact_sync.sh`, backup/rotate, logrotate) invece non generano
 traffico radio, la cadenza qui data va bene praticamente sempre.
+
+**Dove finiscono i log**: nessuno di questi script scrive messaggi
+utili nell'output catturato da cron (per questo l'esempio sopra usa
+`> /dev/null 2>&1` ovunque, contact_sync.sh incluso) — ogni script di
+manutenzione scrive da sé, con timestamp, in due file dentro `logs/`:
+`logs/cron-errors.log` per gli errori (`tail -f` lì per un fallimento
+di uno qualunque di questi script) e `logs/cron-status.log` per i
+messaggi informativi (lock già in corso, condizioni di skip attese,
+ecc.). Entrambi ruotati da logrotate insieme a `logs/trace-mon.log`
+(il log del daemon, distinto da questi — v.
+`config/logrotate.conf`).
 
 ---
 

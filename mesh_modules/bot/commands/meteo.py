@@ -1,3 +1,5 @@
+import asyncio
+
 import aiohttp
 
 from core.logger import log
@@ -6,6 +8,23 @@ from mesh_modules.bot.commands.base import BotCommand
 
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+
+#
+# Limite di concorrenza globale su !meteo (code review 2026-08-20,
+# §3.3) — prima ogni invocazione apriva una nuova sessione aiohttp
+# senza alcun limite di concorrenza globale o per mittente: un
+# flusso rapido di comandi !meteo da uno o più mittenti poteva
+# aprire decine di socket TCP concorrenti su un Raspberry Pi con
+# risorse limitate (DoS locale a basso sforzo). Un semaforo a
+# livello di modulo (condiviso da tutte le istanze di
+# MeteoCommand/BotModule nel processo, che sono comunque uniche per
+# design) limita le richieste in volo indipendentemente da quante ne
+# arrivino: le richieste in eccesso attendono semplicemente il
+# proprio turno invece di aprire una nuova connessione, il comando
+# resta comunque funzionante, solo più lento sotto carico.
+#
+MAX_CONCURRENT_REQUESTS = 3
+_concurrency_limiter = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
 #
 # Primo comando del progetto che fa una chiamata di rete esterna
@@ -64,11 +83,13 @@ class MeteoCommand(BotCommand):
         city = ctx.arg
 
         try:
-            async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
+            async with _concurrency_limiter:
 
-                lat, lon, resolved_name = await self._geocode(session, city)
+                async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
 
-                current = await self._fetch_current(session, lat, lon)
+                    lat, lon, resolved_name = await self._geocode(session, city)
+
+                    current = await self._fetch_current(session, lat, lon)
 
         except Exception:
             log.warning(

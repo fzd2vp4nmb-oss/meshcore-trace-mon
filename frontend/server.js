@@ -2,6 +2,16 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const zlib = require("zlib");
+//
+// node:sqlite (code review 2026-08-20, §4) — API sperimentale del
+// runtime Node.js nativo (stabile solo da una versione recente di
+// Node 22+, comportamento/firma non garantiti tra minor version
+// finché resta "Experimental" nella documentazione ufficiale). Va
+// verificata contro le release notes di Node prima di ogni upgrade
+// della versione di Node in produzione — un cambiamento qui non
+// sarebbe segnalato da un semver minor/patch come per una dipendenza
+// da npm ordinaria.
+//
 const { DatabaseSync } = require("node:sqlite");
 
 const {
@@ -10,6 +20,19 @@ const {
 } = require("./parser");
 
 const app = express();
+
+//
+// Messaggio generico per ogni risposta 500 (code review 2026-08-20,
+// §3.5) — prima err.message veniva restituito direttamente al
+// client su tutti gli endpoint: rivelava path assoluti interni del
+// server (es. errori ENOENT/EACCES con il path completo) e,
+// combinato con §1.2 (path traversal, già corretto), diventava un
+// piccolo oracolo per la presenza di file arbitrari sul filesystem
+// (messaggi diversi per "file assente" vs "file presente ma non
+// gzip"). Il dettaglio completo dell'errore resta comunque nei log
+// server-side (console.error, invariato) per la diagnosi.
+//
+const GENERIC_ERROR_MESSAGE = "Errore interno del server";
 
 //
 // Solo per etichettare gli snapshot storici dei neighbours
@@ -58,6 +81,123 @@ const CONTACTS_DB_FILE =
         "contacts.db"
     );
 
+//
+// Validazione allowlist per il parametro `file` di ogni endpoint
+// "archive load"/"archive snapshots": prima di questo fix, `file`
+// veniva passato a path.join(BACKUP_DIR, file) senza alcun controllo
+// — path.join normalizza "..", quindi un valore come
+// "../../../../etc/passwd" usciva da BACKUP_DIR senza impedimenti
+// (path traversal, v. code review 2026-08-20, §1.2). Gli endpoint
+// "list" già filtravano i nomi con la stessa regex qui sotto passata
+// come `pattern`, ma quella validazione non era mai stata riusata
+// dagli endpoint "load" corrispondenti — la si applica ora ad
+// entrambi, allowlist (solo nomi che rispettano esattamente il
+// formato atteso), non blacklist.
+//
+// Ritorna il path assoluto risolto se `filename` è valido e resta
+// dentro BACKUP_DIR, altrimenti null.
+//
+function safeArchivePath(
+    filename,
+    pattern
+) {
+
+    if (
+        !filename ||
+        typeof filename !== "string" ||
+        !pattern.test(filename)
+    ) {
+
+        return null;
+    }
+
+    const resolvedBase =
+        path.resolve(BACKUP_DIR) + path.sep;
+
+    const resolvedPath =
+        path.resolve(
+            BACKUP_DIR,
+            filename
+        );
+
+    if (
+        !resolvedPath.startsWith(resolvedBase)
+    ) {
+
+        return null;
+    }
+
+    return resolvedPath;
+}
+
+//
+// Estratto da /api/archive/list, /api/nodes/archive/list e
+// /api/neighbors/archive/list (code review 2026-08-20, §4) — le tre
+// route avevano la stessa logica duplicata tre volte (elenco mesi,
+// entry "live", scan di BACKUP_DIR con lo stesso filtro/parse
+// cambiando solo il prefisso del nome file): unica implementazione,
+// il prefisso resta l'unico parametro che le distingue davvero.
+//
+const MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+];
+
+function listArchiveMonths(
+    filePrefix
+) {
+
+    const result = [
+        { id: "live", label: "Live" }
+    ];
+
+    if (
+        !fs.existsSync(
+            BACKUP_DIR
+        )
+    ) {
+
+        return result;
+    }
+
+    const pattern =
+        new RegExp(
+            `^${filePrefix}-(\\d{4})-(\\d{2})\\.json\\.gz$`
+        );
+
+    const files =
+        fs
+            .readdirSync(
+                BACKUP_DIR
+            )
+            .filter(
+                f => pattern.test(f)
+            )
+            .sort();
+
+    files.forEach(
+        file => {
+
+            const match = file.match(pattern);
+
+            if (
+                match
+            ) {
+
+                const year = match[1];
+                const month = parseInt(match[2], 10);
+
+                result.push({
+                    id: file,
+                    label: `${MONTH_NAMES[month - 1]} ${year}`
+                });
+            }
+        }
+    );
+
+    return result;
+}
+
 /* =========================
    LIVE DATA API
 ========================= */
@@ -97,7 +237,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -144,30 +284,47 @@ app.get(
                     { readOnly: true }
                 );
 
-            const rows =
-                db.prepare(
-                    `SELECT public_key, adv_name
-                     FROM nodes
-                     WHERE node_type = 2
-                       AND adv_name IS NOT NULL
-                       AND adv_name != ''`
-                ).all();
+            //
+            // try/finally invece del solo db.close() sul percorso di
+            // successo: prima di questo fix, un'eccezione sollevata
+            // da db.prepare()/all() (es. tabella mancante dopo una
+            // migrazione parziale, file corrotto) saltava db.close()
+            // e la connessione restava aperta, abbandonata al
+            // garbage collector — ripetuto nel tempo su un processo
+            // Node long-running può accumulare file descriptor fino
+            // a EMFILE (v. code review 2026-08-20, §2.3). finally
+            // garantisce la chiusura su ogni percorso di uscita,
+            // incluso un return anticipato.
+            //
+            try {
 
-            db.close();
+                const rows =
+                    db.prepare(
+                        `SELECT public_key, adv_name
+                         FROM nodes
+                         WHERE node_type = 2
+                           AND adv_name IS NOT NULL
+                           AND adv_name != ''`
+                    ).all();
 
-            const meshNodes = {};
+                const meshNodes = {};
 
-            for (
-                const row of rows
-            ) {
+                for (
+                    const row of rows
+                ) {
 
-                meshNodes[row.public_key] =
-                    row.adv_name;
+                    meshNodes[row.public_key] =
+                        row.adv_name;
+                }
+
+                res.json(
+                    meshNodes
+                );
+
+            } finally {
+
+                db.close();
             }
-
-            res.json(
-                meshNodes
-            );
         }
 
         catch (
@@ -184,7 +341,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -203,83 +360,8 @@ app.get(
 
         try {
 
-            const months = [
-                "January",
-                "February",
-                "March",
-                "April",
-                "May",
-                "June",
-                "July",
-                "August",
-                "September",
-                "October",
-                "November",
-                "December"
-            ];
-
-            const result = [];
-
-            result.push({
-                id:
-                    "live",
-                label:
-                    "Live"
-            });
-
-            if (
-                fs.existsSync(
-                    BACKUP_DIR
-                )
-            ) {
-
-                const files =
-                    fs
-                        .readdirSync(
-                            BACKUP_DIR
-                        )
-                        .filter(
-                            f =>
-                                /^trace-\d{4}-\d{2}\.json\.gz$/.test(
-                                    f
-                                )
-                        )
-                        .sort();
-
-                files.forEach(
-                    file => {
-
-                        const match =
-                            file.match(
-                                /^trace-(\d{4})-(\d{2})\.json\.gz$/
-                            );
-
-                        if (
-                            match
-                        ) {
-
-                            const year =
-                                match[1];
-
-                            const month =
-                                parseInt(
-                                    match[2]
-                                );
-
-                            result.push({
-                                id:
-                                    file,
-
-                                label:
-                                    `${months[month - 1]} ${year}`
-                            });
-                        }
-                    }
-                );
-            }
-
             res.json(
-                result
+                listArchiveMonths("trace")
             );
         }
 
@@ -297,7 +379,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -319,23 +401,23 @@ app.get(
             const file =
                 req.query.file;
 
+            const fullPath =
+                safeArchivePath(
+                    file,
+                    /^trace-\d{4}-\d{2}\.json\.gz$/
+                );
+
             if (
-                !file
+                !fullPath
             ) {
 
                 return res
                     .status(400)
                     .json({
                         error:
-                            "Missing file parameter"
+                            "Missing or invalid file parameter"
                     });
             }
-
-            const fullPath =
-                path.join(
-                    BACKUP_DIR,
-                    file
-                );
 
             if (
                 !fs.existsSync(
@@ -389,7 +471,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -426,39 +508,49 @@ app.get(
                 );
 
             //
-            // Path dell'ULTIMO advert osservato (da RX_LOG_DATA,
-            // path_observations) — non out_path (quello è lo stato
-            // di instradamento per rispondere, dato diverso, vedi
-            // docs/CONTACT_MANAGEMENT.md §4/§15).
+            // try/finally: v. commento analogo in /api/meshnodes
+            // (fix leak connessione SQLite, code review 2026-08-20,
+            // §2.3).
             //
-            const rows =
-                db.prepare(
-                    `SELECT
-                        n.public_key,
-                        n.adv_name,
-                        n.node_type,
-                        n.adv_lat,
-                        n.adv_lon,
-                        n.last_advert,
-                        n.last_seen,
-                        po.hop_count,
-                        po.path_hex
-                    FROM nodes n
-                    LEFT JOIN path_observations po
-                        ON po.public_key = n.public_key
-                        AND po.observed_at = (
-                            SELECT MAX(observed_at)
-                            FROM path_observations
-                            WHERE public_key = n.public_key
-                        )
-                    ORDER BY n.last_seen DESC`
-                ).all();
+            try {
 
-            db.close();
+                //
+                // Path dell'ULTIMO advert osservato (da RX_LOG_DATA,
+                // path_observations) — non out_path (quello è lo
+                // stato di instradamento per rispondere, dato
+                // diverso, vedi docs/CONTACT_MANAGEMENT.md §4/§15).
+                //
+                const rows =
+                    db.prepare(
+                        `SELECT
+                            n.public_key,
+                            n.adv_name,
+                            n.node_type,
+                            n.adv_lat,
+                            n.adv_lon,
+                            n.last_advert,
+                            n.last_seen,
+                            po.hop_count,
+                            po.path_hex
+                        FROM nodes n
+                        LEFT JOIN path_observations po
+                            ON po.public_key = n.public_key
+                            AND po.observed_at = (
+                                SELECT MAX(observed_at)
+                                FROM path_observations
+                                WHERE public_key = n.public_key
+                            )
+                        ORDER BY n.last_seen DESC`
+                    ).all();
 
-            res.json(
-                rows
-            );
+                res.json(
+                    rows
+                );
+
+            } finally {
+
+                db.close();
+            }
         }
 
         catch (
@@ -476,7 +568,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -518,16 +610,25 @@ app.get(
                     { readOnly: true }
                 );
 
-            const row =
-                db.prepare(
-                    `SELECT * FROM device_status WHERE id = 1`
-                ).get();
+            //
+            // try/finally: fix leak connessione SQLite, v.
+            // /api/meshnodes (code review 2026-08-20, §2.3).
+            //
+            try {
 
-            db.close();
+                const row =
+                    db.prepare(
+                        `SELECT * FROM device_status WHERE id = 1`
+                    ).get();
 
-            res.json(
-                row || null
-            );
+                res.json(
+                    row || null
+                );
+
+            } finally {
+
+                db.close();
+            }
         }
 
         catch (
@@ -545,7 +646,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -587,65 +688,75 @@ app.get(
                     { readOnly: true }
                 );
 
-            const nodeRows =
-                db.prepare(
-                    `SELECT
-                        public_key,
-                        adv_name,
-                        node_type,
-                        adv_lat,
-                        adv_lon,
-                        last_advert,
-                        last_seen
-                    FROM nodes
-                    WHERE public_key = ?`
-                ).all(
-                    publicKey
+            //
+            // try/finally: fix leak connessione SQLite, v.
+            // /api/meshnodes (code review 2026-08-20, §2.3) — copre
+            // anche il return anticipato "Nodo non trovato" qui
+            // sotto, che prima chiudeva la connessione manualmente
+            // solo su quel percorso specifico.
+            //
+            try {
+
+                const nodeRows =
+                    db.prepare(
+                        `SELECT
+                            public_key,
+                            adv_name,
+                            node_type,
+                            adv_lat,
+                            adv_lon,
+                            last_advert,
+                            last_seen
+                        FROM nodes
+                        WHERE public_key = ?`
+                    ).all(
+                        publicKey
+                    );
+
+                if (
+                    nodeRows.length === 0
+                ) {
+
+                    return res
+                        .status(404)
+                        .json({
+                            error:
+                                "Nodo non trovato"
+                        });
+                }
+
+                //
+                // Ordine cronologico crescente: comodo sia per il
+                // grafico (asse temporale) sia per costruire, lato
+                // client, l'ordine inverso per la tabella.
+                //
+                const observations =
+                    db.prepare(
+                        `SELECT
+                            observed_at,
+                            hop_count,
+                            path_hex,
+                            rssi,
+                            snr,
+                            route_type
+                        FROM path_observations
+                        WHERE public_key = ?
+                        ORDER BY observed_at ASC`
+                    ).all(
+                        publicKey
+                    );
+
+                res.json(
+                    {
+                        node: nodeRows[0],
+                        observations: observations
+                    }
                 );
 
-            if (
-                nodeRows.length === 0
-            ) {
+            } finally {
 
                 db.close();
-
-                return res
-                    .status(404)
-                    .json({
-                        error:
-                            "Nodo non trovato"
-                    });
             }
-
-            //
-            // Ordine cronologico crescente: comodo sia per il
-            // grafico (asse temporale) sia per costruire, lato
-            // client, l'ordine inverso per la tabella.
-            //
-            const observations =
-                db.prepare(
-                    `SELECT
-                        observed_at,
-                        hop_count,
-                        path_hex,
-                        rssi,
-                        snr,
-                        route_type
-                    FROM path_observations
-                    WHERE public_key = ?
-                    ORDER BY observed_at ASC`
-                ).all(
-                    publicKey
-                );
-
-            db.close();
-
-            res.json(
-                {
-                    node: nodeRows[0],
-                    observations: observations
-                }
-            );
         }
 
         catch (
@@ -663,7 +774,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -687,83 +798,8 @@ app.get(
 
         try {
 
-            const months = [
-                "January",
-                "February",
-                "March",
-                "April",
-                "May",
-                "June",
-                "July",
-                "August",
-                "September",
-                "October",
-                "November",
-                "December"
-            ];
-
-            const result = [];
-
-            result.push({
-                id:
-                    "live",
-                label:
-                    "Live"
-            });
-
-            if (
-                fs.existsSync(
-                    BACKUP_DIR
-                )
-            ) {
-
-                const files =
-                    fs
-                        .readdirSync(
-                            BACKUP_DIR
-                        )
-                        .filter(
-                            f =>
-                                /^path_observations-\d{4}-\d{2}\.json\.gz$/.test(
-                                    f
-                                )
-                        )
-                        .sort();
-
-                files.forEach(
-                    file => {
-
-                        const match =
-                            file.match(
-                                /^path_observations-(\d{4})-(\d{2})\.json\.gz$/
-                            );
-
-                        if (
-                            match
-                        ) {
-
-                            const year =
-                                match[1];
-
-                            const month =
-                                parseInt(
-                                    match[2]
-                                );
-
-                            result.push({
-                                id:
-                                    file,
-
-                                label:
-                                    `${months[month - 1]} ${year}`
-                            });
-                        }
-                    }
-                );
-            }
-
             res.json(
-                result
+                listArchiveMonths("path_observations")
             );
         }
 
@@ -781,7 +817,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -808,23 +844,23 @@ app.get(
             const file =
                 req.query.file;
 
+            const fullPath =
+                safeArchivePath(
+                    file,
+                    /^path_observations-\d{4}-\d{2}\.json\.gz$/
+                );
+
             if (
-                !file
+                !fullPath
             ) {
 
                 return res
                     .status(400)
                     .json({
                         error:
-                            "Missing file parameter"
+                            "Missing or invalid file parameter"
                     });
             }
-
-            const fullPath =
-                path.join(
-                    BACKUP_DIR,
-                    file
-                );
 
             if (
                 !fs.existsSync(
@@ -915,7 +951,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -932,6 +968,18 @@ app.get(
    interrogato con successo).
 ========================= */
 
+//
+// Ordine delle route rilevante (code review 2026-08-20, §4): questa
+// route letterale DEVE restare definita PRIMA di
+// "/api/neighbors/:publicKey" qui sotto — Express prova le route
+// nell'ordine di registrazione, e un singolo segmento letterale come
+// "repeaters" farebbe altrimenti match anche con ":publicKey" se
+// quest'ultima fosse registrata per prima, intercettando la
+// richiesta prima che arrivi qui. Stesso principio per
+// "/api/nodes/archive/list" vs "/api/nodes/:publicKey" più sotto
+// (lì non collidono per numero di segmenti, ma vale comunque la
+// buona norma di non affidarsi a quello in caso di refactor futuri).
+//
 app.get(
     "/api/neighbors/repeaters",
     (
@@ -958,21 +1006,30 @@ app.get(
                     { readOnly: true }
                 );
 
-            const repeaters =
-                db.prepare(
-                    `SELECT DISTINCT
-                        n.public_key,
-                        n.adv_name
-                    FROM repeater_status rs
-                    JOIN nodes n ON n.public_key = rs.public_key
-                    ORDER BY n.adv_name ASC`
-                ).all();
+            //
+            // try/finally: fix leak connessione SQLite, v.
+            // /api/meshnodes (code review 2026-08-20, §2.3).
+            //
+            try {
 
-            db.close();
+                const repeaters =
+                    db.prepare(
+                        `SELECT DISTINCT
+                            n.public_key,
+                            n.adv_name
+                        FROM repeater_status rs
+                        JOIN nodes n ON n.public_key = rs.public_key
+                        ORDER BY n.adv_name ASC`
+                    ).all();
 
-            res.json(
-                repeaters
-            );
+                res.json(
+                    repeaters
+                );
+
+            } finally {
+
+                db.close();
+            }
         }
 
         catch (
@@ -990,7 +1047,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -1040,171 +1097,182 @@ app.get(
                     { readOnly: true }
                 );
 
-            const nodeRows =
-                db.prepare(
-                    `SELECT public_key, adv_name
-                    FROM nodes
-                    WHERE public_key = ?`
-                ).all(
-                    publicKey
+            //
+            // try/finally: fix leak connessione SQLite, v.
+            // /api/meshnodes (code review 2026-08-20, §2.3) — copre
+            // anche il return anticipato "Repeater non trovato" qui
+            // sotto, che prima chiudeva la connessione manualmente
+            // solo su quel percorso specifico.
+            //
+            try {
+
+                const nodeRows =
+                    db.prepare(
+                        `SELECT public_key, adv_name
+                        FROM nodes
+                        WHERE public_key = ?`
+                    ).all(
+                        publicKey
+                    );
+
+                if (
+                    nodeRows.length === 0
+                ) {
+
+                    return res
+                        .status(404)
+                        .json({
+                            error:
+                                "Repeater non trovato"
+                        });
+                }
+
+                const statusRows =
+                    db.prepare(
+                        `SELECT *
+                        FROM repeater_status
+                        WHERE public_key = ?
+                        ORDER BY queried_at DESC
+                        LIMIT 1`
+                    ).all(
+                        publicKey
+                    );
+
+                const status =
+                    statusRows.length > 0
+                        ? statusRows[0]
+                        : null;
+
+                let neighbours = [];
+                let telemetry = [];
+
+                if (
+                    status
+                ) {
+
+                    neighbours =
+                        db.prepare(
+                            `SELECT
+                                rn.neighbour_prefix,
+                                rn.secs_ago,
+                                rn.snr,
+                                GROUP_CONCAT(n.adv_name) AS matched_names,
+                                COUNT(n.public_key) AS match_count
+                            FROM repeater_neighbours rn
+                            LEFT JOIN nodes n
+                                ON n.public_key LIKE rn.neighbour_prefix || '%'
+                            WHERE rn.public_key = ? AND rn.queried_at = ?
+                            GROUP BY rn.id
+                            ORDER BY rn.secs_ago ASC`
+                        ).all(
+                            publicKey,
+                            status.queried_at
+                        );
+
+                    //
+                    // Stesso pattern di neighbours: correlata a
+                    // status.queried_at, non a un proprio MAX() —
+                    // coerente con la logica già in produzione, non
+                    // introduce un comportamento diverso in questo
+                    // aggiornamento. Limite noto: se status fallisse
+                    // ma telemetry riuscisse nello stesso giro,
+                    // questa riga non verrebbe trovata (caso raro,
+                    // stesso gate ACL condivide di norma lo stesso
+                    // esito).
+                    //
+                    telemetry =
+                        db.prepare(
+                            `SELECT channel, type, value
+                            FROM repeater_telemetry
+                            WHERE public_key = ? AND queried_at = ?
+                            ORDER BY channel ASC, type ASC`
+                        ).all(
+                            publicKey,
+                            status.queried_at
+                        );
+                }
+
+                //
+                // A differenza di neighbours/telemetry, region non è
+                // gated da ACL (AnonReqType) — può riuscire anche
+                // quando status fallisce. Query indipendente, MAX()
+                // proprio invece di riusare status.queried_at.
+                //
+                const regionRows =
+                    db.prepare(
+                        `SELECT region_dump
+                        FROM repeater_region
+                        WHERE public_key = ?
+                        ORDER BY queried_at DESC
+                        LIMIT 1`
+                    ).all(
+                        publicKey
+                    );
+
+                const region =
+                    regionRows.length > 0
+                        ? regionRows[0].region_dump
+                        : null;
+
+                //
+                // Stesso principio di region: requisito di permesso
+                // diverso (login+admin) — query indipendente, propria
+                // MAX(queried_at).
+                //
+                const configRows =
+                    db.prepare(
+                        `SELECT *
+                        FROM repeater_config
+                        WHERE public_key = ?
+                        ORDER BY queried_at DESC
+                        LIMIT 1`
+                    ).all(
+                        publicKey
+                    );
+
+                const config =
+                    configRows.length > 0
+                        ? configRows[0]
+                        : null;
+
+                //
+                // Stesso gate ACL di region (AnonReqType, nessun
+                // permesso richiesto) — query indipendente, propria
+                // MAX(queried_at).
+                //
+                const clockRows =
+                    db.prepare(
+                        `SELECT remote_clock, skew_seconds, queried_at
+                        FROM repeater_clock
+                        WHERE public_key = ?
+                        ORDER BY queried_at DESC
+                        LIMIT 1`
+                    ).all(
+                        publicKey
+                    );
+
+                const clock =
+                    clockRows.length > 0
+                        ? clockRows[0]
+                        : null;
+
+                res.json(
+                    {
+                        public_key: nodeRows[0].public_key,
+                        adv_name: nodeRows[0].adv_name,
+                        status: status,
+                        neighbours: neighbours,
+                        telemetry: telemetry,
+                        region: region,
+                        clock: clock,
+                        config: config
+                    }
                 );
 
-            if (
-                nodeRows.length === 0
-            ) {
+            } finally {
 
                 db.close();
-
-                return res
-                    .status(404)
-                    .json({
-                        error:
-                            "Repeater non trovato"
-                    });
             }
-
-            const statusRows =
-                db.prepare(
-                    `SELECT *
-                    FROM repeater_status
-                    WHERE public_key = ?
-                    ORDER BY queried_at DESC
-                    LIMIT 1`
-                ).all(
-                    publicKey
-                );
-
-            const status =
-                statusRows.length > 0
-                    ? statusRows[0]
-                    : null;
-
-            let neighbours = [];
-            let telemetry = [];
-
-            if (
-                status
-            ) {
-
-                neighbours =
-                    db.prepare(
-                        `SELECT
-                            rn.neighbour_prefix,
-                            rn.secs_ago,
-                            rn.snr,
-                            GROUP_CONCAT(n.adv_name) AS matched_names,
-                            COUNT(n.public_key) AS match_count
-                        FROM repeater_neighbours rn
-                        LEFT JOIN nodes n
-                            ON n.public_key LIKE rn.neighbour_prefix || '%'
-                        WHERE rn.public_key = ? AND rn.queried_at = ?
-                        GROUP BY rn.id
-                        ORDER BY rn.secs_ago ASC`
-                    ).all(
-                        publicKey,
-                        status.queried_at
-                    );
-
-                //
-                // Stesso pattern di neighbours: correlata a
-                // status.queried_at, non a un proprio MAX() —
-                // coerente con la logica già in produzione, non
-                // introduce un comportamento diverso in questo
-                // aggiornamento. Limite noto: se status fallisse ma
-                // telemetry riuscisse nello stesso giro, questa riga
-                // non verrebbe trovata (caso raro, stesso gate ACL
-                // condivide di norma lo stesso esito).
-                //
-                telemetry =
-                    db.prepare(
-                        `SELECT channel, type, value
-                        FROM repeater_telemetry
-                        WHERE public_key = ? AND queried_at = ?
-                        ORDER BY channel ASC, type ASC`
-                    ).all(
-                        publicKey,
-                        status.queried_at
-                    );
-            }
-
-            //
-            // A differenza di neighbours/telemetry, region non è
-            // gated da ACL (AnonReqType) — può riuscire anche
-            // quando status fallisce. Query indipendente, MAX()
-            // proprio invece di riusare status.queried_at.
-            //
-            const regionRows =
-                db.prepare(
-                    `SELECT region_dump
-                    FROM repeater_region
-                    WHERE public_key = ?
-                    ORDER BY queried_at DESC
-                    LIMIT 1`
-                ).all(
-                    publicKey
-                );
-
-            const region =
-                regionRows.length > 0
-                    ? regionRows[0].region_dump
-                    : null;
-
-            //
-            // Stesso principio di region: requisito di permesso
-            // diverso (login+admin) — query indipendente, propria
-            // MAX(queried_at).
-            //
-            const configRows =
-                db.prepare(
-                    `SELECT *
-                    FROM repeater_config
-                    WHERE public_key = ?
-                    ORDER BY queried_at DESC
-                    LIMIT 1`
-                ).all(
-                    publicKey
-                );
-
-            const config =
-                configRows.length > 0
-                    ? configRows[0]
-                    : null;
-
-            //
-            // Stesso gate ACL di region (AnonReqType, nessun
-            // permesso richiesto) — query indipendente, propria
-            // MAX(queried_at).
-            //
-            const clockRows =
-                db.prepare(
-                    `SELECT remote_clock, skew_seconds, queried_at
-                    FROM repeater_clock
-                    WHERE public_key = ?
-                    ORDER BY queried_at DESC
-                    LIMIT 1`
-                ).all(
-                    publicKey
-                );
-
-            const clock =
-                clockRows.length > 0
-                    ? clockRows[0]
-                    : null;
-
-            db.close();
-
-            res.json(
-                {
-                    public_key: nodeRows[0].public_key,
-                    adv_name: nodeRows[0].adv_name,
-                    status: status,
-                    neighbours: neighbours,
-                    telemetry: telemetry,
-                    region: region,
-                    clock: clock,
-                    config: config
-                }
-            );
         }
 
         catch (
@@ -1222,7 +1290,7 @@ app.get(
                 )
                 .json({
                     error:
-                        err.message
+                        GENERIC_ERROR_MESSAGE
                 });
         }
     }
@@ -1248,60 +1316,8 @@ app.get(
 
         try {
 
-            const months = [
-                "January", "February", "March", "April", "May", "June",
-                "July", "August", "September", "October", "November", "December"
-            ];
-
-            const result = [
-                { id: "live", label: "Live" }
-            ];
-
-            if (
-                fs.existsSync(
-                    BACKUP_DIR
-                )
-            ) {
-
-                const files =
-                    fs
-                        .readdirSync(
-                            BACKUP_DIR
-                        )
-                        .filter(
-                            f =>
-                                /^repeater_neighbours-\d{4}-\d{2}\.json\.gz$/.test(
-                                    f
-                                )
-                        )
-                        .sort();
-
-                files.forEach(
-                    file => {
-
-                        const match =
-                            file.match(
-                                /^repeater_neighbours-(\d{4})-(\d{2})\.json\.gz$/
-                            );
-
-                        if (
-                            match
-                        ) {
-
-                            const year = match[1];
-                            const month = parseInt(match[2]);
-
-                            result.push({
-                                id: file,
-                                label: `${months[month - 1]} ${year}`
-                            });
-                        }
-                    }
-                );
-            }
-
             res.json(
-                result
+                listArchiveMonths("repeater_neighbours")
             );
         }
 
@@ -1316,7 +1332,7 @@ app.get(
 
             res
                 .status(500)
-                .json({ error: err.message });
+                .json({ error: GENERIC_ERROR_MESSAGE });
         }
     }
 );
@@ -1343,20 +1359,20 @@ app.get(
 
             const file = req.query.file;
 
+            const fullPath =
+                safeArchivePath(
+                    file,
+                    /^repeater_neighbours-\d{4}-\d{2}\.json\.gz$/
+                );
+
             if (
-                !file
+                !fullPath
             ) {
 
                 return res
                     .status(400)
-                    .json({ error: "Missing file parameter" });
+                    .json({ error: "Missing or invalid file parameter" });
             }
-
-            const fullPath =
-                path.join(
-                    BACKUP_DIR,
-                    file
-                );
 
             if (
                 !fs.existsSync(
@@ -1428,7 +1444,7 @@ app.get(
 
             res
                 .status(500)
-                .json({ error: err.message });
+                .json({ error: GENERIC_ERROR_MESSAGE });
         }
     }
 );
@@ -1453,22 +1469,32 @@ app.get(
         try {
 
             const file = req.query.file;
-            const queriedAt = parseInt(req.query.queried_at);
+            const queriedAt = parseInt(req.query.queried_at, 10);
 
+            const fullPath =
+                safeArchivePath(
+                    file,
+                    /^repeater_neighbours-\d{4}-\d{2}\.json\.gz$/
+                );
+
+            //
+            // Number.isNaN() invece di "!queriedAt" (code review
+            // 2026-08-20, §4) — un queried_at legittimo pari a 0
+            // (timestamp Unix epoch, valore limite ma tecnicamente
+            // valido) è falsy in JS: il controllo precedente lo
+            // avrebbe respinto come "mancante", indistinguibile da
+            // un parametro davvero assente o da un NaN (query.
+            // queried_at non numerico). Number.isNaN() reagisce solo
+            // al caso realmente invalido.
+            //
             if (
-                !file || !queriedAt
+                !fullPath || Number.isNaN(queriedAt)
             ) {
 
                 return res
                     .status(400)
-                    .json({ error: "Missing file or queried_at parameter" });
+                    .json({ error: "Missing or invalid file or queried_at parameter" });
             }
-
-            const fullPath =
-                path.join(
-                    BACKUP_DIR,
-                    file
-                );
 
             if (
                 !fs.existsSync(
@@ -1526,12 +1552,23 @@ app.get(
                     { readOnly: true }
                 );
 
-            const nodeRows =
-                db.prepare(
-                    "SELECT public_key, adv_name FROM nodes"
-                ).all();
+            //
+            // try/finally: fix leak connessione SQLite, v.
+            // /api/meshnodes (code review 2026-08-20, §2.3).
+            //
+            let nodeRows;
 
-            db.close();
+            try {
+
+                nodeRows =
+                    db.prepare(
+                        "SELECT public_key, adv_name FROM nodes"
+                    ).all();
+
+            } finally {
+
+                db.close();
+            }
 
             const neighbours =
                 snapshotRows.map(
@@ -1574,13 +1611,19 @@ app.get(
 
             res
                 .status(500)
-                .json({ error: err.message });
+                .json({ error: GENERIC_ERROR_MESSAGE });
         }
     }
 );
 
 /* =========================
    STATIC FRONTEND
+
+   express.static serve già index.html di default per GET / (e per
+   qualunque altra directory richiesta che lo contenga) — un handler
+   dedicato "app.get('/', ...)" più sotto era quindi codice morto,
+   mai raggiunto perché questo middleware intercetta la richiesta
+   per primo; rimosso (code review 2026-08-20, §4).
 ========================= */
 
 app.use(
@@ -1590,27 +1633,6 @@ app.use(
             "public"
         )
     )
-);
-
-/* =========================
-   ROOT
-========================= */
-
-app.get(
-    "/",
-    (
-        req,
-        res
-    ) => {
-
-        res.sendFile(
-            path.join(
-                __dirname,
-                "public",
-                "index.html"
-            )
-        );
-    }
 );
 
 /* =========================

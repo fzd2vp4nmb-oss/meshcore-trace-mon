@@ -291,8 +291,38 @@ class MeshCoreDaemon:
 
         await self.ipc.stop()
 
-        if self.engine.connected:
-            await self.engine.disconnect()
+        #
+        # Chiamata INCONDIZIONATA (fix successivo a Rev.6, code
+        # review 2026-08-20 — v. ARCHITECTURE.md §31; audit completo
+        # di ogni chiamante di connected/connect/disconnect/reconnect
+        # in tutto il progetto, nessun altro punto replica questo
+        # pattern). Prima di questo fix, il guard "if
+        # self.engine.connected" saltava interamente
+        # Engine.disconnect() proprio nello scenario in cui la
+        # protezione della funzione serve di più: una disconnessione
+        # silenziosa già rilevata dall'health-check, con
+        # _recovery_task attivo e in attesa di recovery_retry_interval
+        # prima del prossimo tentativo di riconnessione — in quella
+        # finestra self.mesh.is_connected (o self._connected) è
+        # False, quindi "connected" è False, ma _recovery_task,
+        # _heartbeat_task e gli eventuali _background_tasks sono
+        # ancora vivi e NON venivano mai cancellati/attesi, vanificando
+        # esattamente la garanzia introdotta con self._shutting_down
+        # (v. disconnect() sotto) — che non serve a nulla se
+        # disconnect() non viene proprio chiamata.
+        #
+        # Engine.disconnect() è già completamente idempotente e sicura
+        # da chiamare incondizionatamente, incluso il caso "mai stato
+        # connesso": _teardown_mesh() ritorna subito se self.mesh è
+        # None, i controlli su _recovery_task/_heartbeat_task sono già
+        # "if x is not None", e il loop su _background_tasks su un set
+        # vuoto non fa nulla — verificato leggendo il corpo di
+        # disconnect()/_teardown_mesh(), non assunto. L'unico effetto
+        # collaterale è cosmetico: il log "Closing MeshCore
+        # connection..." compare anche se il daemon non si è mai
+        # connesso con successo (es. crash durante l'avvio) — innocuo.
+        #
+        await self.engine.disconnect()
 
         log.info("MeshCore daemon stopped.")
 

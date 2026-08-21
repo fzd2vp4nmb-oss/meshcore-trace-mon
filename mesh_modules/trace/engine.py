@@ -55,7 +55,21 @@ class TraceEngine:
 
         for entry in self.paths:
 
-            path, enabled = parse_path_entry(entry)
+            #
+            # Una entry malformata in trace.paths (code review
+            # 2026-08-20, §4) non deve far fallire l'intera campagna
+            # — viene saltata e loggata, coerente con il trattamento
+            # già riservato agli errori di scrittura più sotto.
+            #
+            try:
+                path, enabled = parse_path_entry(entry)
+
+            except ValueError:
+                log.exception(
+                    "TRACE: entry non valida in trace.paths, saltata: %r",
+                    entry
+                )
+                continue
 
             if enabled:
                 enabled_paths.append(path)
@@ -72,25 +86,58 @@ class TraceEngine:
                 service="trace",
                 command="run",
                 path=path,
-                timeout=self.timeout
+                timeout=self.timeout,
+                #
+                # Il servizio 'trace' attende fino a self.timeout
+                # secondi la risposta radio (TRACE_DATA) prima di
+                # arrendersi — il timeout IPC lato client deve
+                # restare più ampio di quello, altrimenti il client
+                # abbandonerebbe la connessione (IPCError) mentre il
+                # daemon sta ancora aspettando legittimamente,
+                # rispondendo poi "a vuoto" su un socket già chiuso.
+                #
+                ipc_timeout=self.timeout + 15
             )
 
             #
             # Compatibilità con trace.sh storico.
             #
-            if response["status"] == "ok":
-                payload = response["result"]
+            # Accesso difensivo (code review 2026-08-20, §4) — prima
+            # un accesso diretto con [] a "status"/"result"/"message"
+            # avrebbe fatto fallire con un KeyError grezzo l'intera
+            # campagna se il daemon avesse mai risposto con un
+            # payload IPC malformato (bug lato daemon, versione IPC
+            # disallineata, ecc.), invece di degradare al solo path
+            # corrente come già avviene per gli errori di scrittura.
+            #
+            if response.get("status") == "ok":
+                payload = response.get("result", {})
 
             else:
 
                 payload = {
-                    "error": response["message"]
+                    "error": response.get("message", "risposta IPC senza dettagli")
                 }
 
-            self.writer.write(
-                trace_path=path,
-                payload=payload
-            )
+            #
+            # Un errore di I/O qui (disco pieno, permessi) prima di
+            # questo fix (code review 2026-08-20, §3.2) interrompeva
+            # l'intero batch invece del solo path corrente — gli
+            # altri path già interrogati con successo restavano
+            # comunque persi se non ancora scritti su disco.
+            #
+            try:
+                self.writer.write(
+                    trace_path=path,
+                    payload=payload
+                )
+
+            except Exception:
+                log.exception(
+                    "TRACE: scrittura su trace.json fallita per il "
+                    "path %s — proseguo con i path successivi.",
+                    path
+                )
 
             #
             # Attesa tra un trace e il successivo — non dopo l'ultimo

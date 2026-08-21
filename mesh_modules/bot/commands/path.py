@@ -8,6 +8,29 @@ def split_path_hops(path_hex, path_len):
 
     chunk_size = len(path_hex) // path_len
 
+    #
+    # path_len (hop count) dichiarato più alto di quanti "byte" siano
+    # davvero presenti in path_hex produce chunk_size=0 (code review
+    # Rev.6, trovato ESEGUENDO un test mirato, non dalla sola lettura:
+    # con chunk_size=0 il range() sottostante solleva
+    # "ValueError: range() arg 3 must not be zero" — un crash secco,
+    # non un valore sbagliato). path_len e path_hex arrivano da due
+    # campi INDIPENDENTI del payload radio (out_path_len/out_path o
+    # path_len/path di RX_LOG_DATA, v. contact_sync.py) senza alcuna
+    # verifica incrociata a monte — un dato radio incoerente (o
+    # out_path_len che eccede la capacità reale di out_path, 64 byte
+    # fissi lato firmware per ContactInfo, v. FIRMWARE_ANALYSIS.md
+    # §10) è quindi raggiungibile, non solo teorico. Nessuna
+    # spiegazione di design trovata per questo comportamento: è un
+    # difetto, non una scelta. Fallback: l'intera stringa come un
+    # unico "hop" grezzo — mantiene un'informazione mostrabile
+    # all'utente invece di far fallire l'intero comando (!path) o,
+    # lato frontend JS (stesso bug gemello in app.js
+    # splitAdvertPathHops, corretto in coppia), di bloccare la pagina.
+    #
+    if chunk_size < 1:
+        return [path_hex]
+
     return [
         path_hex[i:i + chunk_size]
         for i in range(0, len(path_hex), chunk_size)
@@ -19,7 +42,9 @@ def format_path(path_hex, path_len, max_chars=None):
     Formatta il path come elenco di hop separati da ','.
 
     path_len is None -> instradamento non ancora noto (tipico dei DM
-    prima che il path venga appreso, out_path_len == 255).
+    prima che il path venga appreso, out_path_len 255 O -1 — v.
+    UNKNOWN_OUT_PATH_VALUES in bot.py, Finding 3 code review
+    2026-08-20).
     path_len == 0 (o path_hex vuoto) -> diretto, 0 hop.
     Altrimenti -> elenco hop, troncato sui confini (mai un hash
     tagliato a metà) se max_chars è specificato.

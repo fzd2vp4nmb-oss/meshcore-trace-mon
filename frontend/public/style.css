@@ -137,10 +137,7 @@ th {
 /*
    Alternanza leggera delle righe dati — il colore va sul <td> (non
    sul <tr>) perché deve coprire lo sfondo bianco di base della
-   tabella. Per lo stesso motivo tr.timeout-row deve avere la STESSA
-   specificità di queste regole (tr + pseudo/classe + td) ed essere
-   dichiarata DOPO, altrimenti il rosso di timeout sparirebbe sotto
-   l'alternanza.
+   tabella.
 */
 tr:nth-child(even) td {
 
@@ -152,17 +149,12 @@ tr:nth-child(odd) td {
     background-color: #b8c6d9;
 }
 
-tr.timeout-row td {
-
-    background-color: #ffd6d6;
-}
-
-.timeout-cell {
-
-    font-weight: bold;
-
-    color: #b00000;
-}
+/*
+   .timeout-row/.timeout-cell rimosse — CSS morto (code review
+   2026-08-20, §4): mai applicate a nessun elemento, le righe TIMEOUT
+   sono già evidenziate via stile inline in app.js (span rosso in
+   grassetto sulla colonna "status"), non da queste classi.
+*/
 
 #pathTable {
 
@@ -222,16 +214,6 @@ body.dark tr:nth-child(even) td {
 body.dark tr:nth-child(odd) td {
 
     background-color: #454f5e;
-}
-
-body.dark tr.timeout-row td {
-
-    background-color: #5a1f1f;
-}
-
-body.dark .timeout-cell {
-
-    color: #ff8080;
 }
 
 body.dark select {
@@ -505,8 +487,10 @@ body.dark .tabButton.active {
    qui sotto, non scoperto a .tabBar apposta: serve anche fuori da lì
    (link di navigazione/cambio lingua nell'header delle pagine Info).
    Solo il posizionamento "spingi a destra dentro la riga dei tab" è
-   specifico di .tabBar, isolato nelle due regole successive. Stessa
-   palette di .helpBar a per coerenza visiva col resto del progetto.
+   specifico di .tabBar, isolato nelle due regole successive.
+   (Riferimento a ".helpBar" nel commento originale rimosso — code
+   review 2026-08-20, §4: quella classe non esiste/non è mai stata
+   definita in questo file, probabile refuso da una rinomina.)
 */
 .tabBarLink {
 

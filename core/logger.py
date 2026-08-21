@@ -10,8 +10,24 @@ class Logger:
     sia il logger della libreria meshcore, utilizzando
     le impostazioni definite in config.yaml.
     """
+    #
+    # Default esplicito, coerente con quello generato da setup.sh in
+    # config.yaml — se manca la chiave (code review 2026-08-20, §3.1),
+    # prima il processo moriva immediatamente su config["logging.file"]
+    # (KeyError, __getitem__) ancora prima che il logger esistesse,
+    # senza alcuna riga di log utile a diagnosticare la causa;
+    # 'logging.level'/'logging.console' usano invece già .get() con
+    # default nello stesso blocco — incoerenza corretta qui.
+    #
+    DEFAULT_LOG_FILE = "logs/trace-mon.log"
+
     def __init__(self):
-        logfile = Path(config["logging.file"])
+        logfile = Path(
+            config.get(
+                "logging.file",
+                self.DEFAULT_LOG_FILE
+            )
+        )
         logfile.parent.mkdir(
             parents=True,
             exist_ok=True

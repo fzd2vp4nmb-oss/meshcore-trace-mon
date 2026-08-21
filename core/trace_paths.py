@@ -27,14 +27,47 @@ def parse_path_entry(entry):
     Ritorna (path, enabled) da una entry grezza di trace.paths.
     """
 
+    #
+    # Validazione (code review 2026-08-20, §4) — trace.paths viene
+    # scritto a mano in config.yaml (oltre che da edit_config.py), e
+    # un errore di battitura (entry non stringa per un YAML non
+    # quotato interpretato come numero/bool, o una entry vuota/solo
+    # virgole) prima produceva un AttributeError/IndexError grezzo
+    # più a valle, in TraceEngine.run(), invece di un messaggio
+    # chiaro nel punto in cui il dato viene letto.
+    #
+    if not isinstance(entry, str):
+        raise ValueError(
+            f"trace.paths: entry non valida (atteso una stringa, "
+            f"ricevuto {type(entry).__name__}: {entry!r}) — controlla "
+            f"che ogni voce in config.yaml sia tra virgolette."
+        )
+
+    if not entry.strip():
+        raise ValueError(
+            "trace.paths: trovata una entry vuota — rimuovila da "
+            "config.yaml."
+        )
+
     parts = entry.split(",")
 
     last = parts[-1].strip().lower()
 
     if last in ("true", "false"):
-        return ",".join(parts[:-1]), (last == "true")
+        path = ",".join(parts[:-1])
+        enabled = (last == "true")
 
-    return entry, True
+    else:
+        path = entry
+        enabled = True
+
+    if not path.strip():
+        raise ValueError(
+            f"trace.paths: entry {entry!r} non contiene un path "
+            f"valido (solo il suffisso true/false)."
+        )
+
+    return path, enabled
 
 
 def format_path_entry(path, enabled):

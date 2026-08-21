@@ -1,3 +1,72 @@
+//
+// Wrapper sicuri per localStorage (code review 2026-08-20, §3.6) —
+// prima nessuna delle chiamate dirette a localStorage.getItem/
+// setItem in questo file (25, tutte convertite qui sotto) era
+// protetta da try/catch: in modalità privata di alcuni browser (o
+// con quota superata) localStorage può lanciare, interrompendo a
+// metà l'handler sincrono che la contiene — spesso un event listener
+// che continuerebbe con altro lavoro dopo la riga incriminata.
+// getItem fallita ritorna null (stesso valore che localStorage
+// ritorna per una chiave assente, così i chiamanti esistenti che già
+// gestiscono "null/assente" continuano a funzionare senza modifiche
+// al proprio codice); setItem fallita viene solo loggata — la
+// preferenza semplicemente non persiste per questa sessione.
+//
+function safeLocalStorageGet(key) {
+
+    try {
+        return localStorage.getItem(key);
+
+    } catch (err) {
+
+        console.warn(
+            `localStorage.getItem('${key}') fallito:`,
+            err
+        );
+
+        return null;
+    }
+}
+
+function safeLocalStorageSet(key, value) {
+
+    try {
+        localStorage.setItem(key, value);
+
+    } catch (err) {
+
+        console.warn(
+            `localStorage.setItem('${key}') fallito:`,
+            err
+        );
+    }
+}
+
+//
+// Controllo res.ok (code review 2026-08-20, §4) — diverse fetch in
+// questo file (es. /api/meshnodes, /api/nodes, /api/device_status,
+// /api/neighbors/repeaters, gli endpoint "archive list") leggevano
+// res.json() senza controllare prima res.ok: su un 500/404 il body
+// di errore ({"error": "..."}) veniva silenziosamente interpretato
+// come se fosse il payload atteso (un array o un oggetto dati),
+// producendo un fallimento silenzioso a valle (es.
+// sources.forEach is not a function, o una tabella vuota senza
+// messaggio d'errore) invece di un errore visibile in console — a
+// differenza dei fetch che già controllavano res.ok esplicitamente.
+// Chiamata subito dopo ogni fetch() sprovvista del controllo.
+//
+function assertResOk(res) {
+
+    if (
+        !res.ok
+    ) {
+
+        throw new Error(
+            `HTTP ${res.status}`
+        );
+    }
+}
+
 let dataCache = null;
 let chart = null;
 let autoRefreshTimer = null;
@@ -107,6 +176,8 @@ async function loadDataSources() {
                 "/api/archive/list"
             );
 
+        assertResOk(res);
+
         const sources =
             await res.json();
 
@@ -141,7 +212,7 @@ async function loadDataSources() {
         );
 
         const savedSource =
-            localStorage.getItem(
+            safeLocalStorageGet(
                 "dataSource"
             );
 
@@ -184,6 +255,8 @@ async function loadMeshNodes() {
                 "/api/meshnodes"
             );
 
+        assertResOk(res);
+
         const data =
             await res.json();
 
@@ -220,7 +293,7 @@ async function loadMeshNodes() {
 async function loadData() {
 
     const source =
-        localStorage.getItem(
+        safeLocalStorageGet(
             "dataSource"
         ) || "live";
 
@@ -304,6 +377,41 @@ async function loadData() {
                 "<tr><td>Error loading data.</td></tr>";
         }
     }
+}
+
+//
+// Escaping HTML per dati NON fidati prima di iniettarli in innerHTML
+// (o in un attributo). Serve in particolare per adv_name/
+// matched_names e ogni altro nome risolto da resolveNodeName(): sono
+// stringhe scelte liberamente da un nodo mesh qualunque (chiunque sia
+// in portata radio, nessuna autenticazione), quindi vanno trattate
+// come contenuto potenzialmente ostile — v. code review 2026-08-20,
+// §1.1 (XSS stored). Unica funzione di escaping del file: ogni punto
+// che inietta un nome proveniente dalla rete in innerHTML deve
+// passare da qui, così un fix futuro (es. caratteri aggiuntivi da
+// escapare) si applica ovunque in un colpo solo.
+//
+// Adatta sia al testo di un elemento sia al valore di un attributo
+// (es. data-tooltip="..."): esegue l'escape anche delle virgolette,
+// che per il solo contenuto testo non servirebbe, ma non ha effetti
+// collaterali e semplifica l'uso ad un'unica funzione per entrambi i
+// casi.
+//
+function escapeHtml(value) {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return "";
+    }
+
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
 //
@@ -462,9 +570,9 @@ function buildPathTooltipHtml(
     }
 
     return (
-        `<span data-tooltip="${resolveNodeName(parts[0])}">${parts[0]}</span>` +
+        `<span data-tooltip="${escapeHtml(resolveNodeName(parts[0]))}">${parts[0]}</span>` +
         "→" +
-        `<span data-tooltip="${resolveNodeName(parts[1])}">${parts[1]}</span>`
+        `<span data-tooltip="${escapeHtml(resolveNodeName(parts[1]))}">${parts[1]}</span>`
     );
 }
 
@@ -620,7 +728,7 @@ const selector =
     );
 
 const savedPath =
-    localStorage.getItem(
+    safeLocalStorageGet(
         "selectedPath"
     );
 
@@ -880,7 +988,7 @@ function renderChart(
     }
 
     const range =
-        localStorage.getItem(
+        safeLocalStorageGet(
             "chartRange"
         ) ||
         "all";
@@ -1280,7 +1388,7 @@ function startAutoRefresh(loadFn) {
 function configureAutoRefresh() {
 
     const mode =
-        localStorage.getItem(
+        safeLocalStorageGet(
             "autoRefresh"
         ) ||
         "off";
@@ -1362,7 +1470,7 @@ document
         "change",
         () => {
 
-            localStorage.setItem(
+            safeLocalStorageSet(
                 "selectedPath",
                 document
                     .getElementById(
@@ -1388,7 +1496,7 @@ dataSourceSelector.addEventListener(
     "change",
     async () => {
 
-        localStorage.setItem(
+        safeLocalStorageSet(
             "dataSource",
             dataSourceSelector.value
         );
@@ -1460,7 +1568,7 @@ if (
         "change",
         () => {
 
-            localStorage.setItem(
+            safeLocalStorageSet(
                 "neighborRepeater",
                 neighborRepeaterSelector.value
             );
@@ -1538,7 +1646,7 @@ if (
         ) {
 
             refreshSelector.value =
-                localStorage.getItem(
+                safeLocalStorageGet(
                     "autoRefresh"
                 ) ||
                 "off";
@@ -1555,7 +1663,7 @@ if (
                 "change",
                 () => {
 
-                    localStorage.setItem(
+                    safeLocalStorageSet(
                         "autoRefresh",
                         refreshSelector.value
                     );
@@ -1602,7 +1710,7 @@ if (
                         btn.dataset
                             .range ===
                         (
-                            localStorage.getItem(
+                            safeLocalStorageGet(
                                 "chartRange"
                             ) ||
                             "all"
@@ -1633,7 +1741,7 @@ if (
                                 "active"
                             );
 
-                            localStorage.setItem(
+                            safeLocalStorageSet(
                                 "chartRange",
                                 btn.dataset
                                     .range
@@ -1707,6 +1815,28 @@ function splitAdvertPathHops(hopCount, pathHex) {
     }
 
     const chunkSize = Math.floor(pathHex.length / hopCount);
+
+    //
+    // hopCount dichiarato più alto di quanti "byte" siano davvero
+    // presenti in pathHex produce chunkSize=0 (code review Rev.6,
+    // trovato ESEGUENDO un test mirato con un watchdog, non dalla
+    // sola lettura: "for (i += chunkSize)" con chunkSize=0 non
+    // incrementa mai i, il ciclo non termina — CONFERMATO chiamando
+    // la funzione reale sotto timeout, mai ritornata). hopCount e
+    // pathHex arrivano da due colonne indipendenti di
+    // path_observations (hop_count/path_hex), scritte da due campi
+    // altrettanto indipendenti del payload radio lato daemon (v.
+    // stesso fix gemello in mesh_modules/bot/commands/path.py
+    // split_path_hops per la spiegazione completa) — un ciclo che
+    // blocca la tab del browser dell'utente non appena quella riga
+    // viene renderizzata, permanentemente finché la pagina non viene
+    // ricaricata. Stesso fallback del lato Python: l'intera stringa
+    // come un unico "hop" grezzo.
+    //
+    if (chunkSize < 1) {
+        return [pathHex];
+    }
+
     const hops = [];
 
     for (let i = 0; i < pathHex.length; i += chunkSize) {
@@ -1741,7 +1871,7 @@ function buildAdvertPathHtml(hopCount, pathHex) {
     }
 
     return hops
-        .map(hop => `<span data-tooltip="${resolveNodeName(hop)}">${hop}</span>`)
+        .map(hop => `<span data-tooltip="${escapeHtml(resolveNodeName(hop))}">${hop}</span>`)
         .join(" > ");
 }
 
@@ -1778,6 +1908,8 @@ async function loadNodesTab() {
             await fetch(
                 "/api/nodes"
             );
+
+        assertResOk(res);
 
         const nodes =
             await res.json();
@@ -2068,32 +2200,32 @@ function applyNodesFilters() {
             ? futureAdvertCheckbox.checked
             : false;
 
-    localStorage.setItem(
+    safeLocalStorageSet(
         "nodeNameFilter",
         nameFilter
     );
 
-    localStorage.setItem(
+    safeLocalStorageSet(
         "nodePathFilter",
         pathFilter
     );
 
-    localStorage.setItem(
+    safeLocalStorageSet(
         "nodeTypeFilter",
         typeFilter
     );
 
-    localStorage.setItem(
+    safeLocalStorageSet(
         "nodePathLengthFilter",
         lengthFilter
     );
 
-    localStorage.setItem(
+    safeLocalStorageSet(
         "nodeNotObservedFilter",
         notObservedFilter
     );
 
-    localStorage.setItem(
+    safeLocalStorageSet(
         "nodeFutureAdvertFilter",
         futureAdvertFilter
     );
@@ -2219,32 +2351,32 @@ function initNodesFilters() {
     }
 
     const savedNameFilter =
-        localStorage.getItem(
+        safeLocalStorageGet(
             "nodeNameFilter"
         ) || "";
 
     const savedFilter =
-        localStorage.getItem(
+        safeLocalStorageGet(
             "nodePathFilter"
         ) || "";
 
     const savedType =
-        localStorage.getItem(
+        safeLocalStorageGet(
             "nodeTypeFilter"
         ) || "all";
 
     const savedLength =
-        localStorage.getItem(
+        safeLocalStorageGet(
             "nodePathLengthFilter"
         ) || "all";
 
     const savedNotObserved =
-        localStorage.getItem(
+        safeLocalStorageGet(
             "nodeNotObservedFilter"
         ) === "true";
 
     const savedFutureAdvert =
-        localStorage.getItem(
+        safeLocalStorageGet(
             "nodeFutureAdvertFilter"
         ) === "true";
 
@@ -2409,6 +2541,8 @@ async function loadDeviceStatus() {
                 "/api/device_status"
             );
 
+        assertResOk(res);
+
         const status =
             await res.json();
 
@@ -2496,6 +2630,21 @@ function renderDeviceStatusTable(
     // prima di assumere l'equivalenza — i due campi non sono la
     // stessa cosa nonostante il nome "Errors" di uno richiami l'altro.
     //
+    // Finding 4, code review 2026-08-20 (review indipendente
+    // successiva a Rev.6): fw_version/fw_build/model sotto sono
+    // testo grezzo riportato da una query diretta al device
+    // companion — a differenza di public_key (hex a formato fisso,
+    // v. la distinzione già documentata in Rev.4/Rev5), non hanno
+    // alcun vincolo di formato/lunghezza a monte (v.
+    // contact_sync.py::_sync_device_status(), passthrough diretto di
+    // device_info.get("model")/fw_build/fw_version) — stessa
+    // categoria di adv_name/matched_names ("annuncio libero"), quindi
+    // vanno sempre da escapeHtml() prima di iniettarli in innerHTML,
+    // esattamente come quei due campi. Rev.5 aveva letto questo file
+    // per intero senza notare il punto (nessuna decisione contraria
+    // documentata trovata in un audit esplicito — v. ARCHITECTURE.md
+    // §34).
+    //
     table.innerHTML = `
         <tr><th data-tooltip="Tempo trascorso dall'ultimo aggiornamento dei dati del companion locale mostrati in questa tabella (letti a intervalli da trace-mon, non in tempo reale).">Updated</th><td>${formatSecsAgo(secsAgo)}</td></tr>
         <tr><th data-tooltip="Tensione della batteria, riportata dal device in millivolt e convertita qui in Volt.">Battery</th><td>${status.battery_mv != null ? (status.battery_mv / 1000).toFixed(2) + "V" : "n/a"}</td></tr>
@@ -2514,8 +2663,8 @@ function renderDeviceStatusTable(
         <tr><th data-tooltip="Tempo cumulativo, dall'avvio, passato rispettivamente a trasmettere e a ricevere pacchetti effettivi (non il tempo totale con la radio accesa).">Airtime (TX | RX)</th><td>${formatDurationLong(status.tx_air_secs)} | ${formatDurationLong(status.rx_air_secs)}</td></tr>
         <tr><th data-tooltip="Percentuale di uptime in cui il canale è stato occupato da traffico, proprio in TX più altrui rilevato in RX: (Airtime TX + Airtime RX) / Uptime × 100. Indica quanto è congestionata la mesh nei dintorni, non il rispetto di un limite normativo.">Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.tx_air_secs, status.rx_air_secs, status.uptime_secs)}</td></tr>
         <tr><th data-tooltip="Percentuale di uptime passata in trasmissione: Airtime TX / Uptime × 100. Solo TX: confrontabile direttamente con &quot;Duty Cycle&quot; nella tabella Config dei Repeaters (anch'esso solo TX) per vedere quanto ci si avvicina al limite impostato.">TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.tx_air_secs, status.uptime_secs)}</td></tr>
-        <tr><th data-tooltip="Versione e build del firmware in esecuzione sul device companion collegato localmente a trace-mon, riportata da una query diretta al device (non un comando CLI come per i Repeaters).">Firmware Version</th><td>${status.fw_version ?? "n/a"}${status.fw_build ? ` (${status.fw_build})` : ""}</td></tr>
-        <tr><th data-tooltip="Modello hardware del device companion collegato localmente a trace-mon (es. la scheda su cui gira il firmware), riportato da una query diretta al device.">Hardware</th><td>${status.model ?? "n/a"}</td></tr>
+        <tr><th data-tooltip="Versione e build del firmware in esecuzione sul device companion collegato localmente a trace-mon, riportata da una query diretta al device (non un comando CLI come per i Repeaters).">Firmware Version</th><td>${escapeHtml(status.fw_version ?? "n/a")}${status.fw_build ? ` (${escapeHtml(status.fw_build)})` : ""}</td></tr>
+        <tr><th data-tooltip="Modello hardware del device companion collegato localmente a trace-mon (es. la scheda su cui gira il firmware), riportato da una query diretta al device.">Hardware</th><td>${escapeHtml(status.model ?? "n/a")}</td></tr>
     `;
 }
 
@@ -2575,7 +2724,7 @@ function renderNodesTable(
         n => {
 
             html += "<tr>";
-            html += `<td><a href="#" class="nodeLink" data-key="${n.public_key}">${n.adv_name || "(unknown)"}</a></td>`;
+            html += `<td><a href="#" class="nodeLink" data-key="${escapeHtml(n.public_key)}">${escapeHtml(n.adv_name) || "(unknown)"}</a></td>`;
             html += `<td>${formatNodeType(n.node_type)}</td>`;
             html += `<td>${formatUnixTime(n.last_advert)}</td>`;
             html += `<td>${buildAdvertPathHtml(n.hop_count, n.path_hex)}</td>`;
@@ -2795,6 +2944,8 @@ async function loadNodeDetailArchiveList() {
                 "/api/nodes/archive/list"
             );
 
+        assertResOk(res);
+
         const sources =
             await res.json();
 
@@ -2976,10 +3127,29 @@ async function switchNodeDetailPeriod(
             observations
         );
 
-        document.getElementById(
-            "nodeDetailObsCount"
-        ).textContent =
-            observations.length;
+        //
+        // Guardia TypeError (code review 2026-08-20, §4) —
+        // l'elemento #nodeDetailObsCount viene creato dentro
+        // l'innerHTML di #nodeDetailInfoTable in renderNodeDetail():
+        // se questa funzione viene chiamata prima che
+        // renderNodeDetail() abbia mai fatto il render iniziale
+        // (race sul cambio rapido di periodo/nodo), getElementById()
+        // torna null e ".textContent = ..." lancerebbe un
+        // TypeError non gestito, interrompendo silenziosamente lo
+        // script per il resto della pagina.
+        //
+        const obsCountEl =
+            document.getElementById(
+                "nodeDetailObsCount"
+            );
+
+        if (
+            obsCountEl
+        ) {
+
+            obsCountEl.textContent =
+                observations.length;
+        }
     }
 
     catch (
@@ -3232,6 +3402,8 @@ async function loadNeighborsRepeaterList() {
                 "/api/neighbors/repeaters"
             );
 
+        assertResOk(res);
+
         const repeaters =
             await res.json();
 
@@ -3276,7 +3448,7 @@ async function loadNeighborsRepeaterList() {
         );
 
         const saved =
-            localStorage.getItem(
+            safeLocalStorageGet(
                 "neighborRepeater"
             );
 
@@ -3892,9 +4064,27 @@ function renderNeighborData(
 
     else {
 
+        //
+        // Finding 4, code review 2026-08-20 (review indipendente
+        // successiva a Rev.6): firmware_version/hardware/
+        // region_default sotto sono testo grezzo restituito dai
+        // comandi CLI "ver"/"board"/"region default" su un repeater
+        // REMOTO — a differenza di public_key (hex a formato fisso,
+        // v. distinzione già documentata in Rev.4/Rev5), nessun
+        // vincolo di formato/lunghezza a monte
+        // (mesh_modules/neighbor_monitor/neighbor_monitor.py,
+        // CLI_QUERIES: value_type=str, passthrough diretto). Stessa
+        // categoria di adv_name/matched_names ("annuncio libero"),
+        // quindi sempre da escapeHtml() prima di iniettarli in
+        // innerHTML, esattamente come quei due campi. Gli altri
+        // valori di questa tabella (path_hash_mode/txdelay/
+        // direct_txdelay/rxdelay/flood_max*/dutycycle) sono tutti
+        // numerici (value_type=int/float/_parse_percent in
+        // CLI_QUERIES) — nessun rischio di injection, non toccati.
+        //
         configTable.innerHTML = `
-            <tr><th data-tooltip="Versione e build del firmware in esecuzione sul repeater, riportata dal comando CLI &quot;ver&quot; (richiede login con permesso admin nell'ACL).">Firmware Version</th><td>${config.firmware_version ?? "n/a"}</td></tr>
-            <tr><th data-tooltip="Nome/modello dell'hardware del repeater (es. la scheda o il modulo su cui gira il firmware), riportato dal comando CLI &quot;board&quot; (richiede login con permesso admin nell'ACL).">Hardware</th><td>${config.hardware ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Versione e build del firmware in esecuzione sul repeater, riportata dal comando CLI &quot;ver&quot; (richiede login con permesso admin nell'ACL).">Firmware Version</th><td>${escapeHtml(config.firmware_version ?? "n/a")}</td></tr>
+            <tr><th data-tooltip="Nome/modello dell'hardware del repeater (es. la scheda o il modulo su cui gira il firmware), riportato dal comando CLI &quot;board&quot; (richiede login con permesso admin nell'ACL).">Hardware</th><td>${escapeHtml(config.hardware ?? "n/a")}</td></tr>
             <tr><th data-tooltip="Dimensione in byte dell'hash usato per identificare i pacchetti in flood (0 = 1 byte/256 ID unici, 1 = 2 byte/65.536 ID, 2 = 3 byte). Un hash più corto pesa meno nel pacchetto ma satura prima lo spazio di ID unici su reti con molto traffico flood.">Path Hash Mode</th><td>${config.path_hash_mode ?? "n/a"}</td></tr>
             <tr><th data-tooltip="Fattore che scala il ritardo casuale prima di ritrasmettere un pacchetto flood: quando più repeater vicini sentono lo stesso pacchetto, ciascuno attende un tempo casuale prima di rilanciarlo, per evitare che ritrasmettano tutti insieme collidendo. 0 disabilita il ritardo.">TX Delay (Flood)</th><td>${config.txdelay ?? "n/a"}</td></tr>
             <tr><th data-tooltip="Come &quot;TX Delay (Flood)&quot; ma per i pacchetti instradati direttamente verso un hop specifico: valore tipicamente più basso perché meno nodi competono per ritrasmettere lo stesso pacchetto.">TX Delay (Direct)</th><td>${config.direct_txdelay ?? "n/a"}</td></tr>
@@ -3902,7 +4092,7 @@ function renderNeighborData(
             <tr><th data-tooltip="Numero massimo di salti (hop) che un pacchetto instradato in flood può percorrere prima di essere scartato.">Flood Max Hops</th><td>${config.flood_max ?? "n/a"}</td></tr>
             <tr><th data-tooltip="Come &quot;Flood Max Hops&quot;, ma applicato ai pacchetti flood privi di un ambito/regione (transport code) specifico.">Flood Max Hops (Unscoped)</th><td>${config.flood_max_unscoped ?? "n/a"}</td></tr>
             <tr><th data-tooltip="Numero massimo di salti per i soli pacchetti di advert (annuncio di presenza del nodo) in flood — di norma un limite più basso rispetto al traffico flood generico.">Flood Max Hops (Advert)</th><td>${config.flood_max_advert ?? "n/a"}</td></tr>
-            <tr><th data-tooltip="Regione radio predefinita usata dal repeater quando un pacchetto non ne specifica una esplicitamente.">Default Region</th><td>${config.region_default ?? "n/a"}</td></tr>
+            <tr><th data-tooltip="Regione radio predefinita usata dal repeater quando un pacchetto non ne specifica una esplicitamente.">Default Region</th><td>${escapeHtml(config.region_default ?? "n/a")}</td></tr>
             <tr><th data-tooltip="Autolimitazione imposta dal firmware stesso: dopo ogni trasmissione, il repeater si impone un silenzio proporzionale al tempo appena trasmesso, per rispettare i limiti normativi di banda (es. 10% sotto 868MHz in Europa). Riguarda solo il TX, mai la ricezione — non è una media misurata: confrontalo con &quot;TX Duty Cycle (observed)&quot; in Status, non con &quot;Airtime % (mesh)&quot; che include anche l'RX.">Duty Cycle</th><td>${config.dutycycle != null ? `${config.dutycycle}%` : "n/a"}</td></tr>
         `;
     }
@@ -3960,18 +4150,18 @@ function renderNeighboursTable(
             ) {
 
                 nameCell =
-                    n.matched_names;
+                    escapeHtml(n.matched_names);
             }
 
             else {
 
                 nameCell =
-                    `${n.matched_names} (ambiguous)`;
+                    `${escapeHtml(n.matched_names)} (ambiguous)`;
             }
 
             html += "<tr>";
             html += `<td>${nameCell}</td>`;
-            html += `<td>${n.neighbour_prefix}</td>`;
+            html += `<td>${escapeHtml(n.neighbour_prefix)}</td>`;
             html += `<td>${n.snr}</td>`;
             html += `<td>${formatSecsAgo(n.secs_ago)}</td>`;
             html += "</tr>";
@@ -4040,6 +4230,8 @@ async function loadNeighboursArchiveList() {
             await fetch(
                 "/api/neighbors/archive/list"
             );
+
+        assertResOk(res);
 
         const months =
             await res.json();
@@ -4161,6 +4353,8 @@ async function onNeighboursArchiveChange() {
             await fetch(
                 url
             );
+
+        assertResOk(res);
 
         const snapshots =
             await res.json();
@@ -4293,6 +4487,8 @@ async function loadNeighboursSnapshot(
             await fetch(
                 url
             );
+
+        assertResOk(res);
 
         const neighbours =
             await res.json();

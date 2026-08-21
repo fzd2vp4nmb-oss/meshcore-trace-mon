@@ -12,9 +12,36 @@ from mesh_modules.bot.commands.registry import COMMANDS
 
 #
 # out_path_len usato dal firmware per indicare "path non ancora
-# noto, instradamento in flood" sul contatto.
+# noto, instradamento in flood" sul contatto. A livello di frame
+# seriale è sempre un byte 0..255 (0xFF = sconosciuto, v.
+# docs/FIRMWARE_ANALYSIS.md §4, ContactInfo.h) — ma nei dati reali
+# compare anche il valore -1: bug confermato lato meshcore_py (byte
+# letto come signed in un punto della catena di parsing lato
+# libreria, non un comportamento del firmware — v. FIRMWARE_ANALYSIS.md
+# §4), non un caso raro isolato.
+#
+# Finding 3, code review 2026-08-20 (review indipendente successiva a
+# Rev.6) — segnalato in docs/CONTACT_MANAGEMENT.md §6 come bug ancora
+# APERTO ("Va corretto ad accettare anche -1"), MAI una scelta di
+# design di non gestirlo qui: verificato con un audit esplicito
+# dell'intera documentazione del progetto (ARCHITECTURE.md,
+# CONTACT_MANAGEMENT.md, FIRMWARE_ANALYSIS.md, tutte le
+# REVIEW_FULL_EXTENSIVE_2026-08-20*.md, notes/findings.md) — nessuna
+# decisione contraria trovata da nessuna parte. Il progetto usa già
+# questo stesso pattern altrove (tools/test_contact.py,
+# tools/test_contact_list.py: `UNKNOWN_OUT_PATH_VALUES = (255, -1)`,
+# esplicitamente riconosciuto come "il pattern difensivo osservato
+# sistematicamente nel progetto" in REVIEW_FULL_EXTENSIVE_2026-08-20_
+# Rev6.md — una deviazione da esso è lì classificata come difetto, non
+# come stile alternativo deliberato) — bot.py era rimasto l'unico
+# punto del progetto che interpreta out_path_len ancora indietro
+# rispetto a quel pattern, dalla sua introduzione originale
+# (ARCHITECTURE.md §21, 2026-08-06), precedente alla scoperta del
+# caso -1 (CONTACT_MANAGEMENT.md §6, 2026-08-07/08) e mai più
+# rivisitato da allora.
 #
 OUT_PATH_UNKNOWN = 255
+UNKNOWN_OUT_PATH_VALUES = (OUT_PATH_UNKNOWN, -1)
 
 #
 # Vita massima delle cache di correlazione/dedup, in secondi.
@@ -38,6 +65,23 @@ OUT_PATH_UNKNOWN = 255
 CORRELATION_TTL = 3
 DM_DEDUP_TTL = 60
 
+#
+# Lunghezza massima di sender_name prima di costruire il prefisso
+# "@[...] " (code review 2026-08-20, §3.3) — sender_name è testo
+# completamente controllato da chi scrive sul canale (parte prima di
+# ": " nel testo del messaggio) o dal nome annunciato via ADVERT per
+# le DM, senza alcun limite imposto dal protocollo (fino a ~100
+# caratteri, limitato solo dal budget del pacchetto in ingresso).
+# Senza un limite qui, un mittente può consumare gran parte del
+# budget di risposta disponibile con un nome lungo, lasciando ai
+# comandi pochissimo spazio — di fatto un "megafono" per un proprio
+# testo che fa sparire il contenuto reale del comando. 32 caratteri
+# sono ampiamente sufficienti per un nome leggibile e lasciano
+# comunque margine al contenuto della risposta anche con
+# max_reply_length ridotto.
+#
+MAX_SENDER_NAME_LEN = 32
+
 
 def _tag(sender_timestamp):
     """
@@ -52,6 +96,76 @@ def _tag(sender_timestamp):
     s = str(sender_timestamp) if sender_timestamp is not None else "????"
 
     return f"[ts:{s[-4:]}]"
+
+
+#
+# Ellissi usata per segnalare un troncamento — un solo codepoint, ma
+# 3 byte in UTF-8 (U+2026, non un "..." ASCII a 3 caratteri separati).
+# Il costo in byte va riservato esplicitamente nel budget disponibile,
+# mai assunto pari a 1 byte.
+#
+TRUNCATION_SUFFIX = "…"
+TRUNCATION_SUFFIX_BYTES = len(TRUNCATION_SUFFIX.encode("utf-8"))
+
+
+def _truncate_utf8_safe(text, max_bytes):
+    """
+    Tronca `text` in modo che la sua codifica UTF-8 non superi mai
+    `max_bytes` — anche includendo l'ellissi di troncamento, quando
+    serve aggiungerla.
+
+    Punto unico condiviso tra risposte su canale e DM: un fix o una
+    modifica del margine di sicurezza si applica così a entrambi i
+    percorsi (in precedenza la stessa logica era duplicata identica
+    in _send_channel_reply e _send_dm_reply — v. code review
+    2026-08-20, §2.4).
+
+    NOTA sul fix: la versione precedente riservava solo 1 byte per
+    l'ellissi (`max_reply_length - 1`), ma "…" occupa 3 byte in UTF-8
+    — il risultato finale poteva quindi superare `max_bytes` fino a 2
+    byte, contraddicendo la garanzia dichiarata in ARCHITECTURE.md
+    §16 ("la rete di sicurezza finale misura in byte UTF-8... mai
+    affidarsi al fatto che di solito ci sta"). Qui si riservano
+    esplicitamente TRUNCATION_SUFFIX_BYTES byte per l'ellissi.
+    `errors="ignore"` sul decode scarta eventuali byte finali di un
+    carattere multi-byte tagliato a metà dal cutoff — nessun
+    carattere viene mai spezzato nel testo finale.
+    """
+
+    encoded = text.encode("utf-8")
+
+    if len(encoded) <= max_bytes:
+        return text
+
+    cutoff = max(max_bytes - TRUNCATION_SUFFIX_BYTES, 0)
+
+    candidate = (
+        encoded[:cutoff].decode("utf-8", errors="ignore")
+        + TRUNCATION_SUFFIX
+    )
+
+    #
+    # Se max_bytes è più piccolo di TRUNCATION_SUFFIX_BYTES (3, "…" in
+    # UTF-8), cutoff viene azzerato da max(..., 0) sopra ma il
+    # suffisso da solo pesa comunque 3 byte — il risultato supererebbe
+    # ugualmente max_bytes (code review Rev.6, trovato ESEGUENDO un
+    # test mirato con budget=0/1/2: la garanzia in byte dichiarata nel
+    # docstring di questa funzione ("non superi mai max_bytes") non
+    # reggeva in questo caso limite). Non risulta oggi raggiungibile
+    # da config.yaml (bot.max_reply_length non è tra i parametri
+    # esposti da config.sh/tools/edit_config.py, v. NUMERIC_SUFFIXES),
+    # ma resta un valore modificabile a mano nel file, e la funzione
+    # deve comunque rispettare il contratto che dichiara di offrire in
+    # OGNI caso, non solo in quelli oggi raggiungibili dall'interfaccia
+    # — coerente con lo stesso principio "mai un errore grezzo, sempre
+    # un valore difensivo" già seguito altrove nel progetto. Fallback:
+    # tronca senza riservare spazio per l'ellissi, che a questo punto
+    # non ci starebbe comunque.
+    #
+    if len(candidate.encode("utf-8")) > max_bytes:
+        return encoded[:max(max_bytes, 0)].decode("utf-8", errors="ignore")
+
+    return candidate
 
 
 def _parse_command(text):
@@ -143,6 +257,15 @@ class BotModule:
         #
         self._pending_dm_dedup = {}
 
+        #
+        # Riferimenti ai task di rebind creati da _on_rebind() (code
+        # review 2026-08-20, §3.1 — stesso pattern già corretto in
+        # mesh_modules/contact_sync/contact_sync.py) — un task senza
+        # riferimenti può essere garbage collected in modo
+        # imprevedibile prima del completamento.
+        #
+        self._rebind_tasks = set()
+
         self.engine.register_rebind(self._on_rebind)
 
     async def start(self):
@@ -173,11 +296,24 @@ class BotModule:
             ", ".join(sorted(COMMANDS)) or "(nessuno)"
         )
 
+    #
+    # Rete di sicurezza indipendente sul numero di canali interrogati
+    # da _resolve_channel() (code review 2026-08-20, §3.3) — prima il
+    # loop si affidava esclusivamente al comportamento della libreria
+    # (fermarsi a EventType.ERROR) per terminare: se quel
+    # comportamento cambiasse (libreria/firmware), il loop
+    # diventerebbe infinito durante il rebind. Il firmware MeshCore
+    # supporta un numero di canali limitato; questo valore è
+    # deliberatamente generoso rispetto a qualunque configurazione
+    # reale nota, per non rischiare falsi negativi.
+    #
+    MAX_CHANNELS = 64
+
     async def _resolve_channel(self):
 
         idx = 0
 
-        while True:
+        while idx < self.MAX_CHANNELS:
 
             result = await self.engine.mesh.commands.get_channel(idx)
 
@@ -193,6 +329,12 @@ class BotModule:
                 return
 
             idx += 1
+
+        raise RuntimeError(
+            f"Canale '{self.channel_name}' non trovato entro i primi "
+            f"{self.MAX_CHANNELS} indici — interrotto per sicurezza "
+            "(v. code review 2026-08-20, §3.3)."
+        )
 
     def _subscribe(self):
 
@@ -219,8 +361,13 @@ class BotModule:
 
     def _on_rebind(self, mesh):
 
-        asyncio.create_task(
+        task = asyncio.create_task(
             self._rebind_async()
+        )
+
+        self._rebind_tasks.add(task)
+        task.add_done_callback(
+            self._rebind_tasks.discard
         )
 
     async def _rebind_async(self):
@@ -401,6 +548,13 @@ class BotModule:
         else:
             sender_name, body = "", text
 
+        #
+        # v. MAX_SENDER_NAME_LEN — mittente non autenticato, testo
+        # libero senza limite di protocollo (code review 2026-08-20,
+        # §3.3).
+        #
+        sender_name = sender_name[:MAX_SENDER_NAME_LEN]
+
         body = body.strip()
 
         if not body.startswith(self.COMMAND_PREFIX):
@@ -414,16 +568,26 @@ class BotModule:
 
         tag = _tag(payload.get("sender_timestamp"))
 
+        #
+        # %r invece di %s per command/sender_name (code review
+        # 2026-08-20, §4) — entrambi provengono da testo radio non
+        # autenticato (v. MAX_SENDER_NAME_LEN sopra); %r applica
+        # repr(), che esegue l'escape di newline/caratteri di
+        # controllo, impedendo a un mittente malevolo di iniettare
+        # righe di log false (es. un sender_name contenente "\n2026-
+        # 01-01 CRITICAL: ...") spacciandole per voci legittime
+        # generate da questo processo. arg era già protetto da %r.
+        #
         if handler is None:
             log.info(
-                "BotModule: %s comando canale sconosciuto '%s'.",
+                "BotModule: %s comando canale sconosciuto %r.",
                 tag,
                 command
             )
             return
 
         log.info(
-            "BotModule: %s comando canale '%s' (arg=%r) da '%s'.",
+            "BotModule: %s comando canale %r (arg=%r) da %r.",
             tag,
             command,
             arg,
@@ -442,7 +606,27 @@ class BotModule:
         )
 
         prefix = f"@[{sender_name}] "
-        budget = max(self.max_reply_length - len(prefix), 0)
+
+        #
+        # Budget sui BYTE UTF-8 del prefisso, non sui caratteri (code
+        # review 2026-08-20 Rev5) — max_reply_length è un limite in byte
+        # (vedi ARCHITECTURE.md §16, _truncate_utf8_safe), ma sender_name
+        # è testo libero non autenticato (fino a MAX_SENDER_NAME_LEN
+        # caratteri) e può contenere UTF-8 multi-byte: usare len(prefix)
+        # (caratteri) sottostimava l'ingombro reale del prefisso in byte,
+        # sovrastimando così ctx.reply_budget passato ai comandi. In
+        # particolare PathCommand/format_path() tronca sui confini degli
+        # hop assumendo che il budget ricevuto sia già corretto in byte
+        # ("mai un hash tagliato a metà" — invariante di ARCHITECTURE.md
+        # §16): con un budget sovrastimato, la rete di sicurezza finale
+        # (_truncate_utf8_safe in _send_channel_reply) poteva tagliare la
+        # stringa combinata (prefix+content) a un confine di byte che non
+        # rispetta più i confini di hop già calcolati, spezzando un hash
+        # a metà — esattamente l'invariante che PathCommand dichiara di
+        # rispettare. Non riguarda il DM (reply_budget=max_reply_length
+        # lì, nessun prefisso).
+        #
+        budget = max(self.max_reply_length - len(prefix.encode("utf-8")), 0)
 
         ctx = CommandContext(
             engine=self.engine,
@@ -474,12 +658,7 @@ class BotModule:
             )
             return
 
-        encoded = text.encode("utf-8")
-
-        if len(encoded) > self.max_reply_length:
-            text = encoded[:self.max_reply_length - 1].decode(
-                "utf-8", errors="ignore"
-            ) + "…"
+        text = _truncate_utf8_safe(text, self.max_reply_length)
 
         if region == "":
             scope_to_set = "*"
@@ -490,15 +669,68 @@ class BotModule:
 
         async with self.engine.command_lock:
 
+            #
+            # Prima di questo fix (code review 2026-08-20, §3.3), un
+            # errore qui veniva solo loggato: a differenza di
+            # send_chan_msg()/send_msg_with_retry() sotto, non
+            # chiamava report_possible_failure() né interrompeva
+            # l'invio — il messaggio partiva comunque con lo scope
+            # RESIDUO della chiamata precedente, contraddicendo
+            # l'invariante "mai stato residuo" dichiarato per gli
+            # altri casi (v. classe CommandContext/region più sopra).
+            # Se non possiamo garantire lo scope corretto, è più
+            # sicuro non inviare affatto la risposta con uno scope
+            # potenzialmente sbagliato (rischio: canale troppo ampio o
+            # troppo stretto rispetto a quanto atteso) che segnalare
+            # la connessione come sospetta, come già fa l'heartbeat in
+            # casi analoghi.
+            #
+            # Quel fix però non funzionava mai (audit successivo al
+            # Finding 2 di una review indipendente, 2026-08-20):
+            # set_flood_scope() non è pre-unwrappata dalla libreria —
+            # su fallimento non solleva un'eccezione, ritorna un
+            # Event(ERROR, ...) grezzo (verificato leggendo
+            # meshcore_py/commands/messaging.py) — quindi il solo
+            # except Exception sotto non intercettava mai un
+            # fallimento reale del comando, ed esattamente lo scenario
+            # che questo fix credeva di aver chiuso restava aperto.
+            # Ora controlliamo .type, non solo un except dedicato,
+            # stesso principio già applicato in advert.py/trace.py/
+            # clock_sync.py e in _get_stats_safe() di contact_sync.py.
+            #
             try:
-                await self.engine.mesh.commands.set_flood_scope(scope_to_set)
+                event = await self.engine.mesh.commands.set_flood_scope(
+                    scope_to_set
+                )
 
             except Exception:
+
                 log.exception(
-                    "BOT: %s set_flood_scope('%s') fallito.",
+                    "BOT: %s set_flood_scope('%s') fallito — "
+                    "risposta canale annullata per evitare di "
+                    "inviare con uno scope residuo/incerto.",
                     tag,
                     scope_to_set
                 )
+
+                self.engine.report_possible_failure()
+
+                return
+
+            if event.type == EventType.ERROR:
+
+                log.warning(
+                    "BOT: %s set_flood_scope('%s') fallito (%s) — "
+                    "risposta canale annullata per evitare di "
+                    "inviare con uno scope residuo/incerto.",
+                    tag,
+                    scope_to_set,
+                    event.payload
+                )
+
+                self.engine.report_possible_failure()
+
+                return
 
             log.info(
                 "BOT: %s reply canale (scope=%r, applicato=%r) -> %s",
@@ -633,7 +865,14 @@ class BotModule:
             )
             return
 
-        sender_name = contact.get("adv_name", pubkey_prefix)
+        #
+        # v. MAX_SENDER_NAME_LEN — adv_name proviene dalla rete
+        # mesh, controllato dal device remoto (code review
+        # 2026-08-20, §3.3).
+        #
+        sender_name = (
+            contact.get("adv_name") or pubkey_prefix
+        )[:MAX_SENDER_NAME_LEN]
 
         text = (payload.get("text", "") or "").strip()
 
@@ -646,9 +885,15 @@ class BotModule:
 
         handler = COMMANDS.get(command)
 
+        #
+        # %r invece di %s per command/sender_name — stessa
+        # motivazione di _on_channel_message() (code review
+        # 2026-08-20, §4): protezione da log injection via testo
+        # radio non autenticato.
+        #
         if handler is None:
             log.info(
-                "BotModule: %s comando DM sconosciuto '%s' da '%s'.",
+                "BotModule: %s comando DM sconosciuto %r da %r.",
                 tag,
                 command,
                 sender_name
@@ -656,7 +901,7 @@ class BotModule:
             return
 
         log.info(
-            "BotModule: %s comando DM '%s' (arg=%r) da '%s'.",
+            "BotModule: %s comando DM %r (arg=%r) da %r.",
             tag,
             command,
             arg,
@@ -666,7 +911,7 @@ class BotModule:
         out_path_len = contact.get("out_path_len", OUT_PATH_UNKNOWN)
         out_path = contact.get("out_path", "")
 
-        if out_path_len == OUT_PATH_UNKNOWN:
+        if out_path_len in UNKNOWN_OUT_PATH_VALUES:
             path_hex, path_len = None, None
         else:
             path_hex, path_len = out_path, out_path_len
@@ -730,12 +975,7 @@ class BotModule:
             )
             return
 
-        encoded = text.encode("utf-8")
-
-        if len(encoded) > self.max_reply_length:
-            text = encoded[:self.max_reply_length - 1].decode(
-                "utf-8", errors="ignore"
-            ) + "…"
+        text = _truncate_utf8_safe(text, self.max_reply_length)
 
         async with self.engine.command_lock:
 

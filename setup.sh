@@ -5,7 +5,10 @@
 # trace-web.service). Il contenuto di questi file vive interamente
 # dentro questo script (heredoc) — nel repository NON esistono copie
 # "template" separate: git clone non ti dà backup.sh, trace.sh,
-# config.yaml, trace-web.service, li crea questo script.
+# contact_sync.sh, rotate_contacts.sh, config.yaml, trace-web.service,
+# li crea questo script (elenco completo corretto in code review
+# 2026-08-20, Rev.6 — mancavano contact_sync.sh/rotate_contacts.sh,
+# generati dallo stesso loop write_maint_script() degli altri due).
 #
 # Va eseguito UNA VOLTA dopo il git clone, dalla root del progetto
 # (~/trace-mon). trace-mon.service invece è già nel repository così
@@ -47,6 +50,22 @@ confirm_overwrite() {
 echo "--- Parte 1: script di manutenzione ---"
 echo
 
+#
+# Validazione formato, non solo "non vuoto" (code review 2026-08-20,
+# §3.7) — NODE_ID e IP_SERVER vengono sostituiti più sotto con sed
+# usando '/' come delimitatore (righe "sed -i s/.../.../"): un valore
+# con '/' rompe la sintassi del comando sed stesso (errore, non
+# corruzione silenziosa, ma comunque un fallimento poco chiaro da
+# diagnosticare); un valore con '&' verrebbe invece silenziosamente
+# interpretato da sed come "il testo trovato dal pattern" nella
+# sostituzione, producendo uno script di manutenzione con un valore
+# sbagliato SENZA alcun errore visibile. Validare il formato atteso
+# (identificativo per NODE_ID, IPv4 per IP_SERVER) esclude entrambi i
+# casi a monte, invece di dover elencare i singoli caratteri
+# pericolosi per sed.
+#
+NODE_ID_PATTERN='^[A-Za-z0-9_-]+$'
+
 read -p "Node ID (es. node_01, node_02, node_03): " NODE_ID
 
 if [ -z "$NODE_ID" ]; then
@@ -54,10 +73,28 @@ if [ -z "$NODE_ID" ]; then
     exit 1
 fi
 
+if ! [[ "$NODE_ID" =~ $NODE_ID_PATTERN ]]; then
+    echo "ERRORE: Node ID non valido — sono ammessi solo lettere, cifre, '_' e '-' (es. node_01)."
+    exit 1
+fi
+
+#
+# IPv4 dotted-quad, ogni ottetto 0-255 — non un pattern generico "solo
+# cifre e punti" (accetterebbe anche valori fuori range come
+# 999.999.999.999).
+#
+IPV4_OCTET='(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])'
+IPV4_PATTERN="^${IPV4_OCTET}\\.${IPV4_OCTET}\\.${IPV4_OCTET}\\.${IPV4_OCTET}\$"
+
 read -p "IP del server Collettore: " IP_SERVER
 
 if [ -z "$IP_SERVER" ]; then
     echo "ERRORE: l'IP del server non può essere vuoto."
+    exit 1
+fi
+
+if ! [[ "$IP_SERVER" =~ $IPV4_PATTERN ]]; then
+    echo "ERRORE: IP del server non valido — atteso un indirizzo IPv4 (es. 172.20.1.1)."
     exit 1
 fi
 
@@ -87,27 +124,97 @@ write_maint_script() {
             cat > "$output" << 'MAINTSCRIPT_EOF'
 #!/bin/bash
 
-cd /home/meshcore/trace-mon
-
-NODE="node_XX"
-IP_SERVER="Y.Y.Y.Y"
+#
+# set -u/set -o pipefail (code review 2026-08-20, §3.7) — un comando
+# con una variabile non definita per errore di battitura, o una pipe
+# il cui primo stadio fallisce silenziosamente, non passavano
+# inosservati. set -e NON è usato deliberatamente: più sotto lo
+# script continua di proposito oltre singoli comandi falliti (ogni
+# passaggio ha già il proprio controllo esplicito if [ $? -ne 0 ]
+# con log_err+exit, scritto a mano proprio per gestire ogni fallimento
+# in modo specifico) — set -e romperebbe quella logica terminando lo
+# script alla prima riga fallita invece di eseguire la gestione
+# errori prevista.
+#
+set -u
+set -o pipefail
 
 #
-# Log su file degli errori di questo script, in aggiunta all'echo su
-# stdout (che raggiunge comunque l'email di cron, se MAILTO è
-# configurato) — così un fallimento resta visibile anche sui nodi dove
-# cron non invia email per i job falliti. File dedicato agli script di
-# manutenzione lanciati da cron (distinto da trace-mon.log, che è il
-# log del daemon), ruotato da logrotate insieme a trace-mon.log (stessa
-# stanza in config/logrotate.conf).
+# Variabile unica per la directory di installazione (code review
+# 2026-08-20, §4) — prima "/home/meshcore/trace-mon" era ripetuto
+# come letterale in più punti dello stesso script (LOCKFILE, cd,
+# LOGFILE, il secondo cd verso backup/): un'installazione con un
+# percorso diverso da quello di default richiedeva modificarlo a mano
+# in ognuno di quei punti, col rischio concreto di dimenticarne uno.
+# Un'unica variabile la rende un solo punto di modifica.
 #
-LOGFILE="/home/meshcore/trace-mon/logs/cron-errors.log"
+INSTALL_DIR="/home/meshcore/trace-mon"
+
+#
+# Log su file — errori (log_err) e messaggi informativi/di stato
+# (log_info) in due file separati dentro logs/, indipendenti da come
+# cron redirige lo stdout dello script (rafforzamento log cron,
+# 2026-08-20 — v. docs/CHANGES_log_errori_cron_su_file.md per la
+# motivazione originale e questo aggiornamento). Definiti qui, PRIMA
+# del lock e del cd verso INSTALL_DIR, così anche quei due messaggi
+# (lock già preso, cd fallita) finiscono su file — prima erano solo su
+# stdout, quindi persi su qualunque crontab con `> /dev/null` (come
+# nella configurazione di produzione attuale per questo script). Path
+# assoluti (non relativi alla cwd) perché questo script cambia
+# directory (`cd backup/`) più avanti, dopo l'ultimo controllo utile.
+#
+# Limite noto (code review 2026-08-20, §4): in caso di disco pieno,
+# l'append su $LOGFILE/$INFOFILE può fallire silenziosamente (il suo
+# codice di uscita non è controllato) — nello scenario peggiore
+# l'errore che si sta cercando di loggare potrebbe non raggiungere il
+# file. L'echo su stdout resta comunque il canale primario (raggiunge
+# l'email di cron se MAILTO è configurato): accettato come limite
+# noto, non risolto qui — irrobustirlo richiederebbe verificare lo
+# spazio libero prima di ogni scrittura, complessità sproporzionata
+# per un file di log che nel caso peggiore perde solo la propria copia
+# locale di un evento già visibile altrove.
+#
+LOGFILE="$INSTALL_DIR/logs/cron-errors.log"
+INFOFILE="$INSTALL_DIR/logs/cron-status.log"
 mkdir -p "$(dirname "$LOGFILE")"
 
 log_err() {
     echo "$1"
     printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$LOGFILE"
 }
+
+log_info() {
+    echo "$1"
+    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$INFOFILE"
+}
+
+#
+# Lock anti-sovrapposizione (code review 2026-08-20, §3.7) — prima
+# nessuno script generato aveva flock: se un'esecuzione richiede più
+# tempo del previsto (rete lenta, i tre sleep 10 sommati qui sotto) e
+# cron rilancia lo script prima che il precedente sia terminato, due
+# istanze sovrapposte potevano correre in race su cp/gzip/rm dello
+# stesso file. Lock non bloccante (-n): se un'altra istanza è già in
+# corso, questa esce subito senza fare nulla invece di accodarsi —
+# preferibile per uno script cron periodico (il giro successivo
+# arriva comunque a breve) piuttosto che accumulare istanze in attesa.
+#
+LOCKFILE="$INSTALL_DIR/run/backup.sh.lock"
+mkdir -p "$(dirname "$LOCKFILE")"
+exec 9> "$LOCKFILE"
+
+if ! flock -n 9; then
+    log_info "$(basename "$0"): un'altra istanza è già in esecuzione, uscita senza fare nulla."
+    exit 0
+fi
+
+cd "$INSTALL_DIR" || {
+    log_err "ERRORE: cd $INSTALL_DIR fallita, uscita."
+    exit 1
+}
+
+NODE="node_XX"
+IP_SERVER="Y.Y.Y.Y"
 
 YEAR=$(date +"%Y")
 MONTH=$(date +"%m")
@@ -162,9 +269,19 @@ rm -f data/trace.json
 sleep 10
 touch data/trace.json
 sleep 10
-cd /home/meshcore/trace-mon/backup
+cd "$INSTALL_DIR/backup" || {
+    log_err "Errore: cd $INSTALL_DIR/backup fallita."
+    exit 1
+}
 
-scp -P 15450 "$FILEOUTZIP" trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
+#
+# Variabili remote quotate insieme come un unico argomento (code
+# review 2026-08-20, §4) — IP_SERVER/NODE non erano protette da word
+# splitting/glob se mai avessero contenuto uno spazio o un carattere
+# speciale di shell; validate a monte da setup.sh quando lo script è
+# generato da lì, ma questo file può anche essere modificato a mano.
+#
+scp -P 15450 "$FILEOUTZIP" "trace-mon@${IP_SERVER}:/home/trace-mon/backup/${NODE}"
 
 if [ $? -ne 0 ]; then
     log_err "Errore durante l'invio di $FILEOUTZIP al Collettore (il backup locale resta comunque disponibile in backup/)."
@@ -179,22 +296,33 @@ MAINTSCRIPT_EOF
             cat > "$output" << 'MAINTSCRIPT_EOF'
 #!/bin/bash
 
-cd /home/meshcore/trace-mon
-
-NODE="node_XX"
-IP_SERVER="Y.Y.Y.Y"
-SNAPSHOT="data/contacts_export.db"
+#
+# set -u/set -o pipefail (code review 2026-08-20, §3.7) — v.
+# backup.sh per la motivazione completa. set -e NON è usato
+# deliberatamente, stesso motivo: i controlli if [ $? -ne 0 ] sotto
+# gestiscono già ogni fallimento in modo esplicito.
+#
+set -u
+set -o pipefail
 
 #
-# Log su file degli errori di questo script, in aggiunta all'echo su
-# stdout (che raggiunge comunque l'email di cron, se MAILTO è
-# configurato) — così un fallimento resta visibile anche sui nodi dove
-# cron non invia email per i job falliti. File dedicato agli script di
-# manutenzione lanciati da cron (distinto da trace-mon.log, che è il
-# log del daemon), ruotato da logrotate insieme a trace-mon.log (stessa
-# stanza in config/logrotate.conf).
+# Variabile unica per la directory di installazione (code review
+# 2026-08-20, §4) — v. stessa nota in backup.sh.
 #
-LOGFILE="/home/meshcore/trace-mon/logs/cron-errors.log"
+INSTALL_DIR="/home/meshcore/trace-mon"
+
+#
+# Log su file — errori (log_err) e messaggi informativi/di stato
+# (log_info) in due file separati dentro logs/, indipendenti da come
+# cron redirige lo stdout dello script (rafforzamento log cron,
+# 2026-08-20 — v. docs/CHANGES_log_errori_cron_su_file.md per la
+# motivazione originale e questo aggiornamento). Definiti qui, PRIMA
+# del lock e del cd verso INSTALL_DIR, così anche quei due messaggi
+# (lock già preso, cd fallita) finiscono su file — v. backup.sh per la
+# nota completa sul limite noto (disco pieno) e sui path assoluti.
+#
+LOGFILE="$INSTALL_DIR/logs/cron-errors.log"
+INFOFILE="$INSTALL_DIR/logs/cron-status.log"
 mkdir -p "$(dirname "$LOGFILE")"
 
 log_err() {
@@ -202,13 +330,176 @@ log_err() {
     printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$LOGFILE"
 }
 
+log_info() {
+    echo "$1"
+    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$INFOFILE"
+}
+
+#
+# Lock anti-sovrapposizione (code review 2026-08-20, §3.7) — v.
+# backup.sh per la motivazione completa. Particolarmente rilevante
+# qui: contact_sync.sh gira ogni 5 minuti (il job più frequente in
+# assoluto), la finestra per una sovrapposizione con un'esecuzione
+# precedente insolitamente lenta (VACUUM INTO su un DB grande) è la
+# più stretta di tutti gli script.
+#
+LOCKFILE="$INSTALL_DIR/run/contact_sync.sh.lock"
+mkdir -p "$(dirname "$LOCKFILE")"
+exec 9> "$LOCKFILE"
+
+if ! flock -n 9; then
+    log_info "$(basename "$0"): un'altra istanza è già in esecuzione, uscita senza fare nulla."
+    exit 0
+fi
+
+cd "$INSTALL_DIR" || {
+    log_err "ERRORE: cd $INSTALL_DIR fallita, uscita."
+    exit 1
+}
+
+NODE="node_XX"
+IP_SERVER="Y.Y.Y.Y"
+SNAPSHOT="data/contacts_export.db"
+
+#
+# File di stato per la fix "salta il giro se nulla è cambiato"
+# (valutazione usura storage, 2026-08-20) — v. commento sopra
+# rm -f "$SNAPSHOT" più sotto per il dettaglio completo. Stessa
+# directory run/ già usata per i lockfile.
+#
+VERSION_FILE="$INSTALL_DIR/run/contact_sync.last_synced_version"
+
+#
+# Mutua esclusione con rotate_contacts.sh (code review 2026-08-20,
+# §4) — l'ordine "rotate_contacts.sh PRIMA del prossimo giro di
+# contact_sync.sh" era finora solo un commento nella documentazione
+# (v. tools/rotate_path_observations.py), non imposto da nessuno
+# script: nulla impediva realmente a un giro di contact_sync.sh
+# (ogni 5 minuti) di eseguire VACUUM INTO su data/contacts.db mentre
+# rotate_contacts.sh ha in corso il proprio DELETE+VACUUM sulla
+# stessa tabella (raro: 1 volta al mese, ma non impossibile con un
+#'oneshot' manuale o un cron leggermente disallineato). WAL +
+# busy_timeout già proteggono dalla corruzione in quel caso (v.
+# stessa nota nei due tools/rotate_*.py), ma il risultato sarebbe
+# comunque uno snapshot inviato al Collettore a metà rotazione. Un
+# tentativo di lock non bloccante sullo STESSO lockfile di
+# rotate_contacts.sh rende l'ordine effettivo: se la rotazione è in
+# corso, questo giro di sync viene saltato — il prossimo, 5 minuti
+# dopo, la troverà già conclusa (la rotazione impiega tipicamente
+# secondi, non minuti).
+#
+ROTATE_LOCKFILE="$INSTALL_DIR/run/rotate_contacts.sh.lock"
+mkdir -p "$(dirname "$ROTATE_LOCKFILE")"
+exec 8> "$ROTATE_LOCKFILE"
+
+if ! flock -n 8; then
+    log_info "$(basename "$0"): rotate_contacts.sh e' in corso, salto questo giro di sync."
+    exit 0
+fi
+
+#
+# Il lock (fd 8) resta acquisito per tutta la durata dello script
+# (rilasciato automaticamente all'uscita, alla chiusura del file
+# descriptor) — non solo al momento del controllo iniziale, altrimenti
+# rotate_contacts.sh potrebbe partire subito dopo il controllo ma
+# prima del VACUUM INTO qui sotto, vanificando la protezione.
+#
+
 #
 # Se il daemon non ha ancora creato il DB (es. subito dopo
 # l'installazione), non c'è nulla da sincronizzare — esce senza
 # errore, stesso principio difensivo già usato lato server web.
 #
+#
+# Messaggio anche sul percorso di skip (code review 2026-08-20, §4) —
+# prima usciva con successo (0) senza scrivere nulla, né su stdout né
+# nel log: indistinguibile, guardando solo i log, da un giro in cui
+# lo script non fosse proprio partito (es. cron disabilitato per
+# errore) — entrambi i casi non producono alcuna traccia. Un log
+# esplicito rende visibile che lo script È girato ed è uscito presto
+# per una condizione attesa, non per un problema a monte.
+#
 if [ ! -f data/contacts.db ]; then
+    log_info "$(basename "$0"): data/contacts.db non ancora presente, nulla da sincronizzare."
     exit 0
+fi
+
+#
+# Salta VACUUM INTO + scp se nulla è cambiato dall'ultimo invio
+# RIUSCITO (valutazione usura storage, 2026-08-20) — VACUUM INTO
+# riscrive per intero il database ogni volta, indipendentemente da
+# quanto sia cambiato: con contacts.db a qualche MB e questo script
+# ogni 5 minuti, è il singolo maggior contributo di scrittura sul
+# supporto fisico di tutto il progetto, la maggior parte delle volte
+# per nulla (la rete mesh non genera sempre nuovi dati ogni 5 minuti).
+#
+# NOTA (verifica dinamica, 2026-08-20): la prima versione di questa
+# fix confrontava `PRAGMA data_version` tra un'esecuzione e l'altra.
+# Verificato SPERIMENTALMENTE che non funziona per questo caso d'uso:
+# data_version è definito da SQLite come valore relativo alla
+# transazione di lettura CORRENTE di UNA connessione che resta aperta
+# — "la primissima invocazione per una connessione restituisce sempre
+# il valore di partenza". Qui ogni invocazione di `sqlite3` da riga di
+# comando apre una connessione nuova e la chiude subito, quindi è
+# SEMPRE una "primissima invocazione": il valore letto risultava
+# identico a ogni giro anche con scritture reali avvenute nel
+# frattempo (riprodotto con test ripetuti, sia in modo rollback-journal
+# che WAL). Va bene per rilevare modifiche fatte da ALTRE connessioni
+# mentre la STESSA connessione resta aperta (uso per cui esiste), non
+# per confrontare tra processi `sqlite3` separati lanciati in momenti
+# diversi come fa questo script.
+#
+# Sostituito con una "firma" basata su mtime+dimensione di
+# data/contacts.db e — se presente — data/contacts.db-wal. Le
+# scritture del daemon (via ContactDB, connessione WAL persistente)
+# vanno quasi sempre ad accodare frame nel file -wal, che quindi
+# cambia dimensione/mtime ad ogni scrittura anche prima di un
+# checkpoint; un eventuale checkpoint nel frattempo cambia comunque
+# mtime/dimensione del file .db principale. La combinazione dei due
+# cambia quindi in modo affidabile ad ogni scrittura reale,
+# indipendentemente da quando avvenga il prossimo checkpoint WAL.
+# Nostro VACUUM INTO (sotto) legge solo data/contacts.db in una
+# transazione di lettura, non lo modifica: non altera questa firma.
+#
+db_signature() {
+    local db_stat wal_stat
+
+    db_stat="$(stat -c '%Y:%s' data/contacts.db 2>/dev/null)" || return 1
+    if [ -f data/contacts.db-wal ]; then
+        wal_stat="$(stat -c '%Y:%s' data/contacts.db-wal 2>/dev/null)"
+    else
+        wal_stat="none"
+    fi
+
+    echo "${db_stat}:${wal_stat}"
+}
+
+#
+# Il valore scritto in $VERSION_FILE è quello dell'ULTIMO INVIO
+# RIUSCITO (scritto solo a fine script, dopo scp confermato), non
+# quello dell'ultimo giro semplicemente eseguito — così un tentativo
+# fallito (VACUUM o scp) non fa perdere il prossimo retry: se i dati
+# non sono cambiati da un invio riuscito precedente, il Collettore ha
+# comunque già la versione corretta, saltare non perde nulla; se sono
+# cambiati (anche a cavallo di un tentativo fallito), il confronto non
+# corrisponde e si procede normalmente.
+#
+# Fail-safe deliberato: se stat fallisce (es. permessi) o è il primo
+# giro in assoluto (nessun $VERSION_FILE ancora), il valore risulta
+# vuoto/assente e si procede SEMPRE con la sincronizzazione normale
+# sotto — non si salta mai per un dubbio, solo quando il confronto è
+# certo.
+#
+CURRENT_VERSION="$(db_signature)"
+
+if [ -n "$CURRENT_VERSION" ] && [ -f "$VERSION_FILE" ]; then
+
+    LAST_VERSION="$(cat "$VERSION_FILE" 2>/dev/null)"
+
+    if [ "$CURRENT_VERSION" = "$LAST_VERSION" ]; then
+        log_info "$(basename "$0"): nessuna modifica a contacts.db dall'ultimo invio riuscito, salto VACUUM+invio."
+        exit 0
+    fi
 fi
 
 #
@@ -229,11 +520,26 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-scp -P 15450 "$SNAPSHOT" trace-mon@$IP_SERVER:/home/trace-mon/data/$NODE/contacts.db
+#
+# Variabili remote quotate insieme (code review 2026-08-20, §4) — v.
+# stessa nota in backup.sh.
+#
+scp -P 15450 "$SNAPSHOT" "trace-mon@${IP_SERVER}:/home/trace-mon/data/${NODE}/contacts.db"
 
 if [ $? -ne 0 ]; then
     log_err "Errore durante l'invio di $SNAPSHOT al Collettore"
     exit 1
+fi
+
+#
+# Invio confermato riuscito: aggiorna il marcatore SOLO ora (v.
+# commento sopra) — se CURRENT_VERSION non è stato ottenuto (stat
+# fallito in questo stesso giro), non scrive nulla: il prossimo giro
+# semplicemente ripete la sincronizzazione, stesso comportamento di
+# prima di questa fix, nessuna regressione.
+#
+if [ -n "$CURRENT_VERSION" ]; then
+    echo "$CURRENT_VERSION" > "$VERSION_FILE"
 fi
 
 exit 0
@@ -244,27 +550,69 @@ MAINTSCRIPT_EOF
             cat > "$output" << 'MAINTSCRIPT_EOF'
 #!/bin/bash
 
-cd /home/meshcore/trace-mon
-
-NODE="node_XX"
-IP_SERVER="Y.Y.Y.Y"
+#
+# set -u/set -o pipefail (code review 2026-08-20, §3.7) — v.
+# backup.sh per la motivazione completa. set -e NON è usato
+# deliberatamente: oltre ai soliti if [ $? -ne 0 ], questo script in
+# particolare continua di proposito oltre un fallimento del primo scp
+# per tentare comunque il secondo (SCP_FAILED sotto) — set -e
+# romperebbe esattamente questa logica.
+#
+set -u
+set -o pipefail
 
 #
-# Log su file degli errori di questo script, in aggiunta all'echo su
-# stdout (che raggiunge comunque l'email di cron, se MAILTO è
-# configurato) — così un fallimento resta visibile anche sui nodi dove
-# cron non invia email per i job falliti. File dedicato agli script di
-# manutenzione lanciati da cron (distinto da trace-mon.log, che è il
-# log del daemon), ruotato da logrotate insieme a trace-mon.log (stessa
-# stanza in config/logrotate.conf).
+# Variabile unica per la directory di installazione (code review
+# 2026-08-20, §4) — v. stessa nota in backup.sh.
 #
-LOGFILE="/home/meshcore/trace-mon/logs/cron-errors.log"
+INSTALL_DIR="/home/meshcore/trace-mon"
+
+#
+# Log su file — errori (log_err) e messaggi informativi/di stato
+# (log_info) in due file separati dentro logs/, indipendenti da come
+# cron redirige lo stdout dello script (rafforzamento log cron,
+# 2026-08-20 — v. docs/CHANGES_log_errori_cron_su_file.md per la
+# motivazione originale e questo aggiornamento). Definiti qui, PRIMA
+# del lock e del cd verso INSTALL_DIR, così anche quei due messaggi
+# (lock già preso, cd fallita) finiscono su file — v. backup.sh per la
+# nota completa sul limite noto (disco pieno) e sui path assoluti.
+#
+LOGFILE="$INSTALL_DIR/logs/cron-errors.log"
+INFOFILE="$INSTALL_DIR/logs/cron-status.log"
 mkdir -p "$(dirname "$LOGFILE")"
 
 log_err() {
     echo "$1"
     printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$LOGFILE"
 }
+
+log_info() {
+    echo "$1"
+    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$INFOFILE"
+}
+
+#
+# Lock anti-sovrapposizione (code review 2026-08-20, §3.7) — v.
+# backup.sh per la motivazione completa. Qui in particolare protegge
+# da un DELETE+VACUUM (dentro i due tools/rotate_*.py) rieseguito
+# mentre il precedente è ancora in corso.
+#
+LOCKFILE="$INSTALL_DIR/run/rotate_contacts.sh.lock"
+mkdir -p "$(dirname "$LOCKFILE")"
+exec 9> "$LOCKFILE"
+
+if ! flock -n 9; then
+    log_info "$(basename "$0"): un'altra istanza è già in esecuzione, uscita senza fare nulla."
+    exit 0
+fi
+
+cd "$INSTALL_DIR" || {
+    log_err "ERRORE: cd $INSTALL_DIR fallita, uscita."
+    exit 1
+}
+
+NODE="node_XX"
+IP_SERVER="Y.Y.Y.Y"
 
 #
 # Rotazione: esporta il mese appena concluso da path_observations
@@ -312,7 +660,10 @@ MONTH=$(printf "%02d" "$MONTH")
 FILEOUTZIP="path_observations-$YEAR-$MONTH.json.gz"
 FILEOUTZIP2="repeater_neighbours-$YEAR-$MONTH.json.gz"
 
-cd /home/meshcore/trace-mon/backup
+cd "$INSTALL_DIR/backup" || {
+    log_err "Errore: cd $INSTALL_DIR/backup fallita."
+    exit 1
+}
 
 #
 # I due file sono indipendenti (path_observations e
@@ -324,8 +675,15 @@ cd /home/meshcore/trace-mon/backup
 #
 SCP_FAILED=0
 
+#
+# Variabili remote quotate insieme (code review 2026-08-20, §4) — v.
+# stessa nota in backup.sh; qui anche $FILEOUTZIP/$FILEOUTZIP2 sono
+# ora quotati (erano già "safe" nella pratica, nomi generati
+# internamente da YEAR/MONTH numerici, ma non c'è motivo di lasciarli
+# come unica eccezione allo stile ormai adottato in tutto il progetto).
+#
 if [ -f "$FILEOUTZIP" ]; then
-    scp -P 15450 $FILEOUTZIP trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
+    scp -P 15450 "$FILEOUTZIP" "trace-mon@${IP_SERVER}:/home/trace-mon/backup/${NODE}"
 
     if [ $? -ne 0 ]; then
         log_err "Errore durante l'invio di $FILEOUTZIP al Collettore"
@@ -334,7 +692,7 @@ if [ -f "$FILEOUTZIP" ]; then
 fi
 
 if [ -f "$FILEOUTZIP2" ]; then
-    scp -P 15450 $FILEOUTZIP2 trace-mon@$IP_SERVER:/home/trace-mon/backup/$NODE
+    scp -P 15450 "$FILEOUTZIP2" "trace-mon@${IP_SERVER}:/home/trace-mon/backup/${NODE}"
 
     if [ $? -ne 0 ]; then
         log_err "Errore durante l'invio di $FILEOUTZIP2 al Collettore"
@@ -354,27 +712,68 @@ MAINTSCRIPT_EOF
             cat > "$output" << 'MAINTSCRIPT_EOF'
 #!/bin/bash
 
-cd /home/meshcore/trace-mon
-
-NODE="node_XX"
-IP_SERVER="Y.Y.Y.Y"
+#
+# set -u/set -o pipefail (code review 2026-08-20, §3.7) — v.
+# backup.sh per la motivazione completa. set -e NON è usato
+# deliberatamente, stesso motivo: i controlli if [ $? -ne 0 ] sotto
+# gestiscono già ogni fallimento in modo esplicito.
+#
+set -u
+set -o pipefail
 
 #
-# Log su file degli errori di questo script, in aggiunta all'echo su
-# stdout (che raggiunge comunque l'email di cron, se MAILTO è
-# configurato) — così un fallimento resta visibile anche sui nodi dove
-# cron non invia email per i job falliti. File dedicato agli script di
-# manutenzione lanciati da cron (distinto da trace-mon.log, che è il
-# log del daemon), ruotato da logrotate insieme a trace-mon.log (stessa
-# stanza in config/logrotate.conf).
+# Variabile unica per la directory di installazione (code review
+# 2026-08-20, §4) — v. stessa nota in backup.sh.
 #
-LOGFILE="/home/meshcore/trace-mon/logs/cron-errors.log"
+INSTALL_DIR="/home/meshcore/trace-mon"
+
+#
+# Log su file — errori (log_err) e messaggi informativi/di stato
+# (log_info) in due file separati dentro logs/, indipendenti da come
+# cron redirige lo stdout dello script (rafforzamento log cron,
+# 2026-08-20 — v. docs/CHANGES_log_errori_cron_su_file.md per la
+# motivazione originale e questo aggiornamento). Definiti qui, PRIMA
+# del lock e del cd verso INSTALL_DIR, così anche quei due messaggi
+# (lock già preso, cd fallita) finiscono su file — v. backup.sh per la
+# nota completa sul limite noto (disco pieno) e sui path assoluti.
+#
+LOGFILE="$INSTALL_DIR/logs/cron-errors.log"
+INFOFILE="$INSTALL_DIR/logs/cron-status.log"
 mkdir -p "$(dirname "$LOGFILE")"
 
 log_err() {
     echo "$1"
     printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$LOGFILE"
 }
+
+log_info() {
+    echo "$1"
+    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(basename "$0")" "$1" >> "$INFOFILE"
+}
+
+#
+# Lock anti-sovrapposizione (code review 2026-08-20, §3.7) — v.
+# backup.sh per la motivazione completa. Rilevante qui in particolare
+# perché trace.sh gira ogni 30 minuti (il job più frequente): un
+# main_trace.py insolitamente lento potrebbe altrimenti sovrapporsi
+# al giro successivo.
+#
+LOCKFILE="$INSTALL_DIR/run/trace.sh.lock"
+mkdir -p "$(dirname "$LOCKFILE")"
+exec 9> "$LOCKFILE"
+
+if ! flock -n 9; then
+    log_info "$(basename "$0"): un'altra istanza è già in esecuzione, uscita senza fare nulla."
+    exit 0
+fi
+
+cd "$INSTALL_DIR" || {
+    log_err "ERRORE: cd $INSTALL_DIR fallita, uscita."
+    exit 1
+}
+
+NODE="node_XX"
+IP_SERVER="Y.Y.Y.Y"
 
 ./main_trace.py
 
@@ -384,8 +783,15 @@ if [ $? -ne 0 ]; then
 fi
 
 sleep 10
-cd /home/meshcore/trace-mon/data
-scp -P 15450 trace.json trace-mon@$IP_SERVER:/home/trace-mon/data/$NODE
+cd "$INSTALL_DIR/data" || {
+    log_err "Errore: cd $INSTALL_DIR/data fallita."
+    exit 1
+}
+#
+# Variabili remote quotate insieme (code review 2026-08-20, §4) — v.
+# stessa nota in backup.sh.
+#
+scp -P 15450 trace.json "trace-mon@${IP_SERVER}:/home/trace-mon/data/${NODE}"
 
 if [ $? -ne 0 ]; then
     log_err "Errore durante l'invio di trace.json al Collettore"
@@ -399,6 +805,19 @@ MAINTSCRIPT_EOF
 
     sed -i "s/NODE=\"node_XX\"/NODE=\"$NODE_ID\"/" "$output"
     sed -i "s/IP_SERVER=\"Y.Y.Y.Y\"/IP_SERVER=\"$IP_SERVER\"/" "$output"
+
+    #
+    # Controllo di sintassi automatico post-generazione (code review
+    # 2026-08-20, §3.7) — prima non veniva mai eseguito da setup.sh
+    # stesso (solo "a mano" nei changelog passati): un bug futuro nei
+    # template heredoc sopra, o un'interazione imprevista con la
+    # sostituzione sed, verrebbe altrimenti scoperto solo al primo
+    # giro di cron, non al momento dell'installazione.
+    #
+    if ! bash -n "$output"; then
+        echo "ERRORE: $output generato con una sintassi non valida — installazione interrotta."
+        exit 1
+    fi
 
     chmod +x "$output"
 
@@ -589,6 +1008,16 @@ services:
 CONFIG_EOF
 
     #
+    # Permessi ristretti (code review 2026-08-20, §3.7) — config.yaml
+    # non contiene segreti veri, ma include hostname/indirizzi interni
+    # della rete (connection.tcp.host, ecc.). 0600: solo il
+    # proprietario (utente 'meshcore') può leggerlo. tools/edit_config.py
+    # applica lo stesso permesso ad ogni salvataggio successivo e ai
+    # relativi backup in config/backup/.
+    #
+    chmod 600 config/config.yaml
+
+    #
     # Validazione: config.yaml appena scritto deve essere YAML
     # sintatticamente valido (PyYAML è comunque una dipendenza
     # obbligatoria del progetto, vedi requirements.txt).
@@ -647,6 +1076,35 @@ WorkingDirectory=/home/meshcore/trace-mon
 ExecStart=__NODE_BIN__ /home/meshcore/trace-mon/frontend/server.js
 Restart=always
 RestartSec=5
+
+#
+# Arresto pulito (allineato a trace-mon.service)
+#
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+#
+# Hardening (code review 2026-08-20, §3.7) — prima trace-web.service
+# non aveva ALCUN hardening, a differenza di trace-mon.service (che
+# ha già NoNewPrivileges/PrivateTmp): è il processo di superficie più
+# esterna del progetto (server Node in rete, e sul frontend
+# Collettore esposto su internet, non solo in LAN come sul Nodo),
+# gira come lo stesso utente 'meshcore' che possiede anche il socket
+# IPC del daemon — una sua compromissione avrebbe altrimenti pieno
+# accesso in scrittura a DB/config/log e potenzialmente al socket IPC.
+# server.js non scrive mai sul filesystem (solo letture: trace.json,
+# gli archivi in backup/, contacts.db in sola lettura) — ProtectSystem
+# =strict + ProtectHome=read-only sono sicuri da applicare senza
+# ReadWritePaths aggiuntivi, e riducono concretamente cosa un processo
+# compromesso potrebbe modificare anche restando nello stesso utente.
+#
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
 
 [Install]
 WantedBy=multi-user.target

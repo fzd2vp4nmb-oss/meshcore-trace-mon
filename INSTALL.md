@@ -77,10 +77,9 @@ Nelle impostazioni di invio messaggi:
 ### 1.6 Permessi ACL sul repeater (per il servizio Repeaters)
 
 Per interrogare un repeater dalla tab Repeaters (status, neighbours,
-telemetria, regioni, configurazione — vedi
-`docs/NEIGHBOR_MONITORING.md` se hai accesso alla documentazione di
-sviluppo più approfondita), il companion collegato a `trace-mon` deve
-avere **permessi admin** nell'access list (ACL) di quel repeater.
+telemetria, regioni, configurazione), il companion collegato a
+`trace-mon` deve avere **permessi admin** nell'access list (ACL) di
+quel repeater.
 
 Non puoi impostarlo dal companion che userai con `trace-mon` stesso
 — serve un **secondo companion**, che abbia già accesso al repeater,
@@ -95,9 +94,7 @@ per aggiungere il primo:
 
 Senza questo passaggio, i dati di status/neighbours/telemetria
 restano comunque parzialmente accessibili (alcuni non richiedono
-ACL affatto), ma la tab Repeaters funzionerà solo in parte — vedi la
-documentazione di sviluppo per il dettaglio di quali dati richiedono
-quale livello di permesso.
+ACL affatto), ma la tab Repeaters funzionerà solo in parte.
 
 ---
 ## 2. Prerequisiti di sistema
@@ -500,8 +497,7 @@ journalctl -u trace-web -n 50
 Alcune attività (tracciamento, monitoraggio repeater, manutenzione)
 non girano come parte del servizio systemd continuo, ma vengono
 lanciate periodicamente via `cron` — lo stesso daemon comunica con
-questi script tramite IPC (vedi `docs/ARCHITECTURE.md` nel repository
-di sviluppo, se hai accesso a quella documentazione più approfondita).
+questi script tramite IPC.
 
 ```bash
 crontab -e
@@ -534,8 +530,7 @@ Cosa fa ciascuna riga:
   repeater configurati (status, neighbours, telemetria, regioni,
   configurazione — tab Repeaters). Il minuto 5, distanziato da quello
   di `trace.sh` (che gira a `:00`/`:30`), riduce il rischio che le due
-  esecuzioni si sovrappongano nel caso peggiore di `neighbor_monitor.sh`
-  (v. `docs/ARCHITECTURE.md`, code review 2026-08-20 §1.3).
+  esecuzioni si sovrappongano nel caso peggiore di `neighbor_monitor.sh`.
 - **`floodadv.sh`** (una volta al giorno, alle 3:15) — invia un
   advertisement flood.
 - **`contact_sync.sh`** (ogni 5 minuti) — sincronizza un'istantanea

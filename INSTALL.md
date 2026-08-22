@@ -517,9 +517,10 @@ Esempio di configurazione, con cadenze di partenza ragionevoli:
 #
 # Maintenance
 #
-*/5 * * * * /home/meshcore/trace-mon/contact_sync.sh > /dev/null 2>&1
-2 0 1 * * /home/meshcore/trace-mon/backup.sh > /dev/null 2>&1
-3 0 1 * * /home/meshcore/trace-mon/rotate_contacts.sh > /dev/null 2>&1
+*/5 0-5 * * * /home/meshcore/trace-mon/contact_sync.sh > /dev/null 2>&1
+*/10 6-23 * * * /home/meshcore/trace-mon/contact_sync.sh > /dev/null 2>&1
+3 1 1 * * /home/meshcore/trace-mon/backup.sh > /dev/null 2>&1
+7 1 1 * * /home/meshcore/trace-mon/rotate_contacts.sh > /dev/null 2>&1
 10 3 * * 0 /usr/sbin/logrotate --state /home/meshcore/trace-mon/run/logrotate.status /home/meshcore/trace-mon/config/logrotate.conf
 ```
 

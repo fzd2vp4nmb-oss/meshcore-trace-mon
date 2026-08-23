@@ -48,10 +48,29 @@ CLI_QUERIES = [
 ]
 
 #
-# Timeout per singola risposta — stesso valore usato nello script
+# Timeout FALLBACK per singola risposta a login/comandi CLI — usato
+# SOLO quando il firmware non fornisce un proprio 'suggested_timeout'
+# per questo invio (chiave assente o 0), stesso ruolo di
+# 'trace.timeout' in TraceModule._resolve_timeout() dal 2026-08-23 (v.
+# mesh_modules/trace/trace.py). Valore storico, usato nello script
 # diagnostico (experiments/exp09_login_cli_test.py), sufficiente per
 # tutte le risposte riuscite nel test reale (max 2.03s) con margine
 # ampio per la variabilità radio.
+#
+# Decisione 2026-08-23 (v.
+# claude/ricerca-neighbor-monitor-timeout-dinamico-2026-08-23.md): fino
+# a questa data era usato come timeout FISSO, sempre, per login e gli
+# 11 CLI_QUERIES — a differenza delle 5 richieste binarie/anonime
+# (status/neighbours/telemetry/region/basic), che usano già
+# 'suggested_timeout' dinamicamente (chiamate con timeout=0, il
+# default di meshcore_py). L'ack MSG_SENT di login e dei comandi CLI
+# porta lo STESSO campo 'suggested_timeout' (reader.py lo estrae in
+# modo generico per ogni evento MSG_SENT, non è specifico delle
+# richieste binarie) — semplicemente non veniva mai letto per questi
+# due casi. Da oggi: send_login_sync() lo usa in autonomia (libreria,
+# v. sotto), _send_cli_command() lo legge esplicitamente (v. sotto) —
+# CLI_RESPONSE_TIMEOUT resta solo il fallback per firmware che non lo
+# fornisse (nessuno osservato finora).
 #
 CLI_RESPONSE_TIMEOUT = 10.0
 
@@ -90,9 +109,16 @@ _DRAIN_MAX_ITERATIONS = 20
 # richieste con risposte pronte impiega tipicamente sotto il minuto,
 # v. commento sopra) ma una piccola frazione del worst-case teorico
 # con max_retries=3 (fino a ~510s per un'interruzione totale e
-# sostenuta) — un margine sufficiente a non generare falsi allarmi su
-# normali fluttuazioni radio (un singolo retry isolato aggiunge al
-# più CLI_RESPONSE_TIMEOUT=10s), ma abbastanza basso da avvisare ben
+# sostenuta, stima storica basata su un timeout fisso di
+# CLI_RESPONSE_TIMEOUT=10s per login/CLI — dal 2026-08-23 login/CLI
+# usano un timeout dinamico dal firmware, tipicamente PIÙ BASSO di
+# 10s per i repeater a 0 hop del deployment attuale, quindi 510s resta
+# un limite superiore valido, non superato — v.
+# claude/ricerca-neighbor-monitor-timeout-dinamico-2026-08-23.md) — un
+# margine sufficiente a non generare falsi allarmi su normali
+# fluttuazioni radio (un singolo retry isolato aggiunge al più
+# CLI_RESPONSE_TIMEOUT=10s nel caso di fallback), ma abbastanza basso
+# da avvisare ben
 # prima che la campagna raggiunga il caso limite.
 #
 SLOW_QUERY_WARNING_THRESHOLD = 120.0
@@ -130,6 +156,24 @@ class NeighborMonitorModule:
             1,
             int(config.get("neighbor_monitoring.max_retries", 3))
         )
+
+        #
+        # Timeout CLI realmente usati nella query() IN CORSO — chiave
+        # per chiave di CLI_QUERIES (2026-08-23, richiesta utente: v.
+        # claude/ricerca-neighbor-monitor-timeout-dinamico-2026-08-23.md).
+        # Popolato da _send_cli_command(), azzerato a inizio query() e
+        # riportato in log SOLO come riepilogo unico a fine
+        # interrogazione (v. query() sotto) — mai una riga per
+        # comando, per non appesantire il log operativo (stesso
+        # principio già applicato a TraceEngine/tools/test_trace.py lo
+        # stesso giorno). Copre SOLO i comandi CLI: login e le 5
+        # richieste binarie/anonime passano per le funzioni "_sync" di
+        # meshcore_py, che calcolano da sole 'suggested_timeout'
+        # internamente e non lo restituiscono mai al chiamante — non
+        # c'è nulla da registrare per quei sei casi, non è
+        # un'omissione di questo meccanismo.
+        #
+        self._last_cli_cmd_timeouts = {}
 
     async def _call_with_retries(self, tag, label, factory):
         """
@@ -226,7 +270,7 @@ class NeighborMonitorModule:
             SLOW_QUERY_WARNING_THRESHOLD
         )
 
-    async def query(self, repeater_name):
+    async def query(self, repeater_name, public_key=None, adv_name=None):
         """
         Risolve repeater_name in chiave pubblica via get_contacts(),
         poi interroga status, neighbours, telemetria, regioni e
@@ -247,6 +291,25 @@ class NeighborMonitorModule:
         BinaryReqType come le altre tre) — possono quindi riuscire
         anche quando status/neighbours/telemetry falliscono per un
         problema ACL, non solo per un timeout radio genuino.
+
+        public_key/adv_name (opzionali, 2026-08-23): quando il
+        chiamante li fornisce già risolti — NeighborMonitorEngine lo
+        fa, avendo appena interrogato system.contact per calcolare
+        l'hop count reale da usare nel margine di timeout IPC (v.
+        NeighborMonitorEngine._fetch_repeater_contact()) — questo
+        metodo salta interamente get_contacts()+_resolve_contact()
+        sotto ed usa direttamente i valori dati. Evita un secondo
+        get_contacts() locale ridondante allo stesso device per lo
+        stesso identico contatto, a pochi istanti di distanza
+        (osservazione dell'utente: "perché non far consumare alla
+        seconda necessità di query() lo stesso valore [...] così non
+        si introduce questo costo extra?" — v.
+        claude/ricerca-neighbor-monitor-timeout-dinamico-2026-08-23.md).
+        Quando public_key è None (default — qualunque altro
+        chiamante, es. un futuro comando IPC diretto o i test che
+        chiamano query() senza passare da NeighborMonitorEngine), il
+        comportamento resta ESATTAMENTE quello preesistente: la
+        risoluzione avviene qui, con lo stesso retry.
         """
 
         tag = f"[repeater:{repeater_name}]"
@@ -270,34 +333,81 @@ class NeighborMonitorModule:
 
             return None
 
-        contacts_ok = False
+        if public_key is not None:
 
-        #
-        # get_contacts() (a differenza dei comandi "_sync" interrogati
-        # più sotto in questo stesso metodo) non è pre-unwrappata
-        # dalla libreria: su timeout/fallimento non solleva mai
-        # un'eccezione, ritorna un Event(ERROR, ...) grezzo
-        # (verificato leggendo meshcore_py/commands/contact.py — code
-        # review 2026-08-20, audit successivo al Finding 2 di una
-        # review indipendente). Il solo except Exception sotto non lo
-        # intercettava mai: il PRIMO tentativo veniva sempre
-        # considerato riuscito, anche quando il device non aveva
-        # risposto — il meccanismo di retry, costruito apposta per
-        # get_contacts(), non scattava mai per la sua causa di
-        # fallimento più diretta.
-        #
-        for attempt in range(1, self.max_retries + 1):
+            #
+            # Risoluzione già fatta dal chiamante (v. docstring sopra)
+            # — nessun get_contacts() qui. adv_name di norma coincide
+            # comunque con repeater_name (match esatto case-sensitive,
+            # v. _resolve_contact()); usato come fallback solo se il
+            # chiamante non l'ha passato per qualche motivo.
+            #
+            adv_name = adv_name if adv_name is not None else repeater_name
 
-            try:
-                result = await self.engine.mesh.commands.get_contacts()
+        else:
 
-                if result.type == EventType.ERROR:
+            contacts_ok = False
 
-                    log.warning(
+            #
+            # get_contacts() (a differenza dei comandi "_sync"
+            # interrogati più sotto in questo stesso metodo) non è
+            # pre-unwrappata dalla libreria: su timeout/fallimento non
+            # solleva mai un'eccezione, ritorna un Event(ERROR, ...)
+            # grezzo (verificato leggendo meshcore_py/commands/
+            # contact.py — code review 2026-08-20, audit successivo al
+            # Finding 2 di una review indipendente). Il solo except
+            # Exception sotto non lo intercettava mai: il PRIMO
+            # tentativo veniva sempre considerato riuscito, anche
+            # quando il device non aveva risposto — il meccanismo di
+            # retry, costruito apposta per get_contacts(), non
+            # scattava mai per la sua causa di fallimento più diretta.
+            #
+            for attempt in range(1, self.max_retries + 1):
+
+                try:
+                    result = await self.engine.mesh.commands.get_contacts()
+
+                    if result.type == EventType.ERROR:
+
+                        log.warning(
+                            "NEIGHBOR_MONITOR: %s get_contacts() "
+                            "fallita (%s) (tentativo %d/%d).",
+                            tag,
+                            result.payload,
+                            attempt,
+                            self.max_retries
+                        )
+
+                        if attempt < self.max_retries:
+
+                            log.info(
+                                "NEIGHBOR_MONITOR: %s get_contacts() "
+                                "riprovo subito.",
+                                tag
+                            )
+
+                        continue
+
+                    contacts_ok = True
+
+                    if attempt > 1:
+
+                        log.info(
+                            "NEIGHBOR_MONITOR: %s get_contacts() "
+                            "riuscita al tentativo %d/%d.",
+                            tag,
+                            attempt,
+                            self.max_retries
+                        )
+
+                    break
+
+                except Exception:
+
+                    log.exception(
                         "NEIGHBOR_MONITOR: %s get_contacts() fallita "
-                        "(%s) (tentativo %d/%d).",
+                        "(tentativo %d/%d).",
                         tag,
-                        result.payload,
                         attempt,
                         self.max_retries
                     )
@@ -310,65 +420,31 @@ class NeighborMonitorModule:
                             tag
                         )
 
-                    continue
+            if not contacts_ok:
 
-                contacts_ok = True
-
-                if attempt > 1:
-
-                    log.info(
-                        "NEIGHBOR_MONITOR: %s get_contacts() riuscita "
-                        "al tentativo %d/%d.",
-                        tag,
-                        attempt,
-                        self.max_retries
-                    )
-
-                break
-
-            except Exception:
-
-                log.exception(
-                    "NEIGHBOR_MONITOR: %s get_contacts() fallita "
-                    "(tentativo %d/%d).",
+                log.warning(
+                    "NEIGHBOR_MONITOR: %s get_contacts() fallita dopo "
+                    "%d tentativi, query annullata.",
                     tag,
-                    attempt,
                     self.max_retries
                 )
 
-                if attempt < self.max_retries:
+                return None
 
-                    log.info(
-                        "NEIGHBOR_MONITOR: %s get_contacts() riprovo "
-                        "subito.",
-                        tag
-                    )
+            contact = self._resolve_contact(repeater_name)
 
-        if not contacts_ok:
+            if contact is None:
 
-            log.warning(
-                "NEIGHBOR_MONITOR: %s get_contacts() fallita dopo %d "
-                "tentativi, query annullata.",
-                tag,
-                self.max_retries
-            )
+                log.warning(
+                    "NEIGHBOR_MONITOR: %s non presente nella lista "
+                    "contatti del device.",
+                    tag
+                )
 
-            return None
+                return None
 
-        contact = self._resolve_contact(repeater_name)
-
-        if contact is None:
-
-            log.warning(
-                "NEIGHBOR_MONITOR: %s non presente nella lista "
-                "contatti del device.",
-                tag
-            )
-
-            return None
-
-        public_key = contact.get("public_key")
-        adv_name = contact.get("adv_name")
+            public_key = contact.get("public_key")
+            adv_name = contact.get("adv_name")
 
         status = None
         neighbours = None
@@ -517,6 +593,18 @@ class NeighborMonitorModule:
         # cambiamento di comportamento: la chiave "config" nel dict
         # restituito da query() resta invariata.
         #
+        #
+        # Azzerato ad ogni query() (2026-08-23) — v.
+        # self._last_cli_cmd_timeouts in __init__: senza questo reset,
+        # una chiave CLI_QUERIES fallita in TUTTI i tentativi in questo
+        # giro (nessuna scrittura successiva che la sovrascriva)
+        # mostrerebbe nel riepilogo di fine query() più sotto il
+        # valore residuo di un repeater precedente su questa stessa
+        # istanza di NeighborMonitorModule, non "nessun dato per
+        # questo giro".
+        #
+        self._last_cli_cmd_timeouts = {}
+
         cli_config = await self._query_cli_config(
             public_key,
             tag
@@ -580,6 +668,47 @@ class NeighborMonitorModule:
         if no_login_group_failed and cli_config is None:
             self._warn_if_slow(tag, start_time)
             return None
+
+        #
+        # Riepilogo unico dei timeout CLI usati in QUESTO giro
+        # (2026-08-23, richiesta utente — v.
+        # claude/ricerca-neighbor-monitor-timeout-dinamico-2026-08-23.md).
+        # Una sola riga a fine interrogazione, mai una per comando:
+        # stesso principio "non appesantire il log" già applicato a
+        # TraceEngine/tools/test_trace.py lo stesso giorno. Senza
+        # questo, un giro completamente riuscito (il caso più comune)
+        # non lascia ALCUNA traccia di quale soglia fosse in vigore —
+        # solo i timeout scaduti finiscono nel log altrimenti (v.
+        # warning "nessuna risposta entro %.1fs" in
+        # _send_cli_command()).
+        #
+        # Copre SOLO le chiavi CLI_QUERIES: login e le 5 richieste
+        # binarie/anonime (status/neighbours/telemetry/region/clock)
+        # passano per le funzioni "_sync" di meshcore_py, che
+        # calcolano da sole 'suggested_timeout' internamente e non lo
+        # restituiscono mai al chiamante — non c'è nulla da riportare
+        # per quei sei casi, non è un'omissione di questo meccanismo
+        # (v. self._last_cli_cmd_timeouts in __init__).
+        #
+        # Guardia "if" perché self._last_cli_cmd_timeouts resta vuoto
+        # se _query_cli_config() fallisce prima di riuscire a
+        # eseguire login (nessun comando CLI arriva mai a
+        # _send_cli_command()) — in quel caso non c'è nulla da
+        # riepilogare, e il warning già emesso sopra
+        # (no_login_group_failed / config_all_failed) ha già coperto
+        # il caso.
+        #
+        if self._last_cli_cmd_timeouts:
+
+            log.info(
+                "NEIGHBOR_MONITOR: %s timeout CLI usati in questo "
+                "giro: %s.",
+                tag,
+                ", ".join(
+                    f"{k}={v:.1f}s"
+                    for k, v in self._last_cli_cmd_timeouts.items()
+                )
+            )
 
         log.info(
             "NEIGHBOR_MONITOR: %s query completata (status=%s, "
@@ -974,13 +1103,28 @@ class NeighborMonitorModule:
                 "inizio sessione, prima del login"
             )
 
+            #
+            # 'timeout' NON viene più passato esplicitamente qui
+            # (2026-08-23 — v. CLI_RESPONSE_TIMEOUT sopra e
+            # claude/ricerca-neighbor-monitor-timeout-dinamico-2026-08-23.md):
+            # con timeout=0 (il default), send_login_sync() usa da sola
+            # 'suggested_timeout' dal firmware (meshcore_py,
+            # commands/messaging.py) — stesso comportamento già in uso,
+            # senza alcuna modifica, dalle 5 richieste binarie/anonime
+            # più sotto in questo file (req_status_sync e affini, mai
+            # chiamate con un timeout esplicito). Un'eventuale
+            # KeyError su firmware che non fornisse 'suggested_timeout'
+            # (mai osservato) sarebbe comunque catturata da
+            # _call_with_retries() come un tentativo fallito, non
+            # propagherebbe: nessun comportamento peggiore del timeout
+            # scaduto già gestito oggi.
+            #
             login_result = await self._call_with_retries(
                 tag,
                 "send_login_sync",
                 lambda: self.engine.mesh.commands.send_login_sync(
                     public_key,
-                    "",
-                    timeout=CLI_RESPONSE_TIMEOUT
+                    ""
                 )
             )
 
@@ -1478,10 +1622,64 @@ class NeighborMonitorModule:
 
                 else:
 
+                    #
+                    # Timeout dal firmware per QUESTO invio, con
+                    # CLI_RESPONSE_TIMEOUT usato solo come fallback in
+                    # assenza di un valore dal firmware (2026-08-23 —
+                    # v. CLI_RESPONSE_TIMEOUT in cima al file e
+                    # claude/ricerca-neighbor-monitor-timeout-dinamico-2026-08-23.md).
+                    # A differenza di login/delle 5 richieste
+                    # binarie/anonime, send_cmd() non è una funzione
+                    # "_sync" di meshcore_py che consuma da sola
+                    # 'suggested_timeout' — restituisce solo l'ack
+                    # MSG_SENT grezzo (il protocollo CLI via login non
+                    # ha un tag di correlazione, v.
+                    # claude/finding-cross-command-cli-response-contamination-2026-08-22.md
+                    # §15.1: l'attesa della risposta vera e propria è
+                    # gestita qui con wait_for_matching_event(), non
+                    # dalla libreria) — il campo va quindi letto
+                    # esplicitamente dall'ack, stessa conversione /800
+                    # usata in tutto il resto del progetto per questo
+                    # campo.
+                    #
+                    suggested_timeout_ms = send_result.payload.get(
+                        "suggested_timeout"
+                    )
+
+                    if suggested_timeout_ms:
+                        cli_timeout = suggested_timeout_ms / 800
+
+                    else:
+                        cli_timeout = CLI_RESPONSE_TIMEOUT
+
+                        log.info(
+                            "NEIGHBOR_MONITOR: %s '%s' nessun "
+                            "suggested_timeout dal firmware — uso il "
+                            "valore di fallback: %ss.",
+                            tag,
+                            cmd_text,
+                            CLI_RESPONSE_TIMEOUT
+                        )
+
+                    #
+                    # Registrato per il riepilogo unico di fine
+                    # interrogazione in query() (2026-08-23, v.
+                    # self._last_cli_cmd_timeouts in __init__) — un
+                    # dict per chiave CLI_QUERIES, non una lista per
+                    # tentativo: se questo comando viene riprovato,
+                    # l'ultimo valore (quello del tentativo che è
+                    # davvero arrivato a destinazione, riuscito o no)
+                    # sovrascrive il precedente, che è esattamente
+                    # cosa serve al riepilogo — "che timeout era in
+                    # vigore per l'ultimo tentativo di questo
+                    # comando", non uno storico di ogni retry.
+                    #
+                    self._last_cli_cmd_timeouts[key] = cli_timeout
+
                     msg_event = await wait_for_matching_event(
                         get_next=_get_next_message,
                         is_match=_is_own_response,
-                        timeout=CLI_RESPONSE_TIMEOUT,
+                        timeout=cli_timeout,
                         on_discard=_on_discard
                     )
 
@@ -1511,13 +1709,24 @@ class NeighborMonitorModule:
 
             except asyncio.TimeoutError:
 
+                #
+                # 'cli_timeout', non più CLI_RESPONSE_TIMEOUT
+                # (2026-08-23): riporta il valore REALMENTE atteso per
+                # questo tentativo (dinamico dal firmware, o il
+                # fallback — v. sopra), mai un numero che potrebbe non
+                # essere quello davvero scaduto — stesso principio già
+                # applicato al log di TraceModule._resolve_timeout()
+                # lo stesso giorno (v.
+                # docs/CHANGES_trace_timeout_dinamico_hop.md, "Log
+                # fuorviante").
+                #
                 log.warning(
                     "NEIGHBOR_MONITOR: %s '%s' nessuna risposta entro "
-                    "%ss (tentativo %d/%d) — normale su LoRa, non "
+                    "%.1fs (tentativo %d/%d) — normale su LoRa, non "
                     "implica che il comando non esista.",
                     tag,
                     cmd_text,
-                    CLI_RESPONSE_TIMEOUT,
+                    cli_timeout,
                     attempt,
                     self.max_retries
                 )

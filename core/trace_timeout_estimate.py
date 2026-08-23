@@ -150,10 +150,26 @@ def _infer_path_hash_len(path):
     return len(first) // 2
 
 
-def estimate_suggested_timeout_ms(path, radio):
+def estimate_direct_timeout_ms(raw_packet_bytes, hop_count, radio):
     """
-    Stima il valore di 'suggested_timeout' (ms) che il firmware
-    calcolerà per QUESTO path, dati i parametri radio reali del device.
+    Replica generica di calcDirectTimeoutMillisFor() (firmware) per
+    QUALUNQUE pacchetto "diretto" (non flood) di 'raw_packet_bytes'
+    byte verso un contatto a 'hop_count' hop, dati i parametri radio
+    reali del device — v. docstring di modulo per la formula.
+
+    Estratta da estimate_suggested_timeout_ms() (2026-08-23, stessa
+    giornata, v.
+    claude/ricerca-neighbor-monitor-timeout-dinamico-2026-08-23.md):
+    calcDirectTimeoutMillisFor() è la STESSA funzione firmware per
+    ogni tipo di richiesta diretta (TRACE, REQ, ANON_REQ, TXT_MSG) —
+    verificato riga per riga anche per TXT_MSG (login/comandi CLI di
+    neighbor_monitor) in BaseChatMesh.cpp::sendLogin()/
+    sendCommandData()/sendMessage(), non solo per TRACE/REQ/ANON_REQ
+    come nella sessione precedente. Solo la composizione del payload
+    (quindi 'raw_packet_bytes') e il significato di 'hop_count' variano
+    per tipo di richiesta — quella parte resta responsabilità del
+    chiamante (v. estimate_suggested_timeout_ms() sotto per TRACE,
+    core/neighbor_monitor_timeout_estimate.py per REQ/ANON_REQ/TXT_MSG).
 
     'radio' è il dict esposto da SystemService.status (v.
     mesh_modules/system/service.py) — chiavi 'freq'/'bw'/'sf'/'cr',
@@ -162,8 +178,9 @@ def estimate_suggested_timeout_ms(path, radio):
     standard — v. sotto).
 
     Ritorna None se la stima non è calcolabile (radio assente/parziale,
-    path malformato) — il chiamante deve SEMPRE prevedere un fallback
-    per questo caso, mai trattarlo come un errore da propagare.
+    byte/hop non validi) — il chiamante deve SEMPRE prevedere un
+    fallback per questo caso, mai trattarlo come un errore da
+    propagare.
     """
 
     if not radio:
@@ -177,23 +194,8 @@ def estimate_suggested_timeout_ms(path, radio):
     except (KeyError, TypeError, ValueError):
         return None
 
-    if bw_hz <= 0 or sf <= 0:
+    if bw_hz <= 0 or sf <= 0 or raw_packet_bytes <= 0 or hop_count < 0:
         return None
-
-    path_hash_len = _infer_path_hash_len(path)
-
-    if path_hash_len is None:
-        return None
-
-    n_elem = len(
-        [p for p in path.split(",") if p.strip()]
-    )
-
-    if n_elem == 0:
-        return None
-
-    payload_len = TRACE_PAYLOAD_HEADER_BYTES + n_elem * path_hash_len
-    raw_packet_bytes = PACKET_HEADER_BYTES + payload_len
 
     #
     # mesh.self_info riporta il valore RAW RadioLib (5-8) per 'cr' — la
@@ -224,14 +226,47 @@ def estimate_suggested_timeout_ms(path, radio):
     )
 
     #
-    # calcDirectTimeoutMillisFor() — path_hash_count è n_elem, non
-    # n_elem-1 (stessa nota già presente in
+    # calcDirectTimeoutMillisFor() — path_hash_count è hop_count, non
+    # hop_count-1 (stessa nota già presente in
     # TraceModule._resolve_timeout() e nell'analisi firmware).
     #
     return SEND_TIMEOUT_BASE_MILLIS + (
         airtime_ms * DIRECT_SEND_PERHOP_FACTOR +
         DIRECT_SEND_PERHOP_EXTRA_MILLIS
-    ) * (n_elem + 1)
+    ) * (hop_count + 1)
+
+
+def estimate_suggested_timeout_ms(path, radio):
+    """
+    Stima il valore di 'suggested_timeout' (ms) che il firmware
+    calcolerà per QUESTO path TRACE, dati i parametri radio reali del
+    device — wrapper di estimate_direct_timeout_ms() che sa comporre
+    payload_bytes/hop_count per il pacchetto TRACE specificamente (per
+    TRACE, a differenza di REQ/ANON_REQ/TXT_MSG, il path stesso è il
+    payload: ogni hop vi appende il proprio hash, quindi n_elem
+    determina SIA il payload SIA il moltiplicatore).
+
+    Ritorna None se la stima non è calcolabile (radio assente/parziale,
+    path malformato) — il chiamante deve SEMPRE prevedere un fallback
+    per questo caso, mai trattarlo come un errore da propagare.
+    """
+
+    path_hash_len = _infer_path_hash_len(path)
+
+    if path_hash_len is None:
+        return None
+
+    n_elem = len(
+        [p for p in path.split(",") if p.strip()]
+    )
+
+    if n_elem == 0:
+        return None
+
+    payload_len = TRACE_PAYLOAD_HEADER_BYTES + n_elem * path_hash_len
+    raw_packet_bytes = PACKET_HEADER_BYTES + payload_len
+
+    return estimate_direct_timeout_ms(raw_packet_bytes, n_elem, radio)
 
 
 def estimate_ipc_timeout(

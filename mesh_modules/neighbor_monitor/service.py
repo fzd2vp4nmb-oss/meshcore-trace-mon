@@ -50,8 +50,21 @@ class NeighborMonitorService:
             repeater_name
         )
 
+        #
+        # public_key/adv_name (opzionali, 2026-08-23): quando il
+        # chiamante (NeighborMonitorEngine) li fornisce già risolti —
+        # avendo appena interrogato system.contact per calcolare l'hop
+        # count reale del margine di timeout IPC — passati direttamente
+        # a NeighborMonitorModule.query(), che salta così un secondo
+        # get_contacts() locale ridondante per lo stesso contatto (v.
+        # NeighborMonitorModule.query(), docstring). Assenti per
+        # qualunque altro chiamante: comportamento invariato, query()
+        # risolve da sola come sempre.
+        #
         result = await self.monitor.query(
-            repeater_name
+            repeater_name,
+            public_key=request.get("public_key"),
+            adv_name=request.get("adv_name")
         )
 
         if result is None:

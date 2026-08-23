@@ -208,6 +208,27 @@ CREATE TABLE IF NOT EXISTS device_status (
                   -- stesso giro per semplicità (query locale anch'essa,
                   -- costo trascurabile a ripeterla).
 );
+
+CREATE TABLE IF NOT EXISTS telegram_settings (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+                  -- riga singola forzata dal CHECK, stesso pattern di
+                  -- device_status: non uno storico, è la
+                  -- configurazione ATTUALE del gestore per le
+                  -- notifiche Telegram (config.yaml, sezione
+                  -- 'telegram'), sovrascritta a ogni avvio del daemon
+                  -- — dato locale di configurazione, non acquisito
+                  -- dalla mesh. Letta dal Collettore (che riceve una
+                  -- copia di questo DB via contact_sync.sh) per sapere
+                  -- a chi inviare le notifiche — v.
+                  -- docs/ARCHITECTURE.md §55.
+    chat_id     TEXT,
+                  -- chat ID Telegram personale del gestore nodo, o
+                  -- NULL se non ancora configurato (config.sh, menu
+                  -- "Telegram"). Mai il token dell'API: quello non
+                  -- vive in questo database, solo lato Collettore.
+    enabled     INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER NOT NULL
+);
 """
 
 #
@@ -645,6 +666,44 @@ class ContactDB:
                 rx_air_secs, recv, sent, flood_tx, direct_tx, flood_rx,
                 direct_rx, recv_errors, model, fw_build, fw_version
             )
+        )
+
+        self._conn.commit()
+
+    def upsert_telegram_settings(
+        self,
+        updated_at,
+        chat_id,
+        enabled
+    ):
+        """
+        Configurazione Telegram corrente del gestore nodo, letta per
+        intero da config.yaml (sezione 'telegram') — non un dato
+        acquisito dalla mesh. Riga singola (id=1 fisso, stesso pattern
+        di upsert_device_status()), sovrascritta interamente a ogni
+        avvio del daemon (v. ContactSyncModule.start()).
+
+        A differenza di upsert_device_status() (dati radio parziali/
+        intermittenti, dove None deve preservare il valore del giro
+        precedente via COALESCE), qui il chiamante fornisce sempre
+        l'intera configurazione in un colpo solo: niente COALESCE, un
+        valore esplicitamente vuoto/disabilitato in config.yaml deve
+        sovrascrivere, non conservare uno stato residuo di una
+        configurazione precedente (un gestore che disabilita la
+        funzione se la aspetta spenta subito, non al prossimo riavvio
+        in cui capitasse di passare di qui con un valore parziale).
+        """
+
+        self._conn.execute(
+            """
+            INSERT INTO telegram_settings (id, updated_at, chat_id, enabled)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                updated_at = excluded.updated_at,
+                chat_id    = excluded.chat_id,
+                enabled    = excluded.enabled
+            """,
+            (updated_at, chat_id or None, 1 if enabled else 0)
         )
 
         self._conn.commit()

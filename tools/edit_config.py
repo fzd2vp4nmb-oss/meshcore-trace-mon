@@ -253,6 +253,12 @@ HEADER_COMMENT = """\
 #
 # bot:
 #   known_regions — regioni note al bot per la risoluzione flood-scope
+#   (modulo lato mesh radio — non le notifiche Telegram sotto)
+#
+# telegram:
+#   enabled — true per attivare le notifiche push al gestore del nodo
+#   chat_id — il tuo chat ID Telegram personale (v. INSTALL.md per
+#     come ottenerlo) — mai il token dell'API, che non vive qui
 #
 # neighbor_monitoring:
 #   interval — secondi di attesa tra un repeater e il successivo, se

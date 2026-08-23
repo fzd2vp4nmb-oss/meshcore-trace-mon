@@ -665,3 +665,60 @@ http://<ip-raspberry>:3000
 
 L'IP lo trovi lanciando `hostname -I` direttamente sul Raspberry,
 o dalla pagina dei dispositivi connessi del tuo router.
+
+---
+
+## 16. Notifiche Telegram (opzionale)
+
+`trace-mon` può inviarti notifiche via Telegram su eventi relativi al
+tuo ripetitore — oggi: temperatura sopra 49°C e TX Duty Cycle
+osservato dal 9% in su (un solo avviso quando la soglia viene
+superata, poi silenzio finché il valore non rientra e la risupera,
+niente avvisi ripetuti) — un servizio distinto dal modulo **Bot** già
+visto al §1.3: quello risponde a comandi ricevuti via radio sul
+canale `#bot` della mesh, questo qui invia messaggi in uscita al
+**tuo account Telegram personale**, tramite un bot Telegram del
+progetto a cui ti iscrivi. Le due cose non sono collegate — non
+serve avere configurato il canale `#bot` per usare questa funzione,
+né viceversa.
+
+Il servizio di invio vero e proprio gira sul Collettore, non sul tuo
+Raspberry — quello che devi fare tu è solo iscriverti al bot e
+comunicare il tuo chat ID al tuo nodo, che lo porta al Collettore
+automaticamente al prossimo giro di sincronizzazione (nessuna azione
+ulteriore richiesta).
+
+### 16.1 Iscriviti al bot e ottieni il tuo chat ID
+
+Un solo passaggio: apri [t.me/TraceMon_bot](https://t.me/TraceMon_bot)
+(o cerca `@TraceMon_bot` dentro l'app Telegram) e premi
+**Start/Avvia**. Il bot ti risponde subito con il tuo **chat ID**
+numerico personale — è il valore da usare al passo successivo. Non
+serve nessun altro bot di terze parti.
+
+Questo stesso passaggio autorizza anche l'invio delle notifiche
+future: Telegram non permette a nessun bot di scrivere per primo a un
+account che non ha mai avviato una chat con lui, quindi avviarla ora
+è anche ciò che rende possibili gli avvisi in seguito.
+
+### 16.2 Configuralo su trace-mon
+
+```bash
+cd ~/trace-mon
+./config.sh
+```
+
+Scegli la voce **"8) Telegram"** dal menu principale, poi:
+- **"1) Imposta il chat ID"** — incolla il numero ottenuto al passo
+  precedente;
+- **"2) Abilita le notifiche"**.
+
+Al termine, come per ogni altra modifica di `config.sh`, ti viene
+chiesto se riavviare `trace-mon.service` — rispondi di sì (o
+riavvialo manualmente in seguito): il valore raggiunge il database
+locale solo al riavvio, e da lì il Collettore in un secondo momento,
+al prossimo giro di sincronizzazione (qualche minuto, nessuna azione
+da parte tua).
+
+Per disattivare in seguito, stesso menu, voce **"3) Disabilita le
+notifiche"**.

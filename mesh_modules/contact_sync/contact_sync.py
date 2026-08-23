@@ -64,6 +64,18 @@ class ContactSyncModule:
             3600
         )
 
+        #
+        # Configurazione Telegram (sezione 'telegram', non 'bot' —
+        # v. docs/ARCHITECTURE.md §55) letta qui insieme al resto della
+        # config di questo modulo, scritta in contacts.db una sola
+        # volta all'avvio (v. start()) — mai un hot-reload, coerente
+        # con la convenzione già in uso in tutto il progetto per cui
+        # una modifica a config.yaml richiede un riavvio del daemon.
+        # chat_id vuoto ("" nel template) normalizzato a None.
+        #
+        self.telegram_chat_id = config.get("telegram.chat_id") or None
+        self.telegram_enabled = bool(config.get("telegram.enabled", False))
+
         self.db = ContactDB(self.db_path)
 
         self._sync_task = None
@@ -145,6 +157,33 @@ class ContactSyncModule:
             )
 
     async def start(self):
+
+        #
+        # Scrittura una tantum della configurazione Telegram in
+        # contacts.db (tabella telegram_settings — v. db.py), così che
+        # il prossimo giro di contact_sync.sh la porti al Collettore
+        # senza alcun canale di trasporto nuovo (v.
+        # docs/ARCHITECTURE.md §55). Passa da _run_db() come ogni
+        # altra scrittura di questo modulo (§3.4 — mai un sqlite3
+        # bloccante diretto nell'event loop). Non fatale: un
+        # fallimento qui (es. disco pieno) non deve impedire l'avvio
+        # del resto del modulo (sottoscrizione RX_LOG_DATA, sync
+        # contatti) — il Collettore vedrà comunque il valore del giro
+        # precedente, o lo vedrà al prossimo riavvio.
+        #
+        try:
+            await self._run_db(
+                self.db.upsert_telegram_settings,
+                updated_at=int(time.time()),
+                chat_id=self.telegram_chat_id,
+                enabled=self.telegram_enabled
+            )
+
+        except Exception:
+            log.exception(
+                "ContactSyncModule: scrittura telegram_settings fallita "
+                "(non fatale, avvio del modulo prosegue)."
+            )
 
         self._subscribe()
 

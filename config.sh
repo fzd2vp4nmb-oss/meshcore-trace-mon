@@ -413,6 +413,70 @@ menu_logging() {
 }
 
 # ============================================================
+# Sottomenu: Telegram (notifiche push al gestore del nodo — NON il
+# modulo "Bot" della mesh (menu 3): quello risponde a comandi ricevuti
+# via radio sul canale #bot, questo qui invia messaggi in uscita al
+# TUO account Telegram. Due cose distinte che condividono solo il
+# nome "bot" in senso colloquiale — v. docs/ARCHITECTURE.md §55.
+# ============================================================
+menu_telegram() {
+
+    while true; do
+
+        current_chat_id=$(engine get telegram.chat_id)
+        current_enabled=$(engine get telegram.enabled)
+
+        if [ "$current_enabled" = "True" ]; then
+            status_label="abilitate"
+        else
+            status_label="disabilitate"
+        fi
+
+        echo
+        echo "--- Telegram (notifiche push al gestore del nodo) ---"
+        echo "Non è il modulo 'Bot' della mesh (menu 3) — qui si configurano"
+        echo "le notifiche verso il TUO account Telegram personale."
+        echo "Stato: $status_label — chat ID: ${current_chat_id:-non impostato}"
+        echo "  1) Imposta il chat ID"
+        echo "  2) Abilita le notifiche"
+        echo "  3) Disabilita le notifiche"
+        echo "  0) Torna indietro"
+        read -p "Scelta: " choice || { echo; return; }
+
+        case "$choice" in
+
+            1)
+                echo
+                echo "Per ottenere il tuo chat ID: apri Telegram, cerca t.me/TraceMon_bot"
+                echo "e premi Start/Avvia — il bot risponde subito col tuo ID"
+                echo "numerico personale (nessun altro bot di terze parti serve)."
+                read -p "Chat ID: " chat_id
+                engine set telegram.chat_id "$chat_id"
+                CHANGES_MADE=1
+                ;;
+
+            2)
+                engine set telegram.enabled true
+                CHANGES_MADE=1
+                ;;
+
+            3)
+                engine set telegram.enabled false
+                CHANGES_MADE=1
+                ;;
+
+            0)
+                return
+                ;;
+
+            *)
+                echo "Scelta non valida."
+                ;;
+        esac
+    done
+}
+
+# ============================================================
 # Allinea al template (docs/ARCHITECTURE.md §45) — aggiunge a
 # config.yaml solo le chiavi che config/config.yaml.template definisce
 # ma che qui non ci sono ancora (es. un parametro introdotto da una
@@ -454,7 +518,8 @@ while true; do
     echo "  5) Repeater interrogati"
     echo "  6) Servizi"
     echo "  7) Logging"
-    echo "  8) Allinea al template (aggiungi parametri mancanti)"
+    echo "  8) Telegram (notifiche al gestore del nodo)"
+    echo "  9) Allinea al template (aggiungi parametri mancanti)"
     echo "  0) Esci"
     read -p "Scelta: " main_choice || { echo; break; }
 
@@ -466,7 +531,8 @@ while true; do
         5) menu_repeaters ;;
         6) menu_services ;;
         7) menu_logging ;;
-        8) menu_align ;;
+        8) menu_telegram ;;
+        9) menu_align ;;
         0) break ;;
         *) echo "Scelta non valida." ;;
     esac

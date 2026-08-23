@@ -31,29 +31,30 @@ SOCKET_FILE = Path(
 # con cron che rilancia lo script periodicamente, i processi bloccati
 # si accumulano nel tempo (esaurimento fd/memoria sul Raspberry Pi).
 #
-# 90s (era 30s — v. Finding 1, review affidabilità 2026-08-21,
-# ARCHITECTURE.md §49) è pensato per comandi "brevi" (system.status/
-# ping/contact, advert, floodadv): nessuno di questi attende
-# DIRETTAMENTE una risposta radio con retry multipli, MA condividono
-# Engine.command_lock con BotModule._send_dm_reply() (fino a 3
-# tentativi di invio+attesa ACK, uno dei quali in flood dopo un
-# reset_path() intermedio — v. meshcore_py/commands/messaging.py,
-# send_msg_with_retry()) — un comando breve messo in coda dietro un DM
-# in corso può quindi restare bloccato ben oltre la propria durata
-# "propria". 30s copriva solo il caso in cui il lock fosse libero;
-# alzato a un margine generoso pensato per assorbire anche un DM verso
-# un contatto multi-hop (non un limite riverificato al livello del
-# firmware come per neighbor_monitor, §29 — nessun clone del firmware
-# disponibile in quella sessione; un multiplo prudente del vecchio
-# valore, deliberatamente abbinato al nuovo log diagnostico su
-# Engine.acquire_command_lock(), che resta la vera rete di sicurezza
-# per i casi che questo margine non coprisse). Comandi che possono
+# Storico: portato da 30s a 90s il 2026-08-21 (Finding 1, review
+# affidabilità, ARCHITECTURE.md §49) perché comandi "brevi" (system.
+# status/ping/contact, advert, floodadv) condividevano Engine.
+# command_lock con BotModule._send_dm_reply() — la risposta DM del bot
+# poteva restare titolare del lock fino a 3 tentativi di invio+attesa
+# ACK (uno dei quali in flood), mettendo in coda un comando breve ben
+# oltre la propria durata "propria".
+#
+# Riportato a 30s il 2026-08-23: la gestione dei DM è stata rimossa
+# del tutto da BotModule (v. ARCHITECTURE.md §54) — l'unico invio
+# rimasto, _send_channel_reply()/send_chan_msg(), è un fire-and-forget
+# locale (attende solo [OK, ERROR], nessun ACK radio, nessun retry),
+# quindi la motivazione originale del margine da 90s non esiste più.
+# 30s torna a coprire il solo caso "lock libero, comando realmente
+# breve" per cui era stato pensato in origine. Comandi che possono
 # legittimamente richiedere molto più tempo (trace con timeout alto,
 # neighbor_monitor con retry su repeater irraggiungibile) DEVONO
 # comunque passare un ipc_timeout esplicito più ampio — vedi
 # mesh_modules/trace/engine.py e mesh_modules/neighbor_monitor/engine.py.
+# Engine.acquire_command_lock() resta comunque la rete di sicurezza
+# diagnostica per ogni attesa anomala sul lock (log WARNING oltre
+# COMMAND_LOCK_WAIT_WARNING_THRESHOLD, v. §49).
 #
-DEFAULT_IPC_TIMEOUT = 90.0
+DEFAULT_IPC_TIMEOUT = 30.0
 
 
 class IPCError(Exception):

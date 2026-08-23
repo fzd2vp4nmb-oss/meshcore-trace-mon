@@ -14,8 +14,8 @@ a un Raspberry Pi (o altra macchina Linux equivalente).
   status, telemetria, configurazione, regioni supportate, e i nodi
   che il repeater stesso sente direttamente — con storico mensile
   per questi ultimi.
-- **Bot** — risponde a comandi su un canale dedicato o via messaggio
-  diretto (`!status`, `!path`, `!meteo`, `!ping`, ecc.).
+- **Bot** — risponde a comandi su un canale dedicato
+  (`!status`, `!path`, `!meteo`, `!ping`, ecc.).
 
 Il Nodo locale può inoltre inviare periodicamente i propri dati a un
 server centrale (Collector) che li aggrega con quelli di altri nodi

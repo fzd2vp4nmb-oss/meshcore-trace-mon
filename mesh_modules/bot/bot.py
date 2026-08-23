@@ -11,60 +11,24 @@ from mesh_modules.bot.commands.registry import COMMANDS
 
 
 #
-# out_path_len usato dal firmware per indicare "path non ancora
-# noto, instradamento in flood" sul contatto. A livello di frame
-# seriale è sempre un byte 0..255 (0xFF = sconosciuto, v.
-# docs/FIRMWARE_ANALYSIS.md §4, ContactInfo.h) — ma nei dati reali
-# compare anche il valore -1: bug confermato lato meshcore_py (byte
-# letto come signed in un punto della catena di parsing lato
-# libreria, non un comportamento del firmware — v. FIRMWARE_ANALYSIS.md
-# §4), non un caso raro isolato.
+# Vita massima della cache di correlazione RX_LOG_DATA <->
+# CHANNEL_MSG_RECV, in secondi.
 #
-# Finding 3, code review 2026-08-20 (review indipendente successiva a
-# Rev.6) — segnalato in docs/CONTACT_MANAGEMENT.md §6 come bug ancora
-# APERTO ("Va corretto ad accettare anche -1"), MAI una scelta di
-# design di non gestirlo qui: verificato con un audit esplicito
-# dell'intera documentazione del progetto (ARCHITECTURE.md,
-# CONTACT_MANAGEMENT.md, FIRMWARE_ANALYSIS.md, tutte le
-# REVIEW_FULL_EXTENSIVE_2026-08-20*.md, notes/findings.md) — nessuna
-# decisione contraria trovata da nessuna parte. Il progetto usa già
-# questo stesso pattern altrove (tools/test_contact.py,
-# tools/test_contact_list.py: `UNKNOWN_OUT_PATH_VALUES = (255, -1)`,
-# esplicitamente riconosciuto come "il pattern difensivo osservato
-# sistematicamente nel progetto" in REVIEW_FULL_EXTENSIVE_2026-08-20_
-# Rev6.md — una deviazione da esso è lì classificata come difetto, non
-# come stile alternativo deliberato) — bot.py era rimasto l'unico
-# punto del progetto che interpreta out_path_len ancora indietro
-# rispetto a quel pattern, dalla sua introduzione originale
-# (ARCHITECTURE.md §21, 2026-08-06), precedente alla scoperta del
-# caso -1 (CONTACT_MANAGEMENT.md §6, 2026-08-07/08) e mai più
-# rivisitato da allora.
-#
-OUT_PATH_UNKNOWN = 255
-UNKNOWN_OUT_PATH_VALUES = (OUT_PATH_UNKNOWN, -1)
-
-#
-# Vita massima delle cache di correlazione/dedup, in secondi.
-#
-# CORRELATION_TTL: a differenza delle DM (che hanno un pubkey_prefix
-# per correlare in modo univoco RX_LOG_DATA/CHANNEL_MSG_RECV allo
-# stesso mittente), un messaggio di canale non porta alcun
-# identificativo di mittente a livello di protocollo — né
-# PACKET_LOG_DATA né PACKET_CHANNEL_MSG_RECV ne espongono uno (il
-# "nome" che si vede nei log è testo libero dentro il messaggio
-# stesso, non un campo verificabile). L'unica correlazione possibile
-# resta quindi (canale, sender_timestamp) — vedi
-# _pending_scope_info/_resolve_scope_for_message più sotto, che ora
-# rileva esplicitamente il caso ambiguo invece di sceglierne uno alla
-# cieca. Restringere la finestra qui riduce la probabilità che due
-# mittenti diversi collidano sullo stesso sender_timestamp (risoluzione
-# di un secondo): 3s è ampiamente sufficiente rispetto al tetto massimo
-# di CHANNEL_SCOPE_CORRELATION_TIMEOUT (0.3s, sotto) più il margine
+# Un messaggio di canale non porta alcun identificativo di mittente a
+# livello di protocollo — né PACKET_LOG_DATA né PACKET_CHANNEL_MSG_RECV
+# ne espongono uno (il "nome" che si vede nei log è testo libero dentro
+# il messaggio stesso, non un campo verificabile). L'unica correlazione
+# possibile resta quindi (canale, sender_timestamp) — vedi
+# _pending_scope_info/_resolve_scope_for_message più sotto, che rileva
+# esplicitamente il caso ambiguo invece di sceglierne uno alla cieca.
+# Restringere la finestra qui riduce la probabilità che due mittenti
+# diversi collidano sullo stesso sender_timestamp (risoluzione di un
+# secondo): 3s è ampiamente sufficiente rispetto al tetto massimo di
+# CHANNEL_SCOPE_CORRELATION_TIMEOUT (0.3s, sotto) più il margine
 # osservato empiricamente per RX_LOG_DATA "a ridosso" di
 # CHANNEL_MSG_RECV.
 #
 CORRELATION_TTL = 3
-DM_DEDUP_TTL = 60
 
 #
 # Tetto massimo di attesa per la correlazione RX_LOG_DATA ->
@@ -90,9 +54,9 @@ CHANNEL_SCOPE_CORRELATION_TIMEOUT = 0.3
 # Lunghezza massima di sender_name prima di costruire il prefisso
 # "@[...] " (code review 2026-08-20, §3.3) — sender_name è testo
 # completamente controllato da chi scrive sul canale (parte prima di
-# ": " nel testo del messaggio) o dal nome annunciato via ADVERT per
-# le DM, senza alcun limite imposto dal protocollo (fino a ~100
-# caratteri, limitato solo dal budget del pacchetto in ingresso).
+# ": " nel testo del messaggio), senza alcun limite imposto dal
+# protocollo (fino a ~100 caratteri, limitato solo dal budget del
+# pacchetto in ingresso).
 # Senza un limite qui, un mittente può consumare gran parte del
 # budget di risposta disponibile con un nome lungo, lasciando ai
 # comandi pochissimo spazio — di fatto un "megafono" per un proprio
@@ -135,11 +99,13 @@ def _truncate_utf8_safe(text, max_bytes):
     `max_bytes` — anche includendo l'ellissi di troncamento, quando
     serve aggiungerla.
 
-    Punto unico condiviso tra risposte su canale e DM: un fix o una
-    modifica del margine di sicurezza si applica così a entrambi i
-    percorsi (in precedenza la stessa logica era duplicata identica
-    in _send_channel_reply e _send_dm_reply — v. code review
-    2026-08-20, §2.4).
+    Usata da _send_channel_reply() per garantire il rispetto del
+    budget in byte della risposta (v. ARCHITECTURE.md §16). Fino alla
+    rimozione delle DM (2026-08-23, v. ARCHITECTURE.md — sezione
+    dedicata) era condivisa anche da _send_dm_reply(), con la stessa
+    logica duplicata identica nei due punti prima di essere unificata
+    qui (code review 2026-08-20, §2.4) — la funzione resta un'utility
+    autonoma, non reintrodotta come duplicato altrove.
 
     NOTA sul fix: la versione precedente riservava solo 1 byte per
     l'ellissi (`max_reply_length - 1`), ma "…" occupa 3 byte in UTF-8
@@ -208,29 +174,29 @@ def _parse_command(text):
 
 class BotModule:
     """
-    Ascolta i comandi (prefisso '!') ricevuti sia sul canale
-    configurato (default '#bot') sia via DM, fa da router verso i
-    comandi registrati in mesh_modules/bot/commands/registry.py, e
-    invia la risposta di conseguenza — sul canale con lo stesso
-    flood-scope del messaggio originale, in DM con conferma di
-    consegna (ACK) quando possibile.
+    Ascolta i comandi (prefisso '!') ricevuti sul canale configurato
+    (default '#bot'), fa da router verso i comandi registrati in
+    mesh_modules/bot/commands/registry.py, e invia la risposta di
+    conseguenza con lo stesso flood-scope del messaggio originale.
 
     Non conosce la logica di alcun comando specifico — si occupa solo
-    di: connessione/rebind, normalizzazione del contesto (canale vs
-    DM), dispatch verso il comando giusto, invio/troncamento di
-    sicurezza della risposta.
+    di: connessione/rebind, normalizzazione del contesto, dispatch
+    verso il comando giusto, invio/troncamento di sicurezza della
+    risposta.
 
     Legge l'istanza MeshCore corrente dinamicamente da Engine ad ogni
     chiamata — non ne tiene mai una copia locale.
 
-    NOTA (docs/CONTACT_MANAGEMENT.md §12): un DM da un mittente non
-    presente nella contact list del device non genera MAI l'evento
-    CONTACT_MSG_RECV — il device non riesce a decifrarlo senza la
-    chiave pubblica del mittente, limite crittografico strutturale.
-    _on_contact_message quindi non viene invocato per quel caso, non
-    esiste un modo per "reagire" a un DM da uno sconosciuto (né per
-    loggarlo, né per ripristinarlo) — confermato con test reale,
-    tentativo di ripristino su richiesta rimosso di conseguenza.
+    NOTA (2026-08-23, v. ARCHITECTURE.md, sezione dedicata): questo
+    modulo rispondeva in precedenza anche ai messaggi diretti (DM),
+    con conferma di consegna via ACK — funzionalità rimossa su
+    decisione esplicita dell'utente (il BOT resta un'aggiunta
+    accessoria rispetto allo scopo diagnostico del progetto, e la
+    sequenza di retry delle DM era la causa principale delle latenze
+    più lunghe imposte agli altri consumatori di Engine.command_lock,
+    v. Finding 1/§49). Il bot risponde oggi solo sul canale, con un
+    tempo di occupazione del lock breve e deterministico (un solo
+    invio, nessuna attesa di ACK).
     """
 
     COMMAND_PREFIX = "!"
@@ -285,13 +251,6 @@ class BotModule:
         self._scope_info_events = {}
 
         #
-        # Dedup DM: chiave (pubkey_prefix, sender_timestamp), valore
-        # timestamp di inserimento. I retry del mittente prima
-        # dell'ACK condividono lo stesso sender_timestamp.
-        #
-        self._pending_dm_dedup = {}
-
-        #
         # Riferimenti ai task di rebind creati da _on_rebind() (code
         # review 2026-08-20, §3.1 — stesso pattern già corretto in
         # mesh_modules/contact_sync/contact_sync.py) — un task senza
@@ -321,19 +280,6 @@ class BotModule:
 
         await self._resolve_channel()
 
-        #
-        # Popola la cache contatti della libreria, necessaria per
-        # risolvere pubkey_prefix -> nome/out_path sui DM. Un
-        # ulteriore refresh viene comunque fatto prima di ogni
-        # singolo lookup (vedi _on_contact_message) — questo qui
-        # serve solo ad avere una cache non vuota fin dal primo
-        # istante. Serializzato con command_lock (via
-        # acquire_command_lock(), Finding 1/5 — v. ARCHITECTURE.md
-        # §49) come ogni comando sulla connessione condivisa.
-        #
-        async with self.engine.acquire_command_lock("bot:start_get_contacts"):
-            await self.engine.mesh.commands.get_contacts()
-
         self._subscribe()
 
         if self.engine.active_cli_sessions:
@@ -359,7 +305,7 @@ class BotModule:
             await self.engine.mesh.start_auto_message_fetching()
 
         log.info(
-            "BotModule: in ascolto su %s (idx=%s) e sui DM, comandi "
+            "BotModule: in ascolto su %s (idx=%s), comandi "
             "disponibili: %s.",
             self.channel["channel_name"],
             self.channel["channel_idx"],
@@ -424,11 +370,6 @@ class BotModule:
             self._on_log_data
         )
 
-        self.engine.mesh.subscribe(
-            EventType.CONTACT_MSG_RECV,
-            self._on_contact_message
-        )
-
     def _on_rebind(self, mesh):
 
         task = asyncio.create_task(
@@ -448,9 +389,6 @@ class BotModule:
 
         try:
             await self._resolve_channel()
-
-            async with self.engine.acquire_command_lock("bot:rebind_get_contacts"):
-                await self.engine.mesh.commands.get_contacts()
 
             self._subscribe()
 
@@ -505,9 +443,9 @@ class BotModule:
         coerente con un trade-off già in vigore nel progetto (v.
         ARCHITECTURE.md §44: "sacrificio del BOT quando
         neighbor_monitor occupa a lungo command_lock"): il bot resta
-        il consumatore meno prioritario del device. I messaggi/DM
-        diretti al bot restano semplicemente in coda SUL DEVICE (non
-        persi, non scartati — get_msg() li preleverà non appena
+        il consumatore meno prioritario del device. I messaggi di
+        canale diretti al bot restano semplicemente in coda SUL DEVICE
+        (non persi, non scartati — get_msg() li preleverà non appena
         l'auto-fetch riprende) per la durata della sessione CLI,
         stesso genere di attesa che il bot subisce già oggi per
         l'invio delle proprie risposte quando si accoda dietro
@@ -839,14 +777,12 @@ class BotModule:
         # stringa combinata (prefix+content) a un confine di byte che non
         # rispetta più i confini di hop già calcolati, spezzando un hash
         # a metà — esattamente l'invariante che PathCommand dichiara di
-        # rispettare. Non riguarda il DM (reply_budget=max_reply_length
-        # lì, nessun prefisso).
+        # rispettare.
         #
         budget = max(self.max_reply_length - len(prefix.encode("utf-8")), 0)
 
         ctx = CommandContext(
             engine=self.engine,
-            is_dm=False,
             sender_name=sender_name,
             region=region,
             path_hex=payload.get("path", "") or "",
@@ -891,9 +827,9 @@ class BotModule:
             #
             # Prima di questo fix (code review 2026-08-20, §3.3), un
             # errore qui veniva solo loggato: a differenza di
-            # send_chan_msg()/send_msg_with_retry() sotto, non
-            # chiamava report_possible_failure() né interrompeva
-            # l'invio — il messaggio partiva comunque con lo scope
+            # send_chan_msg() sotto, non chiamava
+            # report_possible_failure() né interrompeva l'invio — il
+            # messaggio partiva comunque con lo scope
             # RESIDUO della chiamata precedente, contraddicendo
             # l'invariante "mai stato residuo" dichiarato per gli
             # altri casi (v. classe CommandContext/region più sopra).
@@ -981,184 +917,6 @@ class BotModule:
             )
             self.engine.report_possible_failure()
 
-    #
-    # ------------------------------------------------------------
-    # DM
-    # ------------------------------------------------------------
-    #
-
-    async def _on_contact_message(self, event):
-        """
-        NOTA: per un mittente non presente nella contact list del
-        device, questo handler non viene MAI invocato — l'evento
-        CONTACT_MSG_RECV stesso non scatta (vedi docstring della
-        classe). Il controllo 'contact is None' qui sotto resta solo
-        come rete di sicurezza difensiva per casi limite imprevisti,
-        non copre realisticamente "mittente sconosciuto/rimosso".
-        """
-
-        payload = event.payload
-
-        pubkey_prefix = payload.get("pubkey_prefix")
-
-        if not pubkey_prefix:
-            return
-
-        sender_timestamp = payload.get("sender_timestamp")
-
-        tag = _tag(sender_timestamp)
-
-        #
-        # Le risposte a login/comandi CLI di neighbor_monitor
-        # arrivano come CONTACT_MSG_RECV — stesso evento delle DM
-        # vere, indistinguibile a livello di protocollo. Un repeater
-        # non avvia mai una DM legittima verso il bot di sua
-        # iniziativa (solo i device chat lo fanno): se il mittente è
-        # una chiave verso cui è in corso una sessione CLI, la
-        # risposta è certamente per neighbor_monitor, non per il bot
-        # — usciamo subito, prima del dedup e di qualunque altra
-        # elaborazione (incluso il refresh get_contacts() più sotto,
-        # che altrimenti scatterebbe inutilmente ad ogni risposta).
-        # Vedi Engine.active_cli_sessions.
-        #
-        if any(
-            full_key.startswith(pubkey_prefix)
-            for full_key in self.engine.active_cli_sessions
-        ):
-
-            log.info(
-                "BOT: %s ignorato, risposta CLI attesa da "
-                "neighbor_monitor (non una DM) da %s.",
-                tag,
-                pubkey_prefix
-            )
-
-            return
-
-        #
-        # Dedup: i retry del mittente prima dell'ACK condividono lo
-        # stesso sender_timestamp.
-        #
-        dedup_key = (pubkey_prefix, sender_timestamp)
-
-        self._prune_dict(self._pending_dm_dedup, DM_DEDUP_TTL)
-
-        if dedup_key in self._pending_dm_dedup:
-            log.info(
-                "BOT: %s DM duplicato (retry pre-ACK) ignorato da %s.",
-                tag,
-                pubkey_prefix
-            )
-            return
-
-        self._pending_dm_dedup[dedup_key] = time.monotonic()
-
-        #
-        # Refresh esplicito prima del lookup: get_contact_by_key_prefix()
-        # legge dalla cache locale della libreria, che riflette solo
-        # l'ultimo get_contacts() eseguito.
-        #
-        try:
-            # acquire_command_lock() invece dell'accesso diretto al
-            # lock (Finding 1/5, review affidabilità 2026-08-21 — v.
-            # ARCHITECTURE.md §49).
-            async with self.engine.acquire_command_lock("bot:contact_message_refresh_contacts"):
-                await self.engine.mesh.commands.get_contacts()
-
-        except Exception:
-            log.exception(
-                "BOT: %s refresh contatti fallito, uso la cache esistente.",
-                tag
-            )
-
-        contact = self.engine.mesh.get_contact_by_key_prefix(pubkey_prefix)
-
-        if contact is None:
-            #
-            # Rete di sicurezza difensiva — non dovrebbe accadere
-            # (vedi nota in cima al metodo), ma se succede evitiamo
-            # un crash su contact.get(...) più sotto.
-            #
-            log.warning(
-                "BOT: %s contatto non trovato dopo CONTACT_MSG_RECV "
-                "(%s) — caso imprevisto.",
-                tag,
-                pubkey_prefix
-            )
-            return
-
-        #
-        # v. MAX_SENDER_NAME_LEN — adv_name proviene dalla rete
-        # mesh, controllato dal device remoto (code review
-        # 2026-08-20, §3.3).
-        #
-        sender_name = (
-            contact.get("adv_name") or pubkey_prefix
-        )[:MAX_SENDER_NAME_LEN]
-
-        text = (payload.get("text", "") or "").strip()
-
-        if not text.startswith(self.COMMAND_PREFIX):
-            return
-
-        command, arg = _parse_command(
-            text[len(self.COMMAND_PREFIX):]
-        )
-
-        handler = COMMANDS.get(command)
-
-        #
-        # %r invece di %s per command/sender_name — stessa
-        # motivazione di _on_channel_message() (code review
-        # 2026-08-20, §4): protezione da log injection via testo
-        # radio non autenticato.
-        #
-        if handler is None:
-            log.info(
-                "BotModule: %s comando DM sconosciuto %r da %r.",
-                tag,
-                command,
-                sender_name
-            )
-            return
-
-        log.info(
-            "BotModule: %s comando DM %r (arg=%r) da %r.",
-            tag,
-            command,
-            arg,
-            sender_name
-        )
-
-        out_path_len = contact.get("out_path_len", OUT_PATH_UNKNOWN)
-        out_path = contact.get("out_path", "")
-
-        if out_path_len in UNKNOWN_OUT_PATH_VALUES:
-            path_hex, path_len = None, None
-        else:
-            path_hex, path_len = out_path, out_path_len
-
-        ctx = CommandContext(
-            engine=self.engine,
-            is_dm=True,
-            sender_name=sender_name,
-            region=None,
-            path_hex=path_hex,
-            path_len=path_len,
-            rssi=payload.get("RSSI"),
-            snr=payload.get("SNR"),
-            reply_budget=self.max_reply_length,
-            arg=arg,
-            contact=contact
-        )
-
-        content = await self._run_command(handler, command, ctx, tag)
-
-        if not content:
-            return
-
-        await self._send_dm_reply(content, contact, tag)
-
     async def _run_command(self, handler, command, ctx, tag):
 
         try:
@@ -1172,117 +930,14 @@ class BotModule:
             )
             return None
 
-    async def _send_dm_reply(self, text, contact, tag):
-        """
-        Invia la risposta in DM con conferma di consegna (ACK).
-
-        NOTA: su percorsi radio asimmetrici l'ACK può non tornare
-        anche se il messaggio è stato ricevuto correttamente (vedi
-        ARCHITECTURE.md) — un mancato ACK viene quindi loggato come
-        tale, non come "invio fallito", e NON viene considerato un
-        segnale di guasto della connessione locale
-        (report_possible_failure() non viene chiamato in quel caso).
-
-        send_msg_with_retry() può tornare None quando i tentativi si
-        esauriscono senza ricevere ACK (non sempre un Event con
-        type=ERROR come inizialmente assunto — confermato da un
-        crash reale in produzione, 2026-08-07) — va gestito
-        esplicitamente, non solo controllato via .type.
-        """
-
-        if not self.engine.connected:
-            log.warning(
-                "BOT: %s connessione non attiva, risposta DM annullata.",
-                tag
-            )
-            return
-
-        text = _truncate_utf8_safe(text, self.max_reply_length)
-
-        #
-        # Il sito esatto del Finding 1 (review affidabilità
-        # 2026-08-21 — v. ARCHITECTURE.md §49): send_msg_with_retry()
-        # qui sotto può tenere command_lock per l'intera sequenza di
-        # retry (fino a 3 tentativi, uno in flood dopo un
-        # reset_path() intermedio), superando abbondantemente il
-        # vecchio DEFAULT_IPC_TIMEOUT di 30s — acquire_command_lock()
-        # non cambia questo comportamento (resta la stessa scelta
-        # architetturale deliberata: un DM non viene interrotto a
-        # metà), ma rende diagnosticabile chi resta bloccato dietro
-        # di esso.
-        #
-        async with self.engine.acquire_command_lock("bot:send_dm_reply"):
-
-            try:
-                event = await self.engine.mesh.commands.send_msg_with_retry(
-                    contact,
-                    text
-                )
-
-            except Exception:
-                log.exception(
-                    "BOT: %s send_msg_with_retry() failed",
-                    tag
-                )
-                self.engine.report_possible_failure()
-                raise
-
-        if event is None:
-
-            log.warning(
-                "BOT: %s DM reply — nessun ACK ricevuto, tentativi "
-                "esauriti (possibile percorso radio asimmetrico, il "
-                "messaggio potrebbe comunque essere arrivato).",
-                tag
-            )
-
-        elif event.type == EventType.ERROR:
-
-            log.warning(
-                "BOT: %s DM reply — nessun ACK ricevuto o errore di invio "
-                "(possibile percorso radio asimmetrico, il messaggio "
-                "potrebbe comunque essere arrivato): %r",
-                tag,
-                event.payload
-            )
-
-        else:
-            log.info(
-                "BOT: %s DM reply confermata (ACK ricevuto) -> %s",
-                tag,
-                text
-            )
-
-    #
-    # ------------------------------------------------------------
-    # Utility condivisa
-    # ------------------------------------------------------------
-    #
-
-    def _prune_dict(self, d, ttl):
-
-        now = time.monotonic()
-
-        expired = [
-            k for k, added_at in (
-                (k, v["added_at"] if isinstance(v, dict) else v)
-                for k, v in d.items()
-            )
-            if now - added_at > ttl
-        ]
-
-        for k in expired:
-            del d[k]
-
     def _prune_scope_info(self):
         """
-        Variante di _prune_dict() per _pending_scope_info: qui il
-        valore è una LISTA di candidati per sender_timestamp (non un
-        singolo dict/timestamp), quindi la potatura va fatta voce per
-        voce dentro ciascuna lista, non sull'intera chiave — un
-        candidato vecchio non deve trascinare con sé uno scaduto da
-        poco per lo stesso sender_timestamp. Le chiavi rimaste con
-        lista vuota vengono rimosse.
+        Potatura di _pending_scope_info: il valore è una LISTA di
+        candidati per sender_timestamp, quindi va fatta voce per voce
+        dentro ciascuna lista, non sull'intera chiave — un candidato
+        vecchio non deve trascinare con sé uno scaduto da poco per lo
+        stesso sender_timestamp. Le chiavi rimaste con lista vuota
+        vengono rimosse.
         """
 
         now = time.monotonic()

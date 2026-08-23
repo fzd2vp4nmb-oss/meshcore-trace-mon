@@ -61,8 +61,7 @@ Salva le impostazioni prima di procedere.
 
 Con questa configurazione la lista contatti resta sempre piena e i
 contatti più vecchi vengono cancellati automaticamente per fare
-posto ai nuovi. Se un contatto ti serve stabilmente (ad esempio per
-usare il BOT in DM con un utente specifico), impostalo come
+posto ai nuovi. Se un contatto ti serve stabilmente, impostalo come
 **preferito** — i preferiti non vengono cancellati dalla pulizia
 automatica.
 

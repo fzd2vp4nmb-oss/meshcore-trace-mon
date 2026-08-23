@@ -693,13 +693,10 @@ ulteriore richiesta).
 Un solo passaggio: apri [t.me/TraceMon_bot](https://t.me/TraceMon_bot)
 (o cerca `@TraceMon_bot` dentro l'app Telegram) e premi
 **Start/Avvia**. Il bot ti risponde subito con il tuo **chat ID**
-numerico personale — è il valore da usare al passo successivo. Non
-serve nessun altro bot di terze parti.
+numerico personale — è il valore da usare al passo successivo.
 
 Questo stesso passaggio autorizza anche l'invio delle notifiche
-future: Telegram non permette a nessun bot di scrivere per primo a un
-account che non ha mai avviato una chat con lui, quindi avviarla ora
-è anche ciò che rende possibili gli avvisi in seguito.
+future.
 
 ### 16.2 Configuralo su trace-mon
 

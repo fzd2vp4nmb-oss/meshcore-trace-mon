@@ -5,7 +5,23 @@
     <meta charset="utf-8">
     <title>MeshCore Path Explorer - Node v1.0.0</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!--
+        Chart.js auto-ospitato (analisi sicurezza 2026-08-24, Finding
+        1/24-08 — v. docs/ARCHITECTURE.md §57/§58): stesso fix già
+        applicato lato Collettore, ora anche qui su richiesta esplicita
+        dell'utente. Prima caricato da
+        https://cdn.jsdelivr.net/npm/chart.js, senza versione pinnata
+        né Subresource Integrity — una compromissione del CDN o del
+        pacchetto npm a monte avrebbe eseguito JS arbitrario nel
+        browser di ogni visitatore. Ora servito come file statico del
+        progetto stesso (public/vendor/), stessa variabile globale
+        `Chart` di prima (build UMD, drop-in replacement — v. new
+        Chart(...) in app.js, invariato). Versione 4.5.1 — tracciata
+        come devDependency in frontend/package.json (v. §58: quel file
+        non era incluso nella copia di lavoro di questa sessione,
+        aggiungere la riga a mano sulla copia reale).
+    -->
+    <script src="vendor/chart.umd.min.js"></script>
 </head>
 
 <body>

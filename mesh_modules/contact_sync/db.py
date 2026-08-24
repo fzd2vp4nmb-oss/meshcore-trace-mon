@@ -222,10 +222,15 @@ CREATE TABLE IF NOT EXISTS telegram_settings (
                   -- a chi inviare le notifiche — v.
                   -- docs/ARCHITECTURE.md §55.
     chat_id     TEXT,
-                  -- chat ID Telegram personale del gestore nodo, o
-                  -- NULL se non ancora configurato (config.sh, menu
-                  -- "Telegram"). Mai il token dell'API: quello non
-                  -- vive in questo database, solo lato Collettore.
+                  -- chat ID Telegram del gestore nodo, o NULL se non
+                  -- ancora configurato (config.sh, menu "Telegram").
+                  -- Può contenere più chat ID separati da virgola
+                  -- (es. "111111,222222") per notificare più persone
+                  -- — nessuna validazione qui: il valore viaggia
+                  -- verbatim da config.yaml, è il Collettore a
+                  -- interpretarlo (docs/ARCHITECTURE.md §56.12). Mai
+                  -- il token dell'API: quello non vive in questo
+                  -- database, solo lato Collettore.
     enabled     INTEGER NOT NULL DEFAULT 0,
     updated_at  INTEGER NOT NULL
 );

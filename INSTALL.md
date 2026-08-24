@@ -671,7 +671,7 @@ o dalla pagina dei dispositivi connessi del tuo router.
 ## 16. Notifiche Telegram (opzionale)
 
 `trace-mon` può inviarti notifiche via Telegram su eventi relativi al
-tuo ripetitore — oggi: temperatura sopra 37°C o sotto 0°C, TX Duty
+tuo ripetitore — oggi: temperatura sopra 49°C o sotto 0°C, TX Duty
 Cycle osservato dal 9% in su, tensione di batteria sotto 3.1V, Duty
 Cycle configurato sopra il 10% e Default Region non impostata (un solo
 avviso quando la soglia viene superata, poi silenzio finché il valore
@@ -689,6 +689,11 @@ Raspberry — quello che devi fare tu è solo iscriverti al bot e
 comunicare il tuo chat ID al tuo nodo, che lo porta al Collettore
 automaticamente al prossimo giro di sincronizzazione (nessuna azione
 ulteriore richiesta).
+
+Le notifiche possono raggiungere anche più persone (es. se gestisci
+il nodo insieme a qualcun altro): ognuna si iscrive separatamente al
+bot (§16.1) e tutti i chat ID vengono inseriti insieme, separati da
+virgola, al passo §16.2.
 
 ### 16.1 Iscriviti al bot e ottieni il tuo chat ID
 
@@ -708,8 +713,10 @@ cd ~/trace-mon
 ```
 
 Scegli la voce **"8) Telegram"** dal menu principale, poi:
-- **"1) Imposta il chat ID"** — incolla il numero ottenuto al passo
-  precedente;
+- **"1) Imposta il/i chat ID"** — incolla il numero ottenuto al passo
+  precedente. Per più destinatari, incolla tutti i numeri separati da
+  virgola (es. `111111111,222222222`) — ognuno deve aver fatto il
+  passo §16.1 separatamente;
 - **"2) Abilita le notifiche"**.
 
 Al termine, come per ogni altra modifica di `config.sh`, ti viene

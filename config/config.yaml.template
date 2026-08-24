@@ -86,10 +86,12 @@ telegram:
   # Notifiche push al gestore del nodo — NON il modulo bot lato mesh
   # (quello resta interamente sotto la sezione bot: qui sopra, canale
   # radio #bot). Il token dell'API Telegram non compare qui: vive solo
-  # lato Collettore (docs/ARCHITECTURE.md §55). chat_id è il TUO id
-  # personale Telegram (v. INSTALL.md per come ottenerlo) — si imposta
-  # con config.sh, menu "Telegram", mai a mano qui e mai durante
-  # setup.sh: non è un dato disponibile al momento dell'installazione.
+  # lato Collettore (docs/ARCHITECTURE.md §55). chat_id è il/i TUO/I id
+  # personali Telegram (v. INSTALL.md per come ottenerli) — uno solo,
+  # o più separati da virgola per inviare le notifiche a più persone
+  # (docs/ARCHITECTURE.md §56.12) — si imposta con config.sh, menu
+  # "Telegram", mai a mano qui e mai durante setup.sh: non è un dato
+  # disponibile al momento dell'installazione.
   enabled: false
   chat_id: ""
 

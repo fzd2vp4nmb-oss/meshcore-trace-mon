@@ -437,7 +437,7 @@ menu_telegram() {
         echo "Non è il modulo 'Bot' della mesh (menu 3) — qui si configurano"
         echo "le notifiche verso il TUO account Telegram personale."
         echo "Stato: $status_label — chat ID: ${current_chat_id:-non impostato}"
-        echo "  1) Imposta il chat ID"
+        echo "  1) Imposta il/i chat ID (uno o più, separati da virgola)"
         echo "  2) Abilita le notifiche"
         echo "  3) Disabilita le notifiche"
         echo "  0) Torna indietro"
@@ -450,7 +450,14 @@ menu_telegram() {
                 echo "Per ottenere il tuo chat ID: apri Telegram, cerca t.me/TraceMon_bot"
                 echo "e premi Start/Avvia — il bot risponde subito col tuo ID"
                 echo "numerico personale (nessun altro bot di terze parti serve)."
-                read -p "Chat ID: " chat_id
+                echo
+                echo "Più destinatari: se vuoi che anche altre persone (es. chi"
+                echo "gestisce il nodo insieme a te) ricevano le stesse notifiche,"
+                echo "inserisci più chat ID separati da virgola, es."
+                echo "111111111,222222222 — ognuno deve avviare /start col bot"
+                echo "separatamente (vale la stessa istruzione sopra, per ciascuno)."
+                echo "Attuale: ${current_chat_id:-non impostato}"
+                read -p "Chat ID (uno o più, separati da virgola): " chat_id
                 engine set telegram.chat_id "$chat_id"
                 CHANGES_MADE=1
                 ;;

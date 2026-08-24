@@ -671,7 +671,7 @@ o dalla pagina dei dispositivi connessi del tuo router.
 ## 16. Notifiche Telegram (opzionale)
 
 `trace-mon` può inviarti notifiche via Telegram su eventi relativi al
-tuo ripetitore — oggi: temperatura sopra 49°C o sotto 0°C, TX Duty
+tuo ripetitore — oggi: temperatura sopra 37°C o sotto 0°C, TX Duty
 Cycle osservato dal 9% in su, tensione di batteria sotto 3.1V, Duty
 Cycle configurato sopra il 10% e Default Region non impostata (un solo
 avviso quando la soglia viene superata, poi silenzio finché il valore

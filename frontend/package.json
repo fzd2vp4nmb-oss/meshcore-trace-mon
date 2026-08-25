@@ -15,6 +15,7 @@
     "express": "^5.2.1"
   },
   "devDependencies": {
-    "chart.js": "^4.5.1"
+    "chart.js": "^4.5.1",
+    "leaflet": "^1.9.4"
   }
 }

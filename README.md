@@ -7,7 +7,9 @@ a un Raspberry Pi (o altra macchina Linux equivalente).
 ## Cosa fa
 
 - **Trace** — traccia periodicamente uno o più path della mesh e ne
-  mostra l'andamento nel tempo (SNR).
+  mostra l'andamento nel tempo (SNR); dal timestamp di una singola
+  osservazione si apre una vista di dettaglio con mappa geografica
+  (nodi coinvolti e SNR per ciascun hop).
 - **Nodes** — elenco dei nodi conosciuti dal companion, con dettaglio
   e storico delle osservazioni per ciascuno.
 - **Repeaters** — interroga a richiesta i repeater configurati:

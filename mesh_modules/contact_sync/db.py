@@ -261,7 +261,22 @@ MIGRATIONS = {
         # della tabella.
         "model": "TEXT",
         "fw_build": "TEXT",
-        "fw_version": "TEXT"
+        "fw_version": "TEXT",
+        # Posizione geografica del companion connesso a trace-mon
+        # stesso, aggiunta per la pagina di dettaglio traccia con
+        # mappa (frontend). A differenza degli altri campi di questa
+        # tabella, NON viene da una query locale al device (nessuna
+        # delle quattro get_stats_*/send_device_query): arriva da
+        # mesh.self_info (evento SELF_INFO, già popolato ad ogni
+        # connessione da send_appstart() — v. commento in
+        # SystemService._status_result()), impostata sul device
+        # dall'operatore con DeviceCommands.set_coords(). Se
+        # l'operatore non l'ha mai configurata, resta NULL: nessun
+        # valore di default, il frontend deve trattare l'assenza come
+        # "posizione non nota", non come 0.0/0.0 (che sarebbe una
+        # coordinata reale, al largo del Golfo di Guinea).
+        "adv_lat": "REAL",
+        "adv_lon": "REAL"
     },
     "repeater_config": {
         # Aggiunti ai comandi CLI testuali di CLI_QUERIES dopo la
@@ -619,7 +634,9 @@ class ContactDB:
         recv_errors=None,
         model=None,
         fw_build=None,
-        fw_version=None
+        fw_version=None,
+        adv_lat=None,
+        adv_lon=None
     ):
         """
         Stato corrente del companion connesso a trace-mon stesso (non
@@ -631,6 +648,13 @@ class ContactDB:
         Il chiamante è responsabile di non richiamare questa funzione
         affatto se TUTTE le query del giro sono fallite (in tal caso
         updated_at deve restare quello dell'ultimo giro riuscito).
+
+        adv_lat/adv_lon seguono la stessa convenzione COALESCE degli
+        altri campi, ma la loro fonte (mesh.self_info, v. chiamante in
+        contact_sync.py) non fa parte delle quattro query locali di
+        cui sopra: possono quindi essere presenti anche in un giro in
+        cui, per esempio, i campi 'radio' sono None per una query
+        fallita — indipendenza voluta, non un'incoerenza.
         """
 
         self._conn.execute(
@@ -640,9 +664,9 @@ class ContactDB:
                 queue_len, noise_floor, last_rssi, last_snr,
                 tx_air_secs, rx_air_secs, recv, sent, flood_tx,
                 direct_tx, flood_rx, direct_rx, recv_errors, model,
-                fw_build, fw_version
+                fw_build, fw_version, adv_lat, adv_lon
             )
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 updated_at  = excluded.updated_at,
                 battery_mv  = COALESCE(excluded.battery_mv, device_status.battery_mv),
@@ -663,13 +687,16 @@ class ContactDB:
                 recv_errors = COALESCE(excluded.recv_errors, device_status.recv_errors),
                 model       = COALESCE(excluded.model, device_status.model),
                 fw_build    = COALESCE(excluded.fw_build, device_status.fw_build),
-                fw_version  = COALESCE(excluded.fw_version, device_status.fw_version)
+                fw_version  = COALESCE(excluded.fw_version, device_status.fw_version),
+                adv_lat     = COALESCE(excluded.adv_lat, device_status.adv_lat),
+                adv_lon     = COALESCE(excluded.adv_lon, device_status.adv_lon)
             """,
             (
                 updated_at, battery_mv, uptime_secs, errors, queue_len,
                 noise_floor, last_rssi, last_snr, tx_air_secs,
                 rx_air_secs, recv, sent, flood_tx, direct_tx, flood_rx,
-                direct_rx, recv_errors, model, fw_build, fw_version
+                direct_rx, recv_errors, model, fw_build, fw_version,
+                adv_lat, adv_lon
             )
         )
 

@@ -622,3 +622,242 @@ body.dark #neighborRegionDump {
 
     z-index: 9999;
 }
+
+/* =========================
+   TRACE DETAIL (mappa traccia)
+
+   Vedi claude/analisi-fattibilita-mappa-dettaglio-traccia-2026-08-25.md.
+   #traceDetailMap richiede un'altezza esplicita in CSS: Leaflet non
+   disegna nulla se il contenitore ha altezza 0 (a differenza di
+   #chartContainer/canvas, che si adattano al contenuto via
+   width/height:100% perché il canvas riceve dimensioni esplicite da
+   Chart.js). overflow:hidden + border-radius tagliano gli angoli
+   quadrati delle tile ai bordi arrotondati del contenitore, stessa
+   convenzione già usata per select/input/filterGroup button sopra.
+========================= */
+
+#traceDetailMap {
+
+    width: 100%;
+
+    height: 500px;
+
+    border: 1px solid #cccccc;
+
+    border-radius: 4px;
+
+    overflow: hidden;
+}
+
+body.dark #traceDetailMap {
+
+    border-color: #555555;
+}
+
+/*
+   .traceLink — link cliccabile sulla colonna timestamp di
+   Scheduled Trace-Path (renderTable() in app.js). A differenza di
+   .nodeLink (tabella Nodes), che non ha mai avuto uno stile dedicato
+   e si affida al blu di default del browser, qui viene introdotto
+   uno stile esplicito perché il blu di default è poco leggibile
+   sullo sfondo scuro delle celle in dark mode; ricalca i colori già
+   usati per .tabBarLink.
+*/
+.traceLink {
+
+    text-decoration: none;
+
+    font-weight: bold;
+
+    color: #1f5fbf;
+
+    transition:
+        color 0.3s;
+}
+
+.traceLink:hover {
+
+    text-decoration: underline;
+
+    color: #4a90e2;
+}
+
+body.dark .traceLink {
+
+    color: #7fc8ff;
+}
+
+body.dark .traceLink:hover {
+
+    color: #b0e0ff;
+}
+
+/*
+   #traceDetailNotices — contenitore vuoto per default (nessun
+   bordo/padding proprio): popolato solo quando loadTraceDetail()
+   deve segnalare qualcosa (traccia con hop in TIMEOUT, posizione non
+   risolvibile per uno o più nodi coinvolti, ecc.). Lo stile visibile
+   sta su .traceNotice, applicato ai singoli avvisi figli, così il
+   contenitore resta invisibile quando non c'è nulla da segnalare.
+*/
+.traceNotice {
+
+    margin-top: 8px;
+
+    margin-bottom: 8px;
+
+    padding: 8px 10px;
+
+    border: 1px solid #d9a441;
+
+    border-radius: 4px;
+
+    background-color: #fff6e0;
+
+    color: #6b4c00;
+
+    font-size: 14px;
+}
+
+body.dark .traceNotice {
+
+    background-color: #3a2f10;
+
+    color: #f0d090;
+
+    border-color: #8a6a20;
+}
+
+/* =========================
+   LEAFLET: DARK MODE
+
+   Il CSS di Leaflet (vendor/leaflet/leaflet.css) è pensato per sfondi
+   chiari: controlli zoom, popup e tooltip hanno sfondo bianco fisso.
+   Qui si sovrascrivono solo i pezzi di "chrome" che restano visibili
+   sopra lo sfondo scuro del body — non le tile della mappa (immagini
+   raster scaricate dinamicamente da Internet a schermo), che restano
+   invariate come da decisione del 2026-08-25 (mappa dinamica via
+   Internet, nessuna ricolorazione lato client dei tile). Selettori e
+   specificità ricalcano esattamente le regole originali in
+   leaflet.css (stesse classi, con il solo prefisso "body.dark" in
+   più), cosi da vincere la cascata senza bisogno di !important.
+========================= */
+
+body.dark .leaflet-bar a {
+
+    background-color: #2f2f2f;
+
+    color: #e0e0e0;
+
+    border-bottom-color: #555555;
+}
+
+body.dark .leaflet-bar a:hover,
+body.dark .leaflet-bar a:focus {
+
+    background-color: #454545;
+}
+
+body.dark .leaflet-bar a.leaflet-disabled {
+
+    background-color: #2f2f2f;
+
+    color: #777777;
+}
+
+body.dark .leaflet-popup-content-wrapper,
+body.dark .leaflet-popup-tip {
+
+    background: #1f1f1f;
+
+    color: #e0e0e0;
+}
+
+body.dark .leaflet-container a.leaflet-popup-close-button {
+
+    color: #b0b0b0;
+}
+
+body.dark .leaflet-container a.leaflet-popup-close-button:hover,
+body.dark .leaflet-container a.leaflet-popup-close-button:focus {
+
+    color: #ffffff;
+}
+
+body.dark .leaflet-tooltip {
+
+    background-color: #1f1f1f;
+
+    border-color: #1f1f1f;
+
+    color: #e0e0e0;
+}
+
+body.dark .leaflet-tooltip-top:before {
+
+    border-top-color: #1f1f1f;
+}
+
+body.dark .leaflet-tooltip-bottom:before {
+
+    border-bottom-color: #1f1f1f;
+}
+
+body.dark .leaflet-tooltip-left:before {
+
+    border-left-color: #1f1f1f;
+}
+
+body.dark .leaflet-tooltip-right:before {
+
+    border-right-color: #1f1f1f;
+}
+
+/*
+   .traceSegmentLabel — tooltip permanente agganciato a ogni polyline
+   di segmento (etichetta SNR sempre visibile, non solo al passaggio
+   del mouse: bindTooltip(..., {permanent:true}) in app.js). Solo
+   dimensione/peso del testo qui: colore/sfondo ereditati dalle
+   regole .leaflet-tooltip sopra (light di default, dark da
+   body.dark .leaflet-tooltip).
+*/
+.traceSegmentLabel {
+
+    font-size: 11px;
+
+    font-weight: bold;
+
+    white-space: nowrap;
+}
+
+/*
+   .traceArrowIcon — freccia disegnata con la tecnica del "triangolo
+   CSS" (bordo trasparente su due lati, colorato sul terzo). Sta su un
+   <div> ANNIDATO dentro il contenuto html di un L.divIcon, non sul
+   div che Leaflet crea per l'icona stessa: quel div esterno viene
+   riposizionato da Leaflet ad ogni pan/zoom scrivendo il proprio
+   transform:translate3d(...) inline, quindi qualunque transform:
+   rotate(...) messo lì verrebbe cancellato al primo movimento della
+   mappa. Il div interno, invece, è puro contenuto html che Leaflet
+   non tocca più dopo la creazione — colore (via style="border-bottom-
+   color:...", stesso valore restituito da snrColor()/colorizeSnr()
+   già usato per colorare il segmento) e rotazione (style="transform:
+   rotate(...)", calcolata una sola volta in app.js dall'orientamento
+   del segmento) restano quindi stabili. Il div esterno creato da
+   Leaflet usa una className neutra, senza regola dedicata qui: senza
+   una regola propria resta un elemento invisibile per default del
+   browser (nessuno sfondo/bordo), che è esattamente il contenitore
+   trasparente che serve.
+*/
+.traceArrowIcon {
+
+    width: 0;
+
+    height: 0;
+
+    border-left: 7px solid transparent;
+
+    border-right: 7px solid transparent;
+
+    border-bottom: 12px solid;
+}

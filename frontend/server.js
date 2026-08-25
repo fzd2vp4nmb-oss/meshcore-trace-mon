@@ -2,6 +2,23 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const zlib = require("zlib");
+const { promisify } = require("util");
+
+//
+// Usata dai 4 endpoint di archivio sotto (ottimizzazione cache/
+// performance segnalata al §3.6 dell'analisi mappa dettaglio traccia
+// e già documentata come Finding 4/24-08 nell'analisi di sicurezza
+// del Collettore): zlib non espone versioni Promise native come fs,
+// quindi si promisifica esplicitamente. fs.readFileSync/zlib.
+// gunzipSync bloccavano l'intero event loop per la durata di lettura
+// + decompressione — nessun'altra richiesta di nessun altro utente
+// veniva servita nel frattempo. Le versioni async qui sotto cedono
+// il controllo al loop mentre I/O e decompressione avvengono in
+// background (thread pool di libuv), eliminando il blocco. Nessuna
+// cache aggiunta in questo intervento: resta un ricalcolo ad ogni
+// richiesta, solo non più bloccante.
+//
+const gunzipAsync = promisify(zlib.gunzip);
 //
 // node:sqlite (code review 2026-08-20, §4) — API sperimentale del
 // runtime Node.js nativo (stabile solo da una versione recente di
@@ -246,8 +263,10 @@ app.get(
 /* =========================
    MESHNODES API (contacts.db)
 
-   Mappa public_key completa -> nome, per i tooltip del frontend
-   (tab Trace e tab Nodes) — prima letta da frontend/mesh-nodes.json
+   Mappa public_key completa -> {adv_name, adv_lat, adv_lon}, per i
+   tooltip del frontend (tab Trace e tab Nodes) e, da questa sessione,
+   per la pagina di dettaglio traccia con mappa (posizione dei
+   ripetitori coinvolti) — prima letta da frontend/mesh-nodes.json
    (curato a mano, poi automatizzato da config.sh), ora una query
    diretta su contacts.db: l'informazione è già lì, un file separato
    era solo un sottoinsieme ridondante da tenere sincronizzato.
@@ -256,6 +275,14 @@ app.get(
    repeater, mai da nodi chat o room server — filtrare elimina ogni
    ambiguità nel caso i prefissi di una chat e di un repeater
    dovessero coincidere.
+
+   NOTA (2026-08-25): il valore per ciascuna chiave è passato da
+   semplice stringa (solo adv_name) a oggetto {adv_name, adv_lat,
+   adv_lon} — cambio di forma della risposta. L'unico consumatore
+   lato client è resolveNodeName() in app.js (verificato: nessun
+   altro punto di app.js legge la variabile meshNodes), aggiornato
+   in questa stessa sessione per leggere .adv_name invece del valore
+   diretto — v. frontend/public/app.js.
 ========================= */
 
 app.get(
@@ -300,7 +327,7 @@ app.get(
 
                 const rows =
                     db.prepare(
-                        `SELECT public_key, adv_name
+                        `SELECT public_key, adv_name, adv_lat, adv_lon
                          FROM nodes
                          WHERE node_type = 2
                            AND adv_name IS NOT NULL
@@ -313,8 +340,11 @@ app.get(
                     const row of rows
                 ) {
 
-                    meshNodes[row.public_key] =
-                        row.adv_name;
+                    meshNodes[row.public_key] = {
+                        adv_name: row.adv_name,
+                        adv_lat: row.adv_lat,
+                        adv_lon: row.adv_lon
+                    };
                 }
 
                 res.json(
@@ -391,7 +421,7 @@ app.get(
 
 app.get(
     "/api/archive/load",
-    (
+    async (
         req,
         res
     ) => {
@@ -434,15 +464,16 @@ app.get(
             }
 
             const compressed =
-                fs.readFileSync(
+                await fs.promises.readFile(
                     fullPath
                 );
 
             const content =
-                zlib
-                    .gunzipSync(
+                (
+                    await gunzipAsync(
                         compressed
                     )
+                )
                     .toString(
                         "utf8"
                     );
@@ -834,7 +865,7 @@ app.get(
 
 app.get(
     "/api/nodes/:publicKey/archive/load",
-    (
+    async (
         req,
         res
     ) => {
@@ -877,15 +908,16 @@ app.get(
             }
 
             const compressed =
-                fs.readFileSync(
+                await fs.promises.readFile(
                     fullPath
                 );
 
             const content =
-                zlib
-                    .gunzipSync(
+                (
+                    await gunzipAsync(
                         compressed
                     )
+                )
                     .toString(
                         "utf8"
                     );
@@ -1350,7 +1382,7 @@ app.get(
 
 app.get(
     "/api/neighbors/:publicKey/archive/snapshots",
-    (
+    async (
         req,
         res
     ) => {
@@ -1385,11 +1417,10 @@ app.get(
                     .json({ error: "Archive not found" });
             }
 
-            const compressed = fs.readFileSync(fullPath);
+            const compressed = await fs.promises.readFile(fullPath);
 
             const content =
-                zlib
-                    .gunzipSync(compressed)
+                (await gunzipAsync(compressed))
                     .toString("utf8");
 
             const allRows = JSON.parse(content);
@@ -1461,7 +1492,7 @@ app.get(
 
 app.get(
     "/api/neighbors/:publicKey/archive/load",
-    (
+    async (
         req,
         res
     ) => {
@@ -1507,11 +1538,10 @@ app.get(
                     .json({ error: "Archive not found" });
             }
 
-            const compressed = fs.readFileSync(fullPath);
+            const compressed = await fs.promises.readFile(fullPath);
 
             const content =
-                zlib
-                    .gunzipSync(compressed)
+                (await gunzipAsync(compressed))
                     .toString("utf8");
 
             const allRows = JSON.parse(content);

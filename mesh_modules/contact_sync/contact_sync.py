@@ -552,6 +552,24 @@ class ContactSyncModule:
         packets = packets or {}
         device_info = device_info or {}
 
+        #
+        # Posizione geografica del companion connesso a trace-mon
+        # stesso (adv_lat/adv_lon), per la pagina di dettaglio traccia
+        # con mappa (frontend). A differenza di core/radio/packets/
+        # device_info sopra, NON è una query locale al device: è già
+        # disponibile in mesh.self_info, popolato in modo asincrono
+        # dalla libreria ad ogni connessione/riconnessione (evento
+        # SELF_INFO, v. stesso pattern già documentato in
+        # SystemService._status_result()) — nessun comando aggiuntivo
+        # da inviare, nessun rischio di allungare questo giro di sync.
+        # Letta qui (non condizionata al successo delle quattro query
+        # sopra, il cui esito combinato è verificato solo per decidere
+        # se saltare l'intero upsert) così una connessione riuscita ma
+        # con, per dire, get_stats_radio() fallita non perde comunque
+        # l'aggiornamento della posizione, se nota.
+        #
+        self_info = self.engine.mesh.self_info or {}
+
         await self._run_db(
             self.db.upsert_device_status,
             updated_at=now,
@@ -573,7 +591,9 @@ class ContactSyncModule:
             recv_errors=packets.get("recv_errors"),
             model=device_info.get("model"),
             fw_build=device_info.get("fw_build"),
-            fw_version=device_info.get("ver")
+            fw_version=device_info.get("ver"),
+            adv_lat=self_info.get("adv_lat"),
+            adv_lon=self_info.get("adv_lon")
         )
 
     async def _get_stats_safe(self, label, factory):

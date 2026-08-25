@@ -76,6 +76,27 @@ let nodeDetailChart = null;
 let nodesDataCache = [];
 
 //
+// Mappa Leaflet della pagina di dettaglio traccia — creata una sola
+// volta (v. ensureTraceDetailMap() più sotto) e riutilizzata ad ogni
+// apertura, a differenza di nodeDetailChart (Chart.js) che viene
+// distrutto e ricreato ogni volta. traceDetailLayerGroup è lo strato
+// svuotato e ripopolato ad ogni apertura (solo i marker dei nodi — non
+// dipendono dallo zoom), mentre traceSegmentLayerGroup (segmenti +
+// frecce) viene svuotato e ripopolato sia ad ogni apertura sia ad
+// ogni cambio di zoom (v. renderTraceSegmentsAtCurrentZoom() più
+// sotto — lo spostamento andata/ritorno è in pixel schermo, non in
+// metri, quindi va ricalcolato quando lo zoom cambia). traceSegmentDefs
+// è la lista "grezza" (indipendente dallo zoom) dei segmenti della
+// traccia attualmente aperta, calcolata una sola volta da
+// loadTraceDetail() e consumata ad ogni (ri)disegno.
+//
+let traceDetailMap = null;
+let traceDetailLayerGroup = null;
+let traceSegmentLayerGroup = null;
+let traceSegmentDefs = [];
+let traceArrowPane = null;
+
+//
 // Nodo attualmente aperto nella vista dettaglio — serve al listener
 // del selettore periodo per sapere per quale nodo ricaricare le
 // osservazioni quando l'utente cambia mese.
@@ -119,6 +140,7 @@ let meshNodesRequestId = 0;
 let neighborsRepeaterListRequestId = 0;
 let nodeDetailArchiveListRequestId = 0;
 let neighboursArchiveListRequestId = 0;
+let traceDetailRequestId = 0;
 
 /* ==========================================
    AUTO REFRESH INTERVAL
@@ -471,11 +493,18 @@ function resolveNodeName(
         return "SRC";
     }
 
+    //
+    // /api/meshnodes ora restituisce {adv_name, adv_lat, adv_lon} per
+    // ogni chiave invece della semplice stringa adv_name (2026-08-25,
+    // v. server.js) — .adv_name qui e su matches[0] sotto, non più il
+    // valore diretto. resolveNodePosition() (v. sezione TRACE DETAIL
+    // più sotto) legge .adv_lat/.adv_lon dallo stesso oggetto.
+    //
     if (
         meshNodes[nodeId]
     ) {
 
-        return meshNodes[nodeId];
+        return meshNodes[nodeId].adv_name;
     }
 
     const matches =
@@ -495,7 +524,7 @@ function resolveNodeName(
 
         return meshNodes[
             matches[0]
-        ];
+        ].adv_name;
     }
 
     if (
@@ -792,7 +821,8 @@ function updateView() {
         dataCache.paths[key];
 
     renderTable(
-        data.pathObservations
+        data.pathObservations,
+        key
     );
 
     renderStats(
@@ -808,7 +838,7 @@ function updateView() {
    TABLE
 ========================= */
 
-function renderTable(rows) {
+function renderTable(rows, pathKey) {
 
     const table =
         document.getElementById(
@@ -852,7 +882,7 @@ function renderTable(rows) {
     html += "</tr>";
 
     rows.forEach(
-        r => {
+        (r, rowIndex) => {
 
             html +=
                 "<tr>";
@@ -899,6 +929,29 @@ function renderTable(rows) {
                            );
                    }
 
+                    //
+                    // Colonna timestamp -> link cliccabile verso la
+                    // pagina di dettaglio traccia (mappa + segmenti,
+                    // v. sezione TRACE DETAIL più sotto). data-row-
+                    // index invece di incorporare l'intera riga nel
+                    // DOM: il click handler subito sotto la recupera
+                    // da "rows" per closure — stesso schema già usato
+                    // da renderNodesTable() con data-key su .nodeLink
+                    // (v. goToNodeDetail()). Il valore del timestamp
+                    // non viene mai passato attraverso innerHTML come
+                    // dato esterno: è generato da formatTimestamp()
+                    // (parser.js) da sole cifre/separatori, non serve
+                    // escapeHtml().
+                    //
+                    if (
+                        c ===
+                        "timestamp"
+                    ) {
+
+                        value =
+                            `<a href="#" class="traceLink" data-row-index="${rowIndex}">${value}</a>`;
+                    }
+
                     html +=
                        `<td>${value}</td>`;
 
@@ -912,6 +965,30 @@ function renderTable(rows) {
 
     table.innerHTML =
         html;
+
+    table.querySelectorAll(
+        ".traceLink"
+    ).forEach(
+        link => {
+
+            link.addEventListener(
+                "click",
+                (e) => {
+
+                    e.preventDefault();
+
+                    goToTraceDetail(
+                        rows[
+                            Number(
+                                link.dataset.rowIndex
+                            )
+                        ],
+                        pathKey
+                    );
+                }
+            );
+        }
+    );
 }
 
 /* =========================
@@ -1329,6 +1406,1232 @@ function renderChart(
                     }
             }
         );
+}
+
+/* =========================
+   TRACE DETAIL (mappa)
+
+   Vedi claude/analisi-fattibilita-mappa-dettaglio-traccia-2026-08-25.md
+   per l'analisi di fattibilità completa. Pagina di dettaglio aperta
+   cliccando il timestamp di una riga in Scheduled Trace-Path
+   (renderTable() sopra): mostra su una mappa Leaflet i marker dei
+   nodi coinvolti nella traccia (SRC + repeater del percorso) e un
+   segmento con freccia per ciascun hop, colorato/etichettato con lo
+   stesso SNR già mostrato in tabella.
+
+   Nessuna nuova chiamata di rete per i dati della traccia stessa: la
+   riga cliccata (con tutte le sue chiavi "X→Y") è già interamente
+   presente in dataCache (v. updateView()/renderTable()), sia essa
+   stata popolata da /api/data (live) sia da /api/archive/load (mese
+   archiviato) — la pagina di dettaglio funziona quindi identica in
+   entrambi i casi senza bisogno di sapere da quale delle due
+   provenga. L'unica fetch qui è verso /api/device_status, per la
+   posizione del nodo locale (SRC): quella non è mai in dataCache (non
+   fa parte di trace.json) e va presa "live" indipendentemente dal
+   fatto che la traccia visualizzata sia di un mese archiviato —
+   coerente con l'assenza di uno storico posizioni in contacts.db (i
+   record vengono aggiornati sul posto, non archiviati): è comunque
+   impossibile mostrare la posizione "storica" di un repeater per una
+   traccia vecchia, solo quella CORRENTE è disponibile, per SRC come
+   per ogni altro nodo. Nota nota esplicitamente all'utente in fase di
+   analisi, non una scelta implementativa silenziosa.
+========================= */
+
+//
+// resolveNodePosition() — variante di resolveNodeName() (sopra) che
+// restituisce la posizione invece del nome. Logica di prefix-matching
+// duplicata volutamente invece di fattorizzata in un helper comune:
+// resolveNodeName() ha già molti chiamanti esistenti (tooltip
+// Trace/Nodes) che non hanno nulla a che fare con la posizione; un
+// refactor condiviso avrebbe un raggio di impatto più ampio di quanto
+// serva per questa sola funzionalità.
+//
+// Ritorna sempre { status, lat?, lon? }:
+//   "src"         — nodeId === "SRC" (nessuna lat/lon qui: la
+//                   posizione di SRC arriva da /api/device_status,
+//                   non da meshNodes — v. loadTraceDetail()).
+//   "ok"          — un solo nodo risolto, con adv_lat/adv_lon
+//                   entrambi non nulli.
+//   "no-position" — nodo risolto in modo univoco ma senza posizione
+//                   nota in contacts.db (mai ricevuto un advert con
+//                   GPS, o Companion/nodo senza fix).
+//   "ambiguous"   — più public_key iniziano con lo stesso prefisso
+//                   (stesso caso limite già gestito da
+//                   resolveNodeName()).
+//   "unknown"     — nessun nodo trovato in meshNodes.
+//
+function resolveNodePosition(
+    nodeId
+) {
+
+    if (
+        nodeId === "SRC"
+    ) {
+
+        return { status: "src" };
+    }
+
+    const entry =
+        meshNodes[nodeId];
+
+    if (
+        entry
+    ) {
+
+        if (
+            entry.adv_lat != null &&
+            entry.adv_lon != null
+        ) {
+
+            return {
+                status: "ok",
+                lat: entry.adv_lat,
+                lon: entry.adv_lon
+            };
+        }
+
+        return { status: "no-position" };
+    }
+
+    const matches =
+        Object.keys(
+            meshNodes
+        ).filter(
+            key =>
+                key.toLowerCase()
+                   .startsWith(
+                       nodeId.toLowerCase()
+                   )
+        );
+
+    if (
+        matches.length === 1
+    ) {
+
+        const match =
+            meshNodes[
+                matches[0]
+            ];
+
+        if (
+            match.adv_lat != null &&
+            match.adv_lon != null
+        ) {
+
+            return {
+                status: "ok",
+                lat: match.adv_lat,
+                lon: match.adv_lon
+            };
+        }
+
+        return { status: "no-position" };
+    }
+
+    if (
+        matches.length > 1
+    ) {
+
+        return { status: "ambiguous" };
+    }
+
+    return { status: "unknown" };
+}
+
+//
+// Etichetta SNR per i segmenti sulla mappa — stessa palette
+// rosso/verde già usata da colorizeSnr() (celle numeriche della
+// tabella) e dallo status TIMEOUT (span rosso in renderTable()),
+// riportata identica qui invece di introdurre una seconda scala
+// colori per la stessa informazione.
+//
+function traceSegmentLabelHtml(
+    value
+) {
+
+    if (
+        value === "TIMEOUT"
+    ) {
+
+        return '<span style="color:red;font-weight:bold;">TIMEOUT</span>';
+    }
+
+    if (
+        typeof value === "number"
+    ) {
+
+        return colorizeSnr(
+            value
+        );
+    }
+
+    return escapeHtml(
+        String(
+            value
+        )
+    );
+}
+
+//
+// Spostamento perpendicolare in PIXEL SCHERMO (non metri/gradi),
+// ricalcolato ad ogni cambio di zoom della mappa (v.
+// renderTraceSegmentsAtCurrentZoom() più sotto e il listener
+// "zoomend" registrato in ensureTraceDetailMap()).
+//
+// Corregge un difetto della prima versione di questa funzionalità
+// (v. CHANGES_mappa_dettaglio_traccia.md), segnalato dall'utente il
+// 2026-08-25 dopo aver usato la funzionalità dal vivo: uno
+// spostamento fisso in METRI (la versione precedente, 8m) produce una
+// separazione visiva che dipende dallo zoom — impercettibile a zoom
+// "da rete" (l'utente doveva zoomare molto per notarla, poi tornare
+// indietro per muoversi), enorme a zoom "da strada" — perché la scala
+// metri/pixel della mappa cambia con lo zoom. Era esattamente il
+// problema che l'analisi di fattibilità originale aveva previsto e
+// per cui raccomandava uno spostamento in pixel, non in gradi/metri
+// (§3.4, claude/analisi-fattibilita-mappa-dettaglio-traccia-2026-08-25.md:
+// "uno scostamento fisso in gradi di lat/lon apparirebbe invece enorme
+// a zoom alto e invisibile a zoom basso") — raccomandazione non
+// applicata nella prima implementazione. map.project(latlng, zoom) /
+// map.unproject(point, zoom) proiettano in coordinate pixel "di
+// mondo" per uno zoom esplicito, indipendenti dal pan/centro corrente
+// della vista: uno spostamento calcolato lì resta quindi visivamente
+// costante in pixel su schermo a qualunque zoom, MA deve essere
+// ricalcolato ogni volta che lo zoom cambia (un valore calcolato una
+// sola volta e poi fissato in lat/lng tornerebbe ad essere, di fatto,
+// uno spostamento a dimensione fissa sul terreno — lo stesso difetto
+// da cui si parte).
+//
+// "sign" vale 0 (nessuno spostamento: segmento disegnato sulla sua
+// vera geodetica) oppure 1 (spostato di TRACE_SEGMENT_OFFSET_PIXELS
+// sul lato determinato dalla direzione from->to). Il chiamante
+// (renderTraceSegmentsAtCurrentZoom()) passa sempre latlng1/latlng2
+// nell'ordine naturale from/to del segmento (mai scambiati): per due
+// segmenti che percorrono lo stesso collegamento fisico in direzioni
+// opposte ("A→B" e "B→A"), l'inversione naturale di from/to fra
+// andata e ritorno ribalta GIÀ DA SOLA il lato dello spostamento
+// (identità vettoriale: ruotare di 90° il vettore invertito -(dx,dy)
+// dà il perpendicolare opposto a quello di (dx,dy)) — è per questo
+// che "sign" non deve MAI valere -1: un'inversione esplicita del
+// segno, sommata a quella naturale, le annullerebbe a vicenda
+// riportando andata e ritorno sulla stessa linea (bug trovato e
+// corretto in fase di test contro dati reali, v.
+// CHANGES_mappa_dettaglio_traccia.md) invece di separarle come
+// richiesto esplicitamente dall'utente il 2026-08-23 (sovrapposizione
+// dei segmenti andata/ritorno).
+//
+const TRACE_SEGMENT_OFFSET_PIXELS = 6;
+
+//
+// Scostamento AGGIUNTIVO (oltre a TRACE_SEGMENT_OFFSET_PIXELS sopra)
+// applicato solo all'etichetta SNR permanente di un segmento
+// (.traceSegmentLabel), nella STESSA direzione perpendicolare della
+// linea a cui è agganciata — v. l'uso di "perpUnit" in
+// renderTraceSegmentsAtCurrentZoom() più sotto. Corregge un difetto
+// segnalato dall'utente il 2026-08-25 (con screenshot) su due
+// segmenti andata/ritorno paralleli: l'etichetta di un
+// L.polyline con bindTooltip({direction:"center"}) è centrata
+// ESATTAMENTE sul punto medio della linea — con le due linee separate
+// di soli TRACE_SEGMENT_OFFSET_PIXELS*2 = 12px (v. sopra) ma i box
+// delle etichette larghi ~65-75px (testo breve tipo "-5.5 dB"/
+// "TIMEOUT" a 11px bold, v. .traceSegmentLabel in style.css), i due
+// box finiscono quasi interamente sovrapposti: si vede un unico
+// blocco di testo illeggibile invece di due valori distinti — non un
+// problema di posizione dei punti di ancoraggio (già correttamente
+// separati), ma delle dimensioni del box rispetto a quella
+// separazione. 30px aggiuntivi per lato (60px totali fra le due
+// etichette, oltre ai 12px già dati dallo scostamento della linea)
+// coprono il caso peggiore (segmento quasi verticale a schermo, dove
+// lo scostamento perpendicolare è quasi tutto orizzontale — l'asse in
+// cui il box è più largo) senza allontanare eccessivamente
+// l'etichetta dalla propria linea negli altri casi. Applicato solo
+// quando sign!=0 (esiste un ritorno nella stessa traccia, quindi una
+// seconda linea con cui l'etichetta potrebbe altrimenti sovrapporsi):
+// un segmento senza ritorno resta com'era, centrato sulla propria
+// (unica) linea. Nessun ricalcolo extra ad ogni zoom necessario: è
+// l'opzione "offset" di L.Tooltip, sempre espressa in pixel schermo
+// fissi rispetto al punto di ancoraggio — la stessa proprietà di
+// "costanza in pixel indipendente dallo zoom" di
+// TRACE_SEGMENT_OFFSET_PIXELS, qui ottenuta gratuitamente perché
+// Leaflet applica l'offset al momento del disegno, non del calcolo
+// delle coordinate.
+//
+const TRACE_SEGMENT_LABEL_OFFSET_PIXELS = 30;
+
+function offsetSegmentPixels(
+    map,
+    zoom,
+    latlng1,
+    latlng2,
+    sign
+) {
+
+    const p1 =
+        map.project(
+            [latlng1.lat, latlng1.lng],
+            zoom
+        );
+
+    const p2 =
+        map.project(
+            [latlng2.lat, latlng2.lng],
+            zoom
+        );
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+
+    //
+    // "|| 1" evita una divisione per zero quando i due estremi
+    // coincidono esattamente (caso limite: due nodi colocati alla
+    // stessa posizione GPS, es. un repeater fisicamente accanto al
+    // Companion). Con lunghezza 0 anche lo spostamento risultante è 0
+    // (dx/dy sono già 0), quindi il segmento resta degenere ma non
+    // produce NaN/Infinity; renderTraceSegmentsAtCurrentZoom() salta
+    // il disegno delle frecce in questo caso (il bearing non è
+    // definito fra due punti coincidenti).
+    //
+    const len =
+        Math.sqrt(dx * dx + dy * dy) ||
+        1;
+
+    //
+    // Vettore perpendicolare UNITARIO (non ancora scalato da
+    // TRACE_SEGMENT_OFFSET_PIXELS né da "sign"): restituito al
+    // chiamante insieme alle coordinate offset perché
+    // renderTraceSegmentsAtCurrentZoom() lo riusa per spostare anche
+    // l'etichetta SNR (v. TRACE_SEGMENT_LABEL_OFFSET_PIXELS sopra),
+    // nella stessa identica direzione della linea — senza doverlo
+    // ricalcolare da capo (stesso dx/dy/len già disponibili qui).
+    //
+    const perpUnitX = -dy / len;
+    const perpUnitY = dx / len;
+
+    const perpX =
+        perpUnitX *
+        TRACE_SEGMENT_OFFSET_PIXELS *
+        sign;
+
+    const perpY =
+        perpUnitY *
+        TRACE_SEGMENT_OFFSET_PIXELS *
+        sign;
+
+    const o1 =
+        map.unproject(
+            [p1.x + perpX, p1.y + perpY],
+            zoom
+        );
+
+    const o2 =
+        map.unproject(
+            [p2.x + perpX, p2.y + perpY],
+            zoom
+        );
+
+    return {
+        latlngs: [
+            [o1.lat, o1.lng],
+            [o2.lat, o2.lng]
+        ],
+        perpUnit: { x: perpUnitX, y: perpUnitY },
+        lengthPixels: len
+    };
+}
+
+//
+// Rotta iniziale (bearing) fra due punti [lat,lon] in gradi, 0-360 —
+// formula standard great-circle, usata solo per orientare la freccia
+// dell'arrowhead di ciascun segmento (v. loadTraceDetail()). 0° = Nord,
+// crescente in senso orario — stessa convenzione di rotazione oraria
+// di CSS transform:rotate() con angoli positivi, applicata senza
+// conversioni in .traceArrowIcon (style.css).
+//
+function bearingDegrees(
+    latlng1,
+    latlng2
+) {
+
+    const lat1 =
+        latlng1[0] * Math.PI / 180;
+
+    const lat2 =
+        latlng2[0] * Math.PI / 180;
+
+    const dLon =
+        (latlng2[1] - latlng1[1]) *
+        Math.PI / 180;
+
+    const y =
+        Math.sin(dLon) *
+        Math.cos(lat2);
+
+    const x =
+        Math.cos(lat1) * Math.sin(lat2) -
+        Math.sin(lat1) * Math.cos(lat2) *
+            Math.cos(dLon);
+
+    return (
+        Math.atan2(y, x) *
+            180 / Math.PI +
+        360
+    ) % 360;
+}
+
+//
+// Ogni segmento disegna DUE frecce, non una sola (richiesta esplicita
+// dell'utente il 2026-08-25, rappresentata con l'ASCII
+// "----->---->" invece di "------>-------"): una "a metà" percorso
+// (ARROW_MID_T, v. renderTraceSegmentsAtCurrentZoom() più sotto) e una
+// vicino alla destinazione (ARROW_END_T lì sotto). Lo scopo della
+// seconda è poter guardare il marker di un nodo e capire subito, senza
+// dover seguire l'intero segmento, quali collegamenti ARRIVANO a quel
+// nodo (freccia appena fuori dal marker) e quali invece PARTONO da lui
+// (nessuna freccia in quel punto, solo l'inizio della linea) — utile
+// in particolare quando più segmenti convergono/divergono sullo stesso
+// nodo.
+//
+// TRACE_ARROW_END_BACKOFF_PIXELS: distanza in pixel schermo (non in
+// gradi/metri, stessa logica "costante a schermo indipendentemente
+// dallo zoom" di TRACE_SEGMENT_OFFSET_PIXELS) fra la punta della
+// freccia "di arrivo" e il centro del marker di destinazione — un
+// valore fisso in "t" (frazione del segmento) sarebbe invece arbitrario:
+// a seconda della lunghezza reale del segmento e dello zoom finirebbe
+// ora dentro il marker (segmento corto/zoom alto), ora troppo lontano
+// da esso per leggersi come "in arrivo" (segmento lungo/zoom basso).
+// 18px è poco più del raggio dell'icona del marker (16px, v.
+// TRACE_SRC_ICON/TRACE_REPEATER_ICON più sotto, iconSize 32x32): la
+// freccia resta quindi appena fuori dal cerchio del marker, non
+// sovrapposta.
+//
+// TRACE_ARROW_MIN_SEPARATION_PIXELS: distanza minima in pixel, oltre
+// ARROW_MID_T, sotto la quale la freccia "di arrivo" non scende MAI —
+// evita che le due frecce si sovrappongano fra loro sui segmenti molto
+// corti a schermo (due nodi vicini, o zoom molto basso), dove seguire
+// solo TRACE_ARROW_END_BACKOFF_PIXELS potrebbe altrimenti posizionare
+// la freccia "di arrivo" PRIMA di quella "a metà".
+//
+const TRACE_ARROW_END_BACKOFF_PIXELS = 18;
+const TRACE_ARROW_MIN_SEPARATION_PIXELS = 16;
+
+//
+// Crea e aggiunge un marker-freccia (icona CSS a triangolo, v.
+// .traceArrowIcon in style.css) alla posizione "t" (0 = "from", 1 =
+// "to") lungo il segmento "offset" (i due estremi [lat,lon] GIÀ
+// spostati da offsetSegmentPixels() — non i punti veri del segmento),
+// con l'orientamento "bearing" e il colore del segmento. Estratta come
+// funzione a sé (invece di duplicare la creazione della divIcon)
+// perché renderTraceSegmentsAtCurrentZoom() la richiama due volte per
+// ogni segmento — v. il commento sopra.
+//
+function addTraceArrowMarker(
+    offset,
+    bearing,
+    color,
+    t
+) {
+
+    const lat =
+        offset[0][0] +
+        (offset[1][0] - offset[0][0]) *
+            t;
+
+    const lon =
+        offset[0][1] +
+        (offset[1][1] - offset[0][1]) *
+            t;
+
+    const arrowIcon =
+        L.divIcon(
+            {
+                className: "traceArrowIconWrapper",
+                html:
+                    `<div class="traceArrowIcon" style="border-bottom-color:${color};transform:rotate(${bearing}deg);"></div>`,
+                iconSize: [14, 12],
+                iconAnchor: [7, 6]
+            }
+        );
+
+    L.marker(
+        [lat, lon],
+        {
+            icon: arrowIcon,
+            interactive: false,
+            pane: "traceArrowPane"
+        }
+    ).addTo(
+        traceSegmentLayerGroup
+    );
+}
+
+//
+// Ridisegna segmenti + frecce di direzione usando lo zoom CORRENTE
+// della mappa. traceSegmentDefs è la lista "grezza" (indipendente
+// dallo zoom) calcolata una sola volta da loadTraceDetail() per la
+// traccia attualmente aperta — questa funzione la consuma e basta,
+// non tocca mai i dati della traccia. Richiamata subito dopo
+// map.fitBounds() in loadTraceDetail() e ad ogni evento "zoomend"
+// (listener registrato una sola volta in ensureTraceDetailMap(), v.
+// sotto): è quest'ultima chiamata che rende lo spostamento
+// andata/ritorno visivamente costante in pixel a qualunque zoom (v.
+// offsetSegmentPixels() sopra) — ricalcolarlo una volta sola alla
+// zoom "di apertura" e poi lasciarlo fisso in lat/lng vanificherebbe
+// lo scopo. Non tocca traceDetailLayerGroup (i marker dei nodi, che
+// non dipendono dallo zoom): solo traceSegmentLayerGroup viene
+// svuotato e ripopolato, così uno zoom dell'utente non richiede di
+// ricreare anche i marker.
+//
+function renderTraceSegmentsAtCurrentZoom() {
+
+    if (
+        !traceDetailMap ||
+        !traceSegmentLayerGroup
+    ) {
+
+        return;
+    }
+
+    traceSegmentLayerGroup.clearLayers();
+
+    const zoom =
+        traceDetailMap.getZoom();
+
+    traceSegmentDefs.forEach(
+        def => {
+
+            const offsetResult =
+                offsetSegmentPixels(
+                    traceDetailMap,
+                    zoom,
+                    def.latlngFrom,
+                    def.latlngTo,
+                    def.sign
+                );
+
+            const offset =
+                offsetResult.latlngs;
+
+            //
+            // Sposta anche l'etichetta SNR, non solo la linea (v.
+            // TRACE_SEGMENT_LABEL_OFFSET_PIXELS sopra) — stessa
+            // direzione perpendicolare della linea (offsetResult.
+            // perpUnit), stesso "sign" (0 = nessun ritorno in questa
+            // traccia, quindi nessuna seconda linea/etichetta con cui
+            // potrebbe sovrapporsi: offset [0,0], invariato rispetto a
+            // prima).
+            //
+            const labelOffset = [
+                offsetResult.perpUnit.x *
+                    TRACE_SEGMENT_LABEL_OFFSET_PIXELS *
+                    def.sign,
+                offsetResult.perpUnit.y *
+                    TRACE_SEGMENT_LABEL_OFFSET_PIXELS *
+                    def.sign
+            ];
+
+            L.polyline(
+                offset,
+                {
+                    color: def.color,
+                    weight: 3,
+                    dashArray: def.dashArray
+                }
+            ).bindTooltip(
+                def.labelHtml,
+                {
+                    permanent: true,
+                    direction: "center",
+                    className: "traceSegmentLabel",
+                    offset: labelOffset
+                }
+            ).addTo(
+                traceSegmentLayerGroup
+            );
+
+            //
+            // Nessuna freccia su un segmento degenere (v.
+            // offsetSegmentPixels(): from/to sulla stessa posizione):
+            // il bearing non è definito quando i due estremi
+            // coincidono.
+            //
+            if (
+                def.isDegenerate
+            ) {
+
+                return;
+            }
+
+            const bearing =
+                bearingDegrees(
+                    offset[0],
+                    offset[1]
+                );
+
+            //
+            // Freccia "a metà" (v. addTraceArrowMarker() più sopra):
+            // al 70% del segmento, non esattamente al centro, per non
+            // sovrapporsi all'etichetta SNR permanente — che resta
+            // agganciata al centro geometrico della linea
+            // (bindTooltip/direction:"center" più sopra) anche se ora
+            // spostata di lato via "offset" (labelOffset), quindi la
+            // convivenza fra le due non è più stretta come nella
+            // prima versione, ma il 70% resta comunque un buon punto
+            // "di lettura" intermedio per chi guarda il segmento nel
+            // suo complesso.
+            //
+            const ARROW_MID_T = 0.7;
+
+            addTraceArrowMarker(
+                offset,
+                bearing,
+                def.color,
+                ARROW_MID_T
+            );
+
+            //
+            // Freccia "di arrivo", vicino a "to" (v. il commento su
+            // addTraceArrowMarker() più sopra per il perché di questa
+            // seconda freccia). desiredEndT: a
+            // TRACE_ARROW_END_BACKOFF_PIXELS di distanza fissa da "to".
+            // minEndT: mai più vicina di TRACE_ARROW_MIN_SEPARATION_PIXELS
+            // oltre ARROW_MID_T, per non sovrapporsi alla freccia "a
+            // metà" sui segmenti corti a schermo. 0.98 come tetto:
+            // mai esattamente su "to" (sovrapporrebbe la freccia al
+            // marker stesso) nemmeno quando entrambi i vincoli sopra
+            // spingerebbero oltre.
+            //
+            const desiredEndT =
+                1 -
+                TRACE_ARROW_END_BACKOFF_PIXELS /
+                    offsetResult.lengthPixels;
+
+            const minEndT =
+                ARROW_MID_T +
+                TRACE_ARROW_MIN_SEPARATION_PIXELS /
+                    offsetResult.lengthPixels;
+
+            const ARROW_END_T =
+                Math.min(
+                    0.98,
+                    Math.max(
+                        desiredEndT,
+                        minEndT
+                    )
+                );
+
+            addTraceArrowMarker(
+                offset,
+                bearing,
+                def.color,
+                ARROW_END_T
+            );
+        }
+    );
+}
+
+//
+// Icone personalizzate per i marker SRC/repeater, al posto del pin blu
+// di default di Leaflet — grafiche fornite dall'utente (2026-08-25,
+// screenshot ripuliti dallo sfondo della mappa d'origine e ritagliati
+// su un cerchio trasparente). iconAnchor al CENTRO del cerchio
+// (16,16 su 32x32), non alla punta inferiore come il pin di default:
+// questi sono badge circolari, non pin appuntiti — il centro del
+// cerchio è il punto che deve coincidere con la coordinata lat/lon,
+// non il bordo inferiore. iconRetinaUrl usa la variante -2x già
+// preparata, stesso schema del pin di default di Leaflet
+// (marker-icon.png/marker-icon-2x.png in vendor/leaflet/images/).
+//
+const TRACE_SRC_ICON =
+    L.icon(
+        {
+            iconUrl: "images/markers/src.png",
+            iconRetinaUrl: "images/markers/src-2x.png",
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+            popupAnchor: [0, -16]
+        }
+    );
+
+const TRACE_REPEATER_ICON =
+    L.icon(
+        {
+            iconUrl: "images/markers/repeater.png",
+            iconRetinaUrl: "images/markers/repeater-2x.png",
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+            popupAnchor: [0, -16]
+        }
+    );
+
+//
+// Mappa Leaflet creata UNA VOLTA sola e riutilizzata ad ogni apertura
+// del dettaglio (clearLayers() su traceDetailLayerGroup invece di
+// distruggere/ricreare la mappa) — a differenza di nodeDetailChart
+// (Chart.js), distrutto e ricreato ad ogni rendering
+// (renderNodeDetailChart(): "nodeDetailChart.destroy()" seguito da
+// "new Chart(...)"). Le due librerie hanno costi opposti per questa
+// operazione: Chart.js ricrea un <canvas> in pochi millisecondi senza
+// alcuna richiesta di rete, mentre un L.map() nuovo comporterebbe uno
+// scaricamento ex novo delle tile OpenStreetMap dal server remoto ad
+// ogni apertura — inutile e più lento, dato che la view (centro/zoom)
+// e le tile già scaricate restano valide fra un'apertura e l'altra
+// dello stesso pannello.
+//
+function ensureTraceDetailMap() {
+
+    if (
+        traceDetailMap
+    ) {
+
+        return traceDetailMap;
+    }
+
+    traceDetailMap =
+        L.map(
+            "traceDetailMap"
+        ).setView(
+            [0, 0],
+            2
+        );
+
+    //
+    // Tile OpenStreetMap standard, scaricate dinamicamente da
+    // Internet ad ogni pan/zoom effettuato dall'utente — nessuna tile
+    // pre-scaricata o servita dal Nodo stesso, per decisione esplicita
+    // del 2026-08-25 ("Deve essere un'operazione dinamica via internet
+    // [...] non voglio precaricare sul server tutti i pezzi di mappa
+    // possibili"). Attribuzione riportata come richiesto dalla Tile
+    // Usage Policy di OpenStreetMap.
+    //
+    L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+            maxZoom: 19,
+            attribution:
+                '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+        }
+    ).addTo(
+        traceDetailMap
+    );
+
+    traceDetailLayerGroup =
+        L.layerGroup().addTo(
+            traceDetailMap
+        );
+
+    //
+    // Strato SEPARATO per segmenti+frecce (traceDetailLayerGroup resta
+    // solo per i marker dei nodi): svuotato e ripopolato da
+    // renderTraceSegmentsAtCurrentZoom(), sia subito dopo ogni
+    // apertura di una traccia sia ad ogni "zoomend" (v. il listener
+    // poco sotto) — separarlo da traceDetailLayerGroup evita di dover
+    // ricreare anche i marker dei nodi (costosi, invariati con lo
+    // zoom) ogni volta che cambia solo il livello di zoom.
+    //
+    traceSegmentLayerGroup =
+        L.layerGroup().addTo(
+            traceDetailMap
+        );
+
+    //
+    // Pane dedicato alle frecce di direzione, con z-index PIÙ ALTO
+    // del tooltipPane nativo di Leaflet (650) — bug reale trovato
+    // testando in un browser vero (v.
+    // docs/CHANGES_mappa_dettaglio_traccia.md): l'etichetta SNR
+    // permanente di ogni segmento (bindTooltip su L.polyline) e la
+    // freccia di quello stesso segmento condividono lo stesso punto
+    // (il centro del segmento), ma il tooltipPane di Leaflet sta SOPRA
+    // il markerPane di default (600) dove finiva la freccia — risultato,
+    // l'etichetta (con il proprio sfondo opaco) copriva completamente
+    // la freccia sottostante, invisibile pur essendo disegnata
+    // correttamente. Un pane proprio, sopra ENTRAMBI (markerPane e
+    // tooltipPane), risolve senza toccare lo z-index nativo di
+    // Leaflet — che resta invariato per marker/tooltip di uso normale.
+    // pointerEvents:none coerente con interactive:false già impostato
+    // su ciascun marker-freccia: sono un indicatore puramente visivo,
+    // non devono intercettare click/hover destinati alla mappa
+    // sottostante.
+    //
+    traceArrowPane =
+        traceDetailMap.createPane(
+            "traceArrowPane"
+        );
+
+    traceArrowPane.style.zIndex = 660;
+    traceArrowPane.style.pointerEvents = "none";
+
+    //
+    // Ricalcola lo spostamento pixel andata/ritorno ad ogni cambio di
+    // zoom dell'utente (v. offsetSegmentPixels()/
+    // renderTraceSegmentsAtCurrentZoom() sopra) — registrato UNA SOLA
+    // volta qui, non ad ogni loadTraceDetail(): la mappa persiste fra
+    // un'apertura e l'altra del pannello (v. commento in cima al
+    // file), quindi registrare di nuovo lo stesso listener ad ogni
+    // apertura lo farebbe accumulare (N listener attivi dopo N
+    // aperture, tutti richiamati ad ogni zoom). renderTraceSegmentsAtCurrentZoom()
+    // legge sempre lo stato corrente di traceSegmentDefs, quindi
+    // funziona automaticamente per qualunque traccia sia aperta al
+    // momento dello zoom, senza bisogno di ri-registrare nulla.
+    //
+    traceDetailMap.on(
+        "zoomend",
+        renderTraceSegmentsAtCurrentZoom
+    );
+
+    return traceDetailMap;
+}
+
+function goToTraceDetail(
+    row,
+    pathKey
+) {
+
+    //
+    // Ferma l'auto-refresh di Trace (stesso motivo di
+    // stopNodesAutoRefresh() in goToNodeDetail() più sotto: senza
+    // fermarlo, loadData() continuerebbe a ricaricare dataCache e a
+    // ridisegnare la tabella nascosta ogni AUTO_REFRESH_INTERVAL
+    // mentre si guarda il dettaglio). backToTraceLink (index.html) lo
+    // riavvia esplicitamente al ritorno via configureAutoRefresh(),
+    // stesso schema già usato da backToNodesLink per Nodes.
+    //
+    stopAutoRefresh();
+
+    document.querySelectorAll(
+        ".tabButton"
+    ).forEach(
+        b => b.classList.remove("active")
+    );
+
+    document.querySelectorAll(
+        ".tabPage"
+    ).forEach(
+        p => p.style.display = "none"
+    );
+
+    document.getElementById(
+        "traceDetailPage"
+    ).style.display = "block";
+
+    loadTraceDetail(
+        row,
+        pathKey
+    );
+}
+
+async function loadTraceDetail(
+    row,
+    pathKey
+) {
+
+    const requestId =
+        ++traceDetailRequestId;
+
+    const notices = [];
+
+    const heading =
+        document.getElementById(
+            "traceDetailHeading"
+        );
+
+    heading.textContent =
+        `${pathKey} — ${row.timestamp}`;
+
+    //
+    // Elenco dei segmenti nell'ordine del percorso: le chiavi "X→Y"
+    // dell'oggetto row sono inserite da parseTraceContent() (v.
+    // parser.js) nello stesso ordine del percorso (SRC→hop1,
+    // hop1→hop2, ..., ultimoHop→SRC) e Object.keys() su un oggetto
+    // con chiavi stringa preserva l'ordine di inserimento — stessa
+    // assunzione già sfruttata da renderTable() qui sopra per
+    // ordinare le colonne della tabella.
+    //
+    const links =
+        Object.keys(
+            row
+        ).filter(
+            c =>
+                c.includes(
+                    "→"
+                )
+        );
+
+    const segments =
+        links.map(
+            link => {
+
+                const parts =
+                    link.split("→")
+                        .map(p => p.trim());
+
+                return {
+                    from: parts[0],
+                    to: parts[1],
+                    value: row[link]
+                };
+            }
+        );
+
+    const nodeIds =
+        new Set();
+
+    segments.forEach(
+        s => {
+
+            nodeIds.add(s.from);
+            nodeIds.add(s.to);
+        }
+    );
+
+    //
+    // Posizione di SRC — SEMPRE presa "live" da /api/device_status
+    // (mai da dataCache/trace.json, che non la contiene): v. il
+    // commento in cima a questa sezione sul perché questo vale anche
+    // quando la traccia mostrata è di un mese archiviato.
+    //
+    let srcPosition =
+        null;
+
+    if (
+        nodeIds.has("SRC")
+    ) {
+
+        try {
+
+            const res =
+                await fetch(
+                    "/api/device_status"
+                );
+
+            assertResOk(res);
+
+            const status =
+                await res.json();
+
+            if (
+                requestId !== traceDetailRequestId
+            ) {
+
+                return;
+            }
+
+            if (
+                status &&
+                status.adv_lat != null &&
+                status.adv_lon != null
+            ) {
+
+                srcPosition = {
+                    lat: status.adv_lat,
+                    lon: status.adv_lon
+                };
+
+            } else {
+
+                notices.push(
+                    "Posizione del nodo locale (SRC) non disponibile: il Companion collegato non ha ancora fornito coordinate GPS."
+                );
+            }
+
+        } catch (
+            err
+        ) {
+
+            if (
+                requestId !== traceDetailRequestId
+            ) {
+
+                return;
+            }
+
+            console.error(
+                "Error loading device status for trace detail:",
+                err
+            );
+
+            notices.push(
+                "Impossibile leggere la posizione del nodo locale (SRC) da /api/device_status."
+            );
+        }
+    }
+
+    if (
+        requestId !== traceDetailRequestId
+    ) {
+
+        return;
+    }
+
+    const positions = {};
+
+    if (
+        srcPosition
+    ) {
+
+        positions.SRC =
+            srcPosition;
+    }
+
+    nodeIds.forEach(
+        id => {
+
+            if (
+                id === "SRC"
+            ) {
+
+                return;
+            }
+
+            const resolved =
+                resolveNodePosition(
+                    id
+                );
+
+            if (
+                resolved.status === "ok"
+            ) {
+
+                positions[id] = {
+                    lat: resolved.lat,
+                    lon: resolved.lon
+                };
+
+            } else if (
+                resolved.status === "no-position"
+            ) {
+
+                notices.push(
+                    `Posizione di ${resolveNodeName(id)} (${id}) non disponibile in contacts.db.`
+                );
+
+            } else if (
+                resolved.status === "ambiguous"
+            ) {
+
+                notices.push(
+                    `Prefisso "${id}" ambiguo: più nodi corrispondono, impossibile determinare quale mostrare.`
+                );
+
+            } else {
+
+                notices.push(
+                    `Nodo ${id} non trovato in contacts.db.`
+                );
+            }
+        }
+    );
+
+    if (
+        row.status === "TIMEOUT"
+    ) {
+
+        notices.push(
+            "Questa traccia è andata in TIMEOUT: il percorso disegnato è quello CONFIGURATO per il path, non necessariamente quello realmente seguito dai pacchetti (v. trace.sh)."
+        );
+    }
+
+    const map =
+        ensureTraceDetailMap();
+
+    traceDetailLayerGroup.clearLayers();
+    traceSegmentLayerGroup.clearLayers();
+
+    //
+    // invalidateSize() PRIMA di aggiungere marker/fitBounds(): il
+    // contenitore #traceDetailMap era display:none fino a un istante
+    // fa (goToTraceDetail() lo rende visibile appena prima di
+    // chiamare questa funzione) e Leaflet, alla creazione, ha
+    // calcolato le proprie dimensioni interne quando il contenitore
+    // aveva ancora altezza 0 — senza questa chiamata la mappa
+    // resterebbe visivamente vuota/mal centrata finché l'utente non
+    // interagisce manualmente (pan/zoom).
+    //
+    map.invalidateSize();
+
+    const bounds =
+        [];
+
+    Object.keys(
+        positions
+    ).forEach(
+        id => {
+
+            const pos =
+                positions[id];
+
+            const label =
+                id === "SRC" ?
+                    "SRC (nodo locale)" :
+                    `${resolveNodeName(id)} (${id})`;
+
+            L.marker(
+                [pos.lat, pos.lon],
+                {
+                    icon:
+                        id === "SRC" ?
+                            TRACE_SRC_ICON :
+                            TRACE_REPEATER_ICON
+                }
+            ).bindTooltip(
+                escapeHtml(label),
+                {
+                    permanent: true,
+                    direction: "top"
+                }
+            ).addTo(
+                traceDetailLayerGroup
+            );
+
+            bounds.push(
+                [pos.lat, pos.lon]
+            );
+        }
+    );
+
+    //
+    // Solo dati "grezzi", indipendenti dallo zoom — nessun disegno
+    // qui: renderTraceSegmentsAtCurrentZoom() (v. sopra) calcola lo
+    // spostamento pixel andata/ritorno usando lo zoom corrente della
+    // mappa e viene richiamata esplicitamente subito dopo
+    // map.fitBounds() qui sotto (oltre che ad ogni "zoomend"
+    // successivo) — deve girare DOPO che la vista ha il proprio zoom
+    // definitivo, non durante la costruzione di questa lista.
+    //
+    traceSegmentDefs = [];
+
+    segments.forEach(
+        seg => {
+
+            const posFrom =
+                positions[seg.from];
+
+            const posTo =
+                positions[seg.to];
+
+            if (
+                !posFrom ||
+                !posTo
+            ) {
+
+                //
+                // Uno dei due estremi non ha posizione risolta (già
+                // segnalato sopra in notices): il segmento viene
+                // saltato invece di disegnare una linea verso
+                // [0,0]/un punto arbitrario.
+                //
+                return;
+            }
+
+            //
+            // Spostamento SOLO quando esiste anche il collegamento di
+            // ritorno in QUESTA traccia ("B→A" fra le chiavi della
+            // riga, oltre a "A→B"): un hop che compare una sola volta
+            // (es. una scorciatoia sul ritorno, v. spiegazione utente
+            // 2026-08-23) viene disegnato sulla sua vera geodetica,
+            // senza spostamento superfluo.
+            //
+            // Nessuna convenzione "coppia canonica" da A/B ordinati:
+            // sign fisso (0 oppure 1, mai -1) e basta, perché A e B
+            // vengono passati a offsetSegmentPixels() nell'ordine
+            // naturale from/to del segmento — che si INVERTE già da
+            // solo fra andata ("A→B", from=A,to=B) e ritorno ("B→A",
+            // from=B, to=A). Invertire l'ordine dei due punti passati
+            // a offsetSegmentPixels() ribalta GIÀ DA SOLO il lato
+            // dello spostamento (identità vettoriale: ruotare di 90°
+            // il vettore invertito -(dx,dy) equivale a ribaltare il
+            // perpendicolare ottenuto da (dx,dy)); un'ulteriore
+            // inversione del segno (come nella prima versione di
+            // questa funzione, poi corretta) ANNULLAVA quella
+            // inversione naturale invece di rinforzarla, riportando
+            // andata e ritorno esattamente sulla stessa linea — bug
+            // trovato e corretto in fase di test contro dati reali
+            // (v. CHANGES_mappa_dettaglio_traccia.md).
+            //
+            const hasReturnSegment =
+                links.includes(
+                    `${seg.to}→${seg.from}`
+                );
+
+            const sign =
+                hasReturnSegment ?
+                    1 :
+                    0;
+
+            const color =
+                seg.value === "TIMEOUT" ?
+                    "#d32f2f" :
+                    typeof seg.value === "number" ?
+                        snrColor(seg.value) :
+                        "#888888";
+
+            const isDegenerate =
+                posFrom.lat === posTo.lat &&
+                posFrom.lon === posTo.lon;
+
+            traceSegmentDefs.push(
+                {
+                    latlngFrom: { lat: posFrom.lat, lng: posFrom.lon },
+                    latlngTo: { lat: posTo.lat, lng: posTo.lon },
+                    sign: sign,
+                    color: color,
+                    dashArray:
+                        seg.value === "TIMEOUT" ?
+                            "6 6" :
+                            null,
+                    labelHtml:
+                        traceSegmentLabelHtml(seg.value),
+                    isDegenerate: isDegenerate
+                }
+            );
+        }
+    );
+
+    if (
+        bounds.length > 0
+    ) {
+
+        //
+        // animate:false — fitBounds() imposta subito il centro/zoom
+        // definitivi (nessuna animazione), così la chiamata esplicita
+        // a renderTraceSegmentsAtCurrentZoom() poco sotto legge già lo
+        // zoom "finale" con cui la mappa resta visibile, invece dello
+        // zoom di partenza (2, v. ensureTraceDetailMap()) o di un
+        // valore intermedio dell'animazione ancora in corso.
+        //
+        map.fitBounds(
+            bounds,
+            { padding: [30, 30], animate: false }
+        );
+
+    } else {
+
+        notices.push(
+            "Nessuna posizione risolvibile per questa traccia: impossibile mostrare la mappa."
+        );
+    }
+
+    //
+    // Disegna segmenti+frecce con lo zoom con cui la mappa è appena
+    // stata impostata sopra (o quello già attivo, se bounds era vuoto
+    // e fitBounds() non è stata chiamata) — v. il commento su
+    // renderTraceSegmentsAtCurrentZoom() più sopra nel file. Ogni
+    // successivo cambio di zoom da parte dell'utente è gestito dal
+    // listener "zoomend" registrato una sola volta in
+    // ensureTraceDetailMap(), non da qui.
+    //
+    renderTraceSegmentsAtCurrentZoom();
+
+    const noticesEl =
+        document.getElementById(
+            "traceDetailNotices"
+        );
+
+    noticesEl.innerHTML =
+        notices
+            .map(
+                n =>
+                    `<div class="traceNotice">${escapeHtml(n)}</div>`
+            )
+            .join("");
 }
 
 /* =========================

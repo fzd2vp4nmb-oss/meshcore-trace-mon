@@ -22,6 +22,22 @@
         aggiungere la riga a mano sulla copia reale).
     -->
     <script src="vendor/chart.umd.min.js"></script>
+    <!--
+        Leaflet 1.9.4 auto-ospitato (stesso principio di Chart.js sopra —
+        analisi sicurezza 2026-08-24, Finding 1/24-08 — v.
+        docs/ARCHITECTURE.md §57/§58), per la mappa della pagina di
+        dettaglio traccia (Trace → click sul timestamp). Nessun CDN:
+        file statico da public/vendor/leaflet/, scaricato dal registro
+        npm ufficiale e tracciato come devDependency in
+        frontend/package.json. Le TILE della cartina restano invece
+        una dipendenza di rete a runtime, scelta esplicita
+        dell'utente (2026-08-25): caricate dinamicamente dal browser
+        di chi guarda la pagina da un provider pubblico (OpenStreetMap),
+        non pre-caricate né proxate da questo server — v. app.js,
+        initTraceMap().
+    -->
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+    <script src="vendor/leaflet/leaflet.js"></script>
 </head>
 
 <body>
@@ -105,6 +121,18 @@
 
 <h3>Scheduled Trace-Path</h3>
 <table id="pathTable"></table>
+
+</div>
+
+<div id="traceDetailPage" class="tabPage" style="display:none">
+
+<p><a href="#" id="backToTraceLink">&larr; Back to Trace</a></p>
+
+<h3 id="traceDetailHeading"></h3>
+
+<div id="traceDetailNotices"></div>
+
+<div id="traceDetailMap"></div>
 
 </div>
 
@@ -505,6 +533,63 @@ document.getElementById(
         ) {
 
             startNodesAutoRefresh();
+        }
+    }
+);
+
+/* =========================
+   TRACE DETAIL: BACK LINK
+
+   Stesso schema di backToNodesLink sopra, adattato al tab di
+   provenienza (tracePage invece di nodesPage): niente
+   loadNodesTab()/startNodesAutoRefresh(), qui configureAutoRefresh()
+   riprende — se l'utente l'aveva lasciato acceso — l'auto-refresh del
+   tab Trace, esattamente come già succede tornando alla tab Trace dal
+   click diretto sul suo pulsante (v. ramo "else" più sopra).
+========================= */
+
+document.getElementById(
+    "backToTraceLink"
+).addEventListener(
+    "click",
+    (e) => {
+
+        e.preventDefault();
+
+        document.querySelectorAll(
+            ".tabPage"
+        ).forEach(
+            p => p.style.display = "none"
+        );
+
+        document.getElementById(
+            "tracePage"
+        ).style.display = "block";
+
+        document.querySelectorAll(
+            ".tabButton"
+        ).forEach(
+            b => b.classList.remove("active")
+        );
+
+        document
+            .querySelector(
+                '.tabButton[data-tab="tracePage"]'
+            )
+            .classList.add(
+                "active"
+            );
+
+        safeLocalStorageSet(
+            "activeTab",
+            "tracePage"
+        );
+
+        if (
+            typeof configureAutoRefresh === "function"
+        ) {
+
+            configureAutoRefresh();
         }
     }
 );

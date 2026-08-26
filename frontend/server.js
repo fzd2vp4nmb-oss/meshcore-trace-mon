@@ -551,6 +551,49 @@ app.get(
                 // stato di instradamento per rispondere, dato
                 // diverso, vedi docs/CONTACT_MANAGEMENT.md §4/§15).
                 //
+                // Il join su po.id (chiave primaria) invece che su
+                // po.observed_at = MAX(observed_at) è deliberato: per
+                // design (docs/CONTACT_MANAGEMENT.md §8, "percorsi
+                // multipli = dati distinti, non deduplicare") uno
+                // stesso advert flood può arrivare via più path
+                // fisici diversi nello stesso secondo, producendo più
+                // righe in path_observations con lo stesso
+                // observed_at ma path_hex diverso — dato corretto e
+                // voluto, da NON toccare qui. Il bug era che il join
+                // precedente, basato solo su observed_at, agganciava
+                // TUTTE le righe in pareggio invece di una sola,
+                // duplicando il nodo stesso nel risultato (trovato
+                // 2026-08-26: 23 nodi su 823 contati due volte,
+                // "Known Nodes" mostrava 846 invece del vero totale).
+                // La subquery ORDER BY observed_at DESC, id DESC LIMIT
+                // 1 sceglie sempre un'unica riga — la più recente per
+                // timestamp, e a parità di timestamp quella inserita
+                // per ultima (id più alto) — senza cancellare o
+                // alterare le altre righe già in path_observations.
+                //
+                // ORDER BY su COALESCE(po.observed_at, n.last_seen),
+                // non più su n.last_seen da solo (trovato 2026-08-26,
+                // segnalato dall'utente: due suoi nodi con ultimo
+                // advert reale del 19/08 e 20/08 comparsi in cima alla
+                // tabella dopo un refresh). n.last_seen viene toccato
+                // in blocco dal sync periodico completo per OGNI
+                // contatto sul device, non solo per quelli sentiti
+                // davvero via radio di recente — confermato sui dati
+                // reali forniti dall'utente: 350 nodi su 823
+                // condividevano lo stesso identico n.last_seen al
+                // secondo, mentre la loro ultima osservazione radio
+                // reale in path_observations (alimentata solo da
+                // RX_LOG_DATA, mai dal sync periodico) copriva un
+                // intervallo di giorni. po.observed_at (qui già la
+                // singola riga più recente per nodo, grazie al fix
+                // sopra) è il segnale corretto di "sentito davvero
+                // l'ultima volta"; COALESCE con n.last_seen resta come
+                // fallback solo per i pochi nodi senza alcuna
+                // osservazione diretta (mai sentiti via radio da
+                // questa stazione, conosciuti solo dal sync
+                // periodico). Nessuna modifica a come n.last_seen
+                // viene scritto (codice Python, fuori perimetro).
+                //
                 const rows =
                     db.prepare(
                         `SELECT
@@ -565,13 +608,14 @@ app.get(
                             po.path_hex
                         FROM nodes n
                         LEFT JOIN path_observations po
-                            ON po.public_key = n.public_key
-                            AND po.observed_at = (
-                                SELECT MAX(observed_at)
+                            ON po.id = (
+                                SELECT id
                                 FROM path_observations
                                 WHERE public_key = n.public_key
+                                ORDER BY observed_at DESC, id DESC
+                                LIMIT 1
                             )
-                        ORDER BY n.last_seen DESC`
+                        ORDER BY COALESCE(po.observed_at, n.last_seen) DESC`
                     ).all();
 
                 res.json(

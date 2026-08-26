@@ -165,6 +165,48 @@ tr:nth-child(odd) td {
     overflow-y: auto;
 }
 
+/*
+   #nodesTable/#neighborsTable — stesso trattamento di #pathTable sopra,
+   esteso qui il 2026-08-25 (sessione "valutazione refresh via SSE",
+   conclusa scartando SSE — v. claude/analisi-fattibilita-refresh-sse-
+   frontend-2026-08-25.md nel Project). Il salto visivo segnalato durante
+   il refresh automatico di Nodes/Repeaters (ogni 5 min, sempre attivo
+   mentre la tab è visibile — v. AUTO_REFRESH_INTERVAL in app.js) non
+   viene da un reload di pagina (non ce n'è uno in questo progetto), ma da
+   renderNodesTable()/renderNeighboursTable() che riscrivono l'intera
+   tabella con table.innerHTML=... dentro il normale flusso della pagina:
+   su una lista che può arrivare a centinaia di righe (Known Nodes), il
+   ridisegno sposta tutto ciò che sta sotto se l'utente è scorso a metà
+   tabella. Confinando la tabella in un riquadro ad altezza fissa con
+   overflow-y, lo spostamento resta dentro il riquadro, non più sul resto
+   della pagina — la causa era nel rendering, non nel meccanismo di
+   refresh (polling vs push), per questo si è scelto questo fix invece di
+   introdurre SSE.
+
+   Deliberatamente ESCLUSE da questo stesso trattamento: #statsTable,
+   #deviceStatusTable, #neighborStatusTable, #neighborTelemetryTable,
+   #neighborConfigTable — riepiloghi a poche righe fisse per costruzione,
+   non liste che crescono nel tempo, non soggette allo stesso sintomo (v.
+   analisi citata sopra, §7A/§8, per il ragionamento completo).
+
+   I tooltip (attributo data-tooltip, v. initTooltips() in app.js) sono
+   già ancorati a document.body con position:fixed proprio per non essere
+   tagliati da un contenitore con overflow-y:auto come questo (v. commento
+   originale sopra initTooltips(): "alcune tabelle (es. #pathTable) hanno
+   overflow-y:auto..." — già scritto per il caso generale, non solo per
+   #pathTable) — nessun impatto atteso sui tooltip di Path/Name in queste
+   due tabelle.
+*/
+#nodesTable,
+#neighborsTable {
+
+    display: block;
+
+    max-height: 600px;
+
+    overflow-y: auto;
+}
+
 /* =====================================
    DARK MODE
 ===================================== */

@@ -344,14 +344,9 @@ async function loadData() {
                 url
             );
 
-        if (
-            !res.ok
-        ) {
-
-            throw new Error(
-                `HTTP ${res.status}`
-            );
-        }
+        assertResOk(
+            res
+        );
 
         const data =
             await res.json();
@@ -850,7 +845,17 @@ function renderTable(rows, pathKey) {
         rows.length === 0
     ) {
 
-        table.innerHTML = "";
+        //
+        // Allineato allo stile "spiega il perché" già usato da
+        // Repeaters (renderNeighboursTable/renderNeighborData) e da
+        // Device Status (renderDeviceStatusTable): prima di questa
+        // modifica qui si azzerava silenziosamente la tabella
+        // (v. docs/ARCHITECTURE.md §65). Nessun colspan: a differenza
+        // delle tabelle a colonne fisse, qui le colonne dipendono dal
+        // path selezionato e non sono note quando non ci sono righe.
+        //
+        table.innerHTML =
+            "<tr><td>No trace data available for this path.</td></tr>";
         return;
     }
 
@@ -1004,21 +1009,24 @@ function renderStats(
             "statsTable"
         );
 
-    if (
-        !stats
-    ) {
-
-        table.innerHTML =
-            "";
-        return;
-    }
-
     let html =
         "<tr><th>Path Element</th><th>Avg</th><th>Min</th><th>Max</th></tr>";
 
-    Object.entries(
+    //
+    // Allineato allo stile Repeaters (renderNeighboursTable): header
+    // sempre presente, riga esplicita con colspan quando non ci sono
+    // dati, invece di azzerare silenziosamente la tabella
+    // (v. docs/ARCHITECTURE.md §65). "stats" nullo viene trattato come
+    // nessuna entry, stesso messaggio.
+    //
+    const entries =
         stats
-    ).forEach(
+            ? Object.entries(
+                  stats
+              )
+            : [];
+
+    entries.forEach(
         ([k, v]) => {
 
             const avg =
@@ -1042,6 +1050,13 @@ function renderStats(
             </tr>`;
         }
     );
+
+    if (
+        entries.length === 0
+    ) {
+
+        html += "<tr><td colspan=\"4\">No stats data available.</td></tr>";
+    }
 
     table.innerHTML =
         html;
@@ -3199,8 +3214,14 @@ async function loadNodesTab() {
             "nodesTable"
         );
 
-    table.innerHTML =
-        "<tr><td>Loading...</td></tr>";
+    //
+    // Niente "Loading..." qui: come loadData()/loadDeviceStatus(), il
+    // contenuto precedente resta visibile finché i nuovi dati non sono
+    // pronti, poi lo swap è atomico dentro renderNodesTable(). Prima di
+    // questa modifica questo azzeramento causava un blink visibile ad
+    // ogni refresh, incluso quello silenzioso in background
+    // (v. docs/ARCHITECTURE.md §65).
+    //
 
     const requestId =
         ++nodesTabRequestId;
@@ -4035,6 +4056,26 @@ function renderNodesTable(
         }
     );
 
+    //
+    // Allineato allo stile Repeaters (renderNeighboursTable): header
+    // sempre presente, riga esplicita con colspan quando la lista è
+    // vuota, invece di lasciare silenziosamente solo l'header senza
+    // righe (v. docs/ARCHITECTURE.md §65). Distingue i due casi
+    // possibili guardando nodesDataCache (il totale non filtrato)
+    // rispetto a "nodes" (il risultato dopo i filtri correnti).
+    //
+    if (
+        nodes.length === 0
+    ) {
+
+        const message =
+            nodesDataCache.length === 0
+                ? "No nodes data available."
+                : "No nodes match the current filters.";
+
+        html += `<tr><td colspan="4">${message}</td></tr>`;
+    }
+
     table.innerHTML = html;
 
     table.querySelectorAll(
@@ -4793,6 +4834,17 @@ async function loadNeighborsRepeaterList() {
             "Error loading neighbor repeaters:",
             err
         );
+
+        //
+        // Prima di questa modifica un fallimento qui restava
+        // invisibile all'utente (solo console.error): la tab
+        // Repeaters sembrava semplicemente "senza repeater" invece di
+        // segnalare un errore di rete/server. false segnala al
+        // chiamante (loadNeighborsTab) di mostrare un messaggio
+        // esplicito invece del generico "No repeater data available
+        // yet." (v. docs/ARCHITECTURE.md §65).
+        //
+        return false;
     }
 }
 
@@ -4827,9 +4879,87 @@ function stopNeighborsAutoRefresh() {
     stopAutoRefresh();
 }
 
+//
+// Estratto da loadNeighborsTab(): azzera lo stato della tab Repeaters
+// mostrando un messaggio esplicito sul perché non c'è un repeater
+// selezionato — "nessun repeater ancora" e "errore nel caricare la
+// lista repeater" sono due situazioni diverse per l'utente (la
+// seconda è un problema di rete/server, non l'assenza di dati) e
+// prima di questa modifica venivano confuse nello stesso testo
+// generico (v. docs/ARCHITECTURE.md §65).
+//
+function clearNeighborsView(
+    message
+) {
+
+    document.getElementById(
+        "neighborRepeaterName"
+    ).textContent =
+        message;
+
+    document.getElementById(
+        "neighborStatusTable"
+    ).innerHTML = "";
+
+    document.getElementById(
+        "neighborTelemetryTable"
+    ).innerHTML = "";
+
+    document.getElementById(
+        "neighborConfigTable"
+    ).innerHTML = "";
+
+    document.getElementById(
+        "neighborRegionDump"
+    ).textContent = "";
+
+    document.getElementById(
+        "neighborsTable"
+    ).innerHTML = "";
+
+    currentRepeaterPublicKey = null;
+
+    const archiveSelector =
+        document.getElementById(
+            "neighborsArchiveSelector"
+        );
+
+    if (
+        archiveSelector
+    ) {
+
+        archiveSelector.innerHTML = "";
+    }
+
+    const snapshotSelector =
+        document.getElementById(
+            "neighborsSnapshotSelector"
+        );
+
+    if (
+        snapshotSelector
+    ) {
+
+        snapshotSelector.innerHTML = "";
+        snapshotSelector.style.display = "none";
+    }
+}
+
 async function loadNeighborsTab() {
 
-    await loadNeighborsRepeaterList();
+    const repeaterListOk =
+        await loadNeighborsRepeaterList();
+
+    if (
+        repeaterListOk === false
+    ) {
+
+        clearNeighborsView(
+            "Error loading repeater list."
+        );
+
+        return;
+    }
 
     const selector =
         document.getElementById(
@@ -4841,57 +4971,9 @@ async function loadNeighborsTab() {
         !selector.value
     ) {
 
-        document.getElementById(
-            "neighborRepeaterName"
-        ).textContent =
-            "No repeater data available yet.";
-
-        document.getElementById(
-            "neighborStatusTable"
-        ).innerHTML = "";
-
-        document.getElementById(
-            "neighborTelemetryTable"
-        ).innerHTML = "";
-
-        document.getElementById(
-            "neighborConfigTable"
-        ).innerHTML = "";
-
-        document.getElementById(
-            "neighborRegionDump"
-        ).textContent = "";
-
-        document.getElementById(
-            "neighborsTable"
-        ).innerHTML = "";
-
-        currentRepeaterPublicKey = null;
-
-        const archiveSelector =
-            document.getElementById(
-                "neighborsArchiveSelector"
-            );
-
-        if (
-            archiveSelector
-        ) {
-
-            archiveSelector.innerHTML = "";
-        }
-
-        const snapshotSelector =
-            document.getElementById(
-                "neighborsSnapshotSelector"
-            );
-
-        if (
-            snapshotSelector
-        ) {
-
-            snapshotSelector.innerHTML = "";
-            snapshotSelector.style.display = "none";
-        }
+        clearNeighborsView(
+            "No repeater data available yet."
+        );
 
         return;
     }
@@ -4915,30 +4997,14 @@ async function loadNeighborData(
     const requestId =
         ++neighborRequestId;
 
-    document.getElementById(
-        "neighborRepeaterName"
-    ).textContent =
-        "Loading...";
-
-    document.getElementById(
-        "neighborStatusTable"
-    ).innerHTML = "";
-
-    document.getElementById(
-        "neighborTelemetryTable"
-    ).innerHTML = "";
-
-    document.getElementById(
-        "neighborConfigTable"
-    ).innerHTML = "";
-
-    document.getElementById(
-        "neighborRegionDump"
-    ).textContent = "";
-
-    document.getElementById(
-        "neighborsTable"
-    ).innerHTML = "";
+    //
+    // Niente azzeramento di nome/tabelle qui: come loadData()/
+    // loadDeviceStatus()/loadNodesTab(), il contenuto del repeater
+    // precedente resta visibile finché i nuovi dati non sono pronti,
+    // poi renderNeighborData() sostituisce tutto atomicamente. Prima
+    // di questa modifica questo era il blink più marcato dei due
+    // segnalati (v. docs/ARCHITECTURE.md §65).
+    //
 
     try {
 
@@ -4947,24 +5013,9 @@ async function loadNeighborData(
                 `/api/neighbors/${encodeURIComponent(publicKey)}`
             );
 
-        if (
-            requestId !== neighborRequestId
-        ) {
-
-            return;
-        }
-
-        if (
-            !res.ok
-        ) {
-
-            document.getElementById(
-                "neighborRepeaterName"
-            ).textContent =
-                "Error loading data.";
-
-            return;
-        }
+        assertResOk(
+            res
+        );
 
         const data =
             await res.json();

@@ -67,9 +67,24 @@ def previous_month_range(today=None):
     UTC, intervallo [start, end) — end è il primo istante del mese
     successivo a quello archiviato, quindi il confine è sempre
     corretto indipendentemente dal numero di giorni del mese.
+
+    'today', se non passato esplicitamente, va preso nel fuso ORARIO
+    LOCALE di sistema (non UTC) — fix bug 2026-09-01: rotate_contacts.sh
+    gira da cron all'1:07 locale del giorno 1, e con l'ora legale
+    (Europe/Rome = UTC+2) quell'istante corrisponde ancora alle 23:07
+    UTC del giorno/mese precedente. Usare datetime.now(timezone.utc)
+    qui faceva scegliere il mese sbagliato (il mese prima di quello
+    corretto) ogni volta che l'esecuzione cadeva in quella finestra —
+    quindi ogni mese, finché resta in vigore l'ora legale. Stessa
+    fonte di verità già usata da backup.sh tramite `date` in bash
+    (che legge di default il fuso locale di sistema). I confini
+    start_ts/end_ts restano invece in UTC, invariati: non è quello il
+    problema, solo la scelta di quale mese sia "il precedente" nel
+    momento in cui lo script gira. V.
+    docs/CHANGES_rotate_month_local_time.md per l'analisi completa.
     """
 
-    today = today or datetime.now(timezone.utc)
+    today = today or datetime.now().astimezone()
 
     year = today.year
     month = today.month - 1
@@ -260,7 +275,14 @@ def main():
         # e la successiva rotazione automatica del mese giusto non
         # potrebbe più recuperarli — perdita permanente.
         #
-        now = datetime.now(timezone.utc)
+        # 'now' in ora LOCALE, non UTC (fix bug 2026-09-01, stessa
+        # motivazione di previous_month_range() sopra): con UTC, un
+        # `--month` che coincide col mese appena concluso poteva
+        # essere rifiutato per errore come "mese corrente" se lanciato
+        # a mano nella stessa finestra oraria critica (dopo la
+        # mezzanotte locale ma prima di quella UTC).
+        #
+        now = datetime.now().astimezone()
 
         if (args.year, args.month) >= (now.year, now.month):
             log.error(

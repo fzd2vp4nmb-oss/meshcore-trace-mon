@@ -60,9 +60,19 @@ def previous_month_range(today=None):
     duplicata qui deliberatamente invece di importata, per tenere i
     due script di rotazione indipendenti l'uno dall'altro (nessuna
     dipendenza incrociata tra tool di manutenzione).
+
+    'today', se non passato esplicitamente, va preso nel fuso ORARIO
+    LOCALE di sistema (non UTC) — fix bug 2026-09-01: stessa
+    motivazione di rotate_path_observations.previous_month_range(),
+    v. lì per il dettaglio completo (rotate_contacts.sh gira alle
+    1:07 locali del giorno 1, che con l'ora legale UTC+2 sono ancora
+    le 23:07 UTC del giorno/mese precedente — datetime.now(timezone.utc)
+    faceva scegliere il mese sbagliato ogni volta che l'esecuzione
+    cadeva in quella finestra). start_ts/end_ts restano in UTC,
+    invariati.
     """
 
-    today = today or datetime.now(timezone.utc)
+    today = today or datetime.now().astimezone()
 
     year = today.year
     month = today.month - 1
@@ -230,7 +240,14 @@ def main():
             )
             sys.exit(1)
 
-        now = datetime.now(timezone.utc)
+        # 'now' in ora LOCALE, non UTC (fix bug 2026-09-01, stessa
+        # motivazione della protezione gemella in
+        # rotate_path_observations.py): con UTC, un `--month` appena
+        # concluso poteva essere rifiutato per errore come "mese
+        # corrente" se lanciato a mano nella finestra oraria critica
+        # (dopo la mezzanotte locale ma prima di quella UTC).
+        #
+        now = datetime.now().astimezone()
 
         if (args.year, args.month) >= (now.year, now.month):
             log.error(

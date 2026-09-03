@@ -594,6 +594,44 @@ app.get(
                 // periodico). Nessuna modifica a come n.last_seen
                 // viene scritto (codice Python, fuori perimetro).
                 //
+                // (po.observed_at IS NULL) ASC come primo criterio —
+                // trovato 2026-09-03: al momento del fix del §67
+                // sopra, i nodi senza alcuna osservazione diretta
+                // (po IS NULL) erano una minoranza pressoché
+                // permanente (8 su 823) — "mai sentiti via radio da
+                // questa stazione". rotate_path_observations.py (v.
+                // docs/ARCHITECTURE.md §§ su rotazione mensile)
+                // svuota però ogni mese path_observations dei dati
+                // del mese precedente, quindi subito dopo ogni
+                // rotazione po IS NULL torna a significare "non
+                // ancora osservato QUESTO MESE", una popolazione
+                // enorme e temporanea (622 nodi su 990 nei dati reali
+                // del giorno di questo fix, non più 8 su 823) invece
+                // che "mai osservato". Nessuno dei due fix del §66/§67
+                // aveva previsto questa interazione. Per quei nodi il
+                // solo COALESCE(po.observed_at, n.last_seen) DESC
+                // usava n.last_seen — bumped a "adesso" ogni ora per
+                // OGNI contatto dal sync periodico (§67) — come chiave
+                // di ordinamento primaria alla pari degli osservati:
+                // un nodo mai sentito questo mese ma con last_seen
+                // recente (sync di un'ora fa) finiva ordinato SOPRA
+                // un nodo osservato per davvero via radio ma con
+                // po.observed_at di qualche ora prima — producendo
+                // esattamente il sintomo segnalato (blocchi "not
+                // observed" che rientrano in alto invece di restare
+                // in fondo). Il fix aggiunge un criterio di
+                // ordinamento a monte: prima tutti i nodi con
+                // un'osservazione reale questo mese (po.observed_at
+                // NOT NULL), ordinati per recency come già facevano;
+                // SOLO DOPO, in blocco, i nodi non ancora osservati
+                // questo mese, ordinati tra loro per n.last_seen DESC
+                // (fallback invariato, stesso limite di affidabilità
+                // già noto e documentato al §67 — qui serve solo come
+                // ordine secondario interno al blocco "not observed",
+                // non più come chiave che può competere con
+                // po.observed_at). V. docs/ARCHITECTURE.md per
+                // l'analisi completa e i dati di verifica.
+                //
                 const rows =
                     db.prepare(
                         `SELECT
@@ -615,7 +653,9 @@ app.get(
                                 ORDER BY observed_at DESC, id DESC
                                 LIMIT 1
                             )
-                        ORDER BY COALESCE(po.observed_at, n.last_seen) DESC`
+                        ORDER BY
+                            (po.observed_at IS NULL) ASC,
+                            COALESCE(po.observed_at, n.last_seen) DESC`
                     ).all();
 
                 res.json(

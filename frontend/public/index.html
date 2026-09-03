@@ -145,54 +145,86 @@
 
 <div class="nodesFilterBar">
 
-    <div class="filterGroup">
-        <label for="nodeNameFilterInput">Name / Public Key</label>
-        <div class="filterControl">
-            <input type="text" id="nodeNameFilterInput" placeholder="e.g. repeater-1 or a1b2">
-            <button id="nodeNameFilterClearBtn">Clear</button>
+    <div class="nodesFilterRow">
+
+        <div class="filterGroup">
+            <label for="nodeNameFilterInput">Name / Public Key</label>
+            <div class="filterControl">
+                <input type="text" id="nodeNameFilterInput" placeholder="e.g. repeater-1 or a1b2">
+                <button id="nodeNameFilterClearBtn">Clear</button>
+            </div>
         </div>
-    </div>
 
-    <div class="filterGroup">
-        <label for="nodePathFilterInput">Path contains</label>
-        <div class="filterControl">
-            <input type="text" id="nodePathFilterInput" placeholder="e.g. 0d28">
-            <button id="nodePathFilterClearBtn">Clear</button>
+        <div class="filterGroup">
+            <label for="nodePathFilterInput">Path contains</label>
+            <div class="filterControl">
+                <input type="text" id="nodePathFilterInput" placeholder="e.g. 0d28">
+                <button id="nodePathFilterClearBtn">Clear</button>
+            </div>
         </div>
+
+        <div class="filterGroup">
+            <label for="nodeTypeFilter">Type</label>
+            <select id="nodeTypeFilter">
+                <option value="all">All</option>
+                <option value="1">chat</option>
+                <option value="2">repeater</option>
+                <option value="3">room server</option>
+            </select>
+        </div>
+
+        <div class="filterGroup">
+            <label for="nodePathLengthFilter">Path length</label>
+            <select id="nodePathLengthFilter">
+                <option value="all">All</option>
+                <option value="1">1 byte (2 hex chars)</option>
+                <option value="2">2 byte (4 hex chars)</option>
+                <option value="3">3 byte (6 hex chars)</option>
+            </select>
+        </div>
+
+        <div class="filterGroup">
+            <label for="nodeHopCountFilterInput">Max hop count</label>
+            <div class="filterControl">
+                <input type="number" id="nodeHopCountFilterInput" min="0" step="1" placeholder="e.g. 5">
+                <button id="nodeHopCountFilterClearBtn">Clear</button>
+            </div>
+        </div>
+
     </div>
 
-    <div class="filterGroup">
-        <label for="nodeTypeFilter">Type</label>
-        <select id="nodeTypeFilter">
-            <option value="all">All</option>
-            <option value="1">chat</option>
-            <option value="2">repeater</option>
-            <option value="3">room server</option>
-        </select>
-    </div>
+    <div class="nodesFilterRow nodesFilterRowRefine">
 
-    <div class="filterGroup">
-        <label for="nodePathLengthFilter">Path length</label>
-        <select id="nodePathLengthFilter">
-            <option value="all">All</option>
-            <option value="1">1 byte (2 hex chars)</option>
-            <option value="2">2 byte (4 hex chars)</option>
-            <option value="3">3 byte (6 hex chars)</option>
-        </select>
-    </div>
+        <div class="filterGroup">
+            <label for="nodeDistanceFilter">Distance from SRC</label>
+            <div class="filterControl">
+                <select id="nodeDistanceFilter">
+                    <option value="all">All</option>
+                    <option value="1">1 km</option>
+                    <option value="5">5 km</option>
+                    <option value="10">10 km</option>
+                    <option value="50">50 km</option>
+                    <option value="100">100 km</option>
+                    <option value="custom">Custom</option>
+                </select>
+                <input type="number" id="nodeDistanceCustomInput" min="0" step="0.1" placeholder="km" style="display:none">
+            </div>
+        </div>
 
-    <div class="filterGroup filterCheckboxGroup">
-        <label for="nodeNotObservedFilter">
-            <input type="checkbox" id="nodeNotObservedFilter">
-            Not observed only
-        </label>
-    </div>
+        <div class="filterGroup filterCheckboxGroup">
+            <label for="nodeNotObservedFilter">
+                <input type="checkbox" id="nodeNotObservedFilter">
+                Not observed only
+            </label>
+        </div>
 
-    <div class="filterGroup filterCheckboxGroup">
-        <label for="nodeFutureAdvertFilter">
-            <input type="checkbox" id="nodeFutureAdvertFilter">
-            Future advert only
-        </label>
+        <div class="filterGroup filterCheckboxGroup">
+            <label for="nodeFutureAdvertFilter">
+                <input type="checkbox" id="nodeFutureAdvertFilter">
+                Future advert only
+            </label>
+        </div>
+
     </div>
 
 </div>

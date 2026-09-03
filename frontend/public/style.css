@@ -340,10 +340,37 @@ body.dark .rangeButton.active {
    riga e il controllo su un'altra, rendendo poco chiaro quale
    selettore corrispondesse a quale filtro. flex-wrap fa impilare i
    blocchi interi (mai a metà) su laptop/tablet quando lo spazio
-   orizzontale non basta per tutti e quattro affiancati.
+   orizzontale non basta per tutti affiancati.
+
+   Due righe fisse (.nodesFilterRow), non un'unica riga che va a
+   capo da sola (2026-09-03, in vista dell'aggiunta del filtro
+   Distance from SRC, settimo filtro sulla tabella): la prima riga
+   raggruppa i filtri "di ricerca" (Name, Path contains, Type, Path
+   length — restringono l'insieme cercando qualcosa), la seconda i
+   filtri "di raffinamento" (Distance from SRC, le due checkbox —
+   vincoli strutturali applicati sopra il risultato della ricerca,
+   stessa distinzione già usata in applyNodesFilters() in app.js).
+   Tenerli su due righe SEMPRE, invece di lasciare che flex-wrap
+   decida dove spezzare in base alla larghezza dello schermo, evita
+   che l'aggiunta di un filtro futuro sposti un filtro esistente da
+   una riga logica all'altra solo perché non c'è più spazio — il
+   raggruppamento resta leggibile indipendentemente da quanti filtri
+   ci sono, ciascuna riga va comunque in wrap per conto proprio se
+   anche lei dovesse riempirsi.
 ========================= */
 
 .nodesFilterBar {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 14px;
+
+    margin-bottom: 6px;
+}
+
+.nodesFilterRow {
 
     display: flex;
 
@@ -352,8 +379,18 @@ body.dark .rangeButton.active {
     align-items: flex-end;
 
     gap: 14px 28px;
+}
 
-    margin-bottom: 6px;
+.nodesFilterRowRefine {
+
+    padding-top: 14px;
+
+    border-top: 1px solid #cccccc;
+}
+
+body.dark .nodesFilterRowRefine {
+
+    border-top-color: #444444;
 }
 
 .filterGroup {
@@ -412,6 +449,42 @@ body.dark .rangeButton.active {
 }
 
 body.dark .filterGroup input[type="text"] {
+
+    background-color: #2a2a2a;
+
+    color: #e0e0e0;
+
+    border-color: #555555;
+}
+
+/*
+   Campi numerici dei filtri Known Nodes — stesso stile del testo
+   sopra, ma stretti (un valore numerico, non una stringa di ricerca):
+   - #nodeDistanceCustomInput (filtro Distance from SRC): km, nascosto
+     di default via inline style="display:none" nel markup,
+     initNodesFilters() lo mostra solo quando #nodeDistanceFilter è su
+     "Custom" (v. app.js).
+   - #nodeHopCountFilterInput (filtro Hop count): valore esatto di
+     hop_count, sempre visibile — campo libero senza un elenco
+     predefinito, a differenza di Path length/Distance (v. app.js e
+     docs/ARCHITECTURE.md per la motivazione).
+*/
+.filterGroup input[type="number"] {
+
+    padding: 6px 8px;
+
+    width: 70px;
+
+    background-color: #ffffff;
+
+    color: black;
+
+    border: 1px solid #888888;
+
+    border-radius: 4px;
+}
+
+body.dark .filterGroup input[type="number"] {
 
     background-color: #2a2a2a;
 

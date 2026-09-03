@@ -76,6 +76,36 @@ let nodeDetailChart = null;
 let nodesDataCache = [];
 
 //
+// nodesDataReady: true dal primo /api/nodes riuscito su questa tab in
+// poi, mai più tornato false. Serve solo a decidere se
+// loadDeviceStatus() (v. più sotto) può richiamare in sicurezza
+// applyNodesFilters() quando la posizione di SRC diventa nota — se
+// /api/device_status rispondesse PRIMA di /api/nodes (ordine non
+// garantito, le due fetch partono insieme da loadNodesTab() senza
+// await), un riapplica-filtri con nodesDataCache ancora [] letterale
+// (non "nessun nodo", ma "non ancora caricato") ridisegnerebbe
+// brevemente la tabella su "No nodes data available" un istante prima
+// del render vero — esattamente il tipo di blink che
+// docs/ARCHITECTURE.md §65 ha già eliminato altrove in questa stessa
+// tab. Quando è false, il nuovo giro di applyNodesFilters() che segue
+// comunque il fetch di /api/nodes dentro loadNodesTab() basta da solo
+// a far comparire il filtro Distance from SRC con la posizione ormai
+// nota.
+//
+let nodesDataReady = false;
+
+//
+// Posizione di SRC per il filtro "Distance from SRC" (Known Nodes) —
+// popolata da loadDeviceStatus(), stessa fetch già usata per la
+// tabella Device Status qui sopra nella tab, nessuna chiamata di rete
+// aggiuntiva. null finché non nota o se il Companion non ha ancora
+// fornito coordinate GPS: getNodeDistanceThresholdKm() tratta questo
+// caso disattivando il filtro (nessun nodo escluso), mai come "nessun
+// nodo entro il raggio".
+//
+let srcCoordsCache = null;
+
+//
 // Mappa Leaflet della pagina di dettaglio traccia — creata una sola
 // volta (v. ensureTraceDetailMap() più sotto) e riutilizzata ad ogni
 // apertura, a differenza di nodeDetailChart (Chart.js) che viene
@@ -3248,6 +3278,9 @@ async function loadNodesTab() {
         nodesDataCache =
             nodes;
 
+        nodesDataReady =
+            true;
+
         initNodesFilters();
 
         applyNodesFilters();
@@ -3417,6 +3450,207 @@ function nodeMatchesLengthFilter(
 }
 
 //
+// Filtro "Max hop count": soglia massima (hop_count <= soglia) digitata
+// dall'utente in un campo libero, non un elenco predefinito come "Path
+// length". Motivo, confermato con l'utente dopo una prima versione a
+// corrispondenza esatta: hop_count non ha un range piccolo e stabile
+// come il byte-size di un singolo hop (1/2/3, fisso per come è fatto
+// l'encoding) — nel dataset reale usato per verificare questo filtro
+// va da 0 a 14, e il firmware permette fino a 64 (autoadd_max_hops, v.
+// docs/FIRMWARE_ANALYSIS.md §2.4); un dropdown avrebbe richiesto una
+// lista lunga e comunque incompleta rispetto al limite di protocollo.
+// Stesso trattamento "valore non valido/vuoto = nessun filtro" già
+// usato da getNodeDistanceThresholdKm() per il campo Custom della
+// distanza, per coerenza di comportamento tra i due campi liberi
+// della tabella.
+//
+function getNodeHopCountThreshold(
+    rawValue
+) {
+
+    if (
+        !rawValue
+    ) {
+
+        return null;
+    }
+
+    const parsed =
+        parseInt(
+            rawValue,
+            10
+        );
+
+    return (
+        Number.isFinite(parsed) &&
+        parsed >= 0
+    )
+        ? parsed
+        : null;
+}
+
+//
+// Byte fissi del buffer path a livello firmware: ContactInfo.out_path
+// è un campo di 64 byte (docs/FIRMWARE_ANALYSIS.md §10, stesso valore
+// già citato altrove nel progetto per lo stesso campo — v.
+// docs/REVIEW_FULL_EXTENSIVE_2026-08-20_Rev6.md). Ogni hop nel path
+// occupa lengthValue byte (1/2/3, lo stesso valore di "Path length"):
+// il numero massimo di hop rappresentabili in quel buffer è quindi
+// floor(64 / lengthValue) — 64/32/21 per 1/2/3 byte, confermato
+// dall'utente rispetto alla documentazione MeshCore prima di essere
+// implementato qui. null quando "Path length" è su "All": senza un
+// encoding specifico selezionato non c'è un singolo tetto valido per
+// tutti i nodi contemporaneamente.
+//
+const OUT_PATH_BUFFER_BYTES =
+    64;
+
+function getPathLengthMaxHopCount(
+    pathLengthValue
+) {
+
+    if (
+        !pathLengthValue ||
+        pathLengthValue === "all"
+    ) {
+
+        return null;
+    }
+
+    const bytesPerHop =
+        parseInt(
+            pathLengthValue,
+            10
+        );
+
+    if (
+        !Number.isFinite(bytesPerHop) ||
+        bytesPerHop <= 0
+    ) {
+
+        return null;
+    }
+
+    return Math.floor(
+        OUT_PATH_BUFFER_BYTES /
+        bytesPerHop
+    );
+}
+
+//
+// Aggiorna l'attributo max e il tooltip di "Max hop count" in base
+// alla selezione corrente di "Path length" — non forza/clampa mai il
+// valore già digitato dall'utente (un hop_count<=50 con Path
+// length=2 byte, il cui massimo teorico è 32, produce comunque lo
+// stesso risultato di <=32 per quei nodi: non è un errore, solo un
+// vincolo ridondante, non serve impedirlo). Richiamata sia al cambio
+// di "Path length" sia da initNodesFilters() ad ogni chiamata, stesso
+// pattern già in uso per updateNodeDistanceCustomVisibility()/
+// updateNodeDistanceFilterAvailability().
+//
+function updateNodeHopCountMaxHint() {
+
+    const lengthSelect =
+        document.getElementById(
+            "nodePathLengthFilter"
+        );
+
+    const hopCountInput =
+        document.getElementById(
+            "nodeHopCountFilterInput"
+        );
+
+    const hopCountLabel =
+        document.querySelector(
+            'label[for="nodeHopCountFilterInput"]'
+        );
+
+    if (
+        !hopCountInput
+    ) {
+
+        return;
+    }
+
+    const maxHops =
+        getPathLengthMaxHopCount(
+            lengthSelect
+                ? lengthSelect.value
+                : "all"
+        );
+
+    if (
+        maxHops === null
+    ) {
+
+        hopCountInput.removeAttribute(
+            "max"
+        );
+
+        if (
+            hopCountLabel
+        ) {
+
+            hopCountLabel.removeAttribute(
+                "data-tooltip"
+            );
+        }
+
+        return;
+    }
+
+    hopCountInput.setAttribute(
+        "max",
+        String(maxHops)
+    );
+
+    if (
+        hopCountLabel
+    ) {
+
+        hopCountLabel.setAttribute(
+            "data-tooltip",
+            `Con "Path length" su ${lengthSelect.value} byte, il massimo hop count possibile è ${maxHops} (buffer path del firmware: ${OUT_PATH_BUFFER_BYTES} byte).`
+        );
+    }
+}
+
+//
+// A differenza di nodeMatchesLengthFilter() — che esclude anche i
+// nodi DIRECT (hop_count===0), perché per un path a zero hop non
+// esiste alcun "chunk" da misurare in byte — qui 0 è un valore
+// perfettamente valido e voluto: un nodo DIRECT ha letteralmente zero
+// elementi nel path, quindi soddisfa qualunque soglia >=0. Solo i
+// nodi "not observed" (hop_count assente, nessun path mai osservato
+// questo mese) restano esclusi quando il filtro è attivo, stesso
+// criterio di nodeIsNotObserved() subito sotto.
+//
+function nodeMatchesHopCountFilter(
+    n,
+    hopCountThreshold
+) {
+
+    if (
+        hopCountThreshold === null
+    ) {
+
+        return true;
+    }
+
+    if (
+        n.hop_count === null ||
+        n.hop_count === undefined
+    ) {
+
+        return false;
+    }
+
+    return (
+        n.hop_count <= hopCountThreshold
+    );
+}
+
+//
 // Stesso identico criterio di buildAdvertPathHtml()/split
 // AdvertPathHops() per "not observed": hop_count assente (mai una
 // riga in path_observations per questo nodo, arrivato solo dal sync
@@ -3462,6 +3696,251 @@ function nodeHasFutureAdvert(
     return n.last_advert > nowSecs;
 }
 
+//
+// Distanza in km fra due coordinate (formula dell'emisenoverso, grande
+// cerchio) — usata solo dal filtro "Distance from SRC" sotto, nessuna
+// libreria esterna necessaria per un calcolo così piccolo.
+//
+function haversineDistanceKm(
+    lat1,
+    lon1,
+    lat2,
+    lon2
+) {
+
+    const R =
+        6371;
+
+    const toRad =
+        deg => deg * Math.PI / 180;
+
+    const dLat =
+        toRad(lat2 - lat1);
+
+    const dLon =
+        toRad(lon2 - lon1);
+
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) *
+        Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) ** 2;
+
+    return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+//
+// null se non misurabile: SRC non ancora nota (srcCoordsCache) o nodo
+// senza adv_lat/adv_lon proprio (989 nodi su 990 nel dataset reale
+// usato per verificare questo filtro, non tutti — stesso trattamento
+// "non misurabile" già usato da getPathChunkSize()/
+// nodeMatchesLengthFilter() per i nodi senza un path definito).
+//
+function nodeDistanceFromSrcKm(
+    n
+) {
+
+    if (
+        !srcCoordsCache ||
+        n.adv_lat == null ||
+        n.adv_lon == null
+    ) {
+
+        return null;
+    }
+
+    return haversineDistanceKm(
+        srcCoordsCache.lat,
+        srcCoordsCache.lon,
+        n.adv_lat,
+        n.adv_lon
+    );
+}
+
+//
+// selectValue: "all" | "custom" | valore numerico in km (voce
+// predefinita del <select>, v. index.html). Ritorna null quando il
+// filtro va trattato come disattivo — non solo per "All", ma anche
+// quando SRC non è (ancora) nota o il campo custom non contiene un
+// numero valido: in nessuno di questi casi va interpretato come "0
+// nodi entro il raggio", deve lasciare passare tutto, esattamente
+// come "All". Il controllo è comunque disabilitato in UI quando SRC
+// non è nota (v. updateNodeDistanceFilterAvailability()) — questo
+// controllo qui è la stessa garanzia lato logica, indipendente
+// dall'ordine con cui /api/nodes e /api/device_status rispondono.
+//
+function getNodeDistanceThresholdKm(
+    selectValue,
+    customValue
+) {
+
+    if (
+        !srcCoordsCache ||
+        !selectValue ||
+        selectValue === "all"
+    ) {
+
+        return null;
+    }
+
+    if (
+        selectValue === "custom"
+    ) {
+
+        const parsed =
+            parseFloat(
+                customValue
+            );
+
+        return (
+            Number.isFinite(parsed) &&
+            parsed >= 0
+        )
+            ? parsed
+            : null;
+    }
+
+    const parsed =
+        parseFloat(
+            selectValue
+        );
+
+    return Number.isFinite(parsed)
+        ? parsed
+        : null;
+}
+
+function nodeMatchesDistanceFilter(
+    n,
+    thresholdKm
+) {
+
+    if (
+        thresholdKm === null
+    ) {
+
+        return true;
+    }
+
+    const distanceKm =
+        nodeDistanceFromSrcKm(
+            n
+        );
+
+    if (
+        distanceKm === null
+    ) {
+
+        return false;
+    }
+
+    return distanceKm <= thresholdKm;
+}
+
+//
+// Mostra/nasconde il campo custom (#nodeDistanceCustomInput) in base
+// alla voce corrente del <select> — richiamata sia al cambio di
+// selezione sia da initNodesFilters() per allineare la UI al valore
+// ripristinato da localStorage.
+//
+function updateNodeDistanceCustomVisibility() {
+
+    const distanceSelect =
+        document.getElementById(
+            "nodeDistanceFilter"
+        );
+
+    const distanceCustomInput =
+        document.getElementById(
+            "nodeDistanceCustomInput"
+        );
+
+    if (
+        !distanceSelect ||
+        !distanceCustomInput
+    ) {
+
+        return;
+    }
+
+    distanceCustomInput.style.display =
+        (distanceSelect.value === "custom")
+            ? ""
+            : "none";
+}
+
+//
+// Abilita/disabilita il filtro Distance from SRC in base alla
+// disponibilità di srcCoordsCache — richiamata da loadDeviceStatus()
+// ogni volta che arriva una risposta fresca, e da initNodesFilters()
+// per lo stato iniziale. data-tooltip sulla <label> (mai disabilitata)
+// invece che sul <select> stesso: alcuni browser (Chromium incluso)
+// non generano eventi mouseover su un controllo form disabilitato,
+// il tooltip sparirebbe insieme al motivo per cui è disabilitato.
+// Stesso identico testo già usato per lo stesso identico caso nella
+// mappa di dettaglio traccia (loadTraceDetail()) — v. anche
+// docs/ARCHITECTURE.md, sezione "Posizione SRC".
+//
+function updateNodeDistanceFilterAvailability() {
+
+    const distanceSelect =
+        document.getElementById(
+            "nodeDistanceFilter"
+        );
+
+    const distanceCustomInput =
+        document.getElementById(
+            "nodeDistanceCustomInput"
+        );
+
+    const distanceLabel =
+        document.querySelector(
+            'label[for="nodeDistanceFilter"]'
+        );
+
+    if (
+        !distanceSelect
+    ) {
+
+        return;
+    }
+
+    const available =
+        !!srcCoordsCache;
+
+    distanceSelect.disabled =
+        !available;
+
+    if (
+        distanceCustomInput
+    ) {
+
+        distanceCustomInput.disabled =
+            !available;
+    }
+
+    if (
+        distanceLabel
+    ) {
+
+        if (
+            available
+        ) {
+
+            distanceLabel.removeAttribute(
+                "data-tooltip"
+            );
+
+        } else {
+
+            distanceLabel.setAttribute(
+                "data-tooltip",
+                "Posizione del nodo locale (SRC) non disponibile: il Companion collegato non ha ancora fornito coordinate GPS."
+            );
+        }
+    }
+}
+
 function applyNodesFilters() {
 
     const nameFilterInput =
@@ -3484,6 +3963,11 @@ function applyNodesFilters() {
             "nodePathLengthFilter"
         );
 
+    const hopCountInput =
+        document.getElementById(
+            "nodeHopCountFilterInput"
+        );
+
     const notObservedCheckbox =
         document.getElementById(
             "nodeNotObservedFilter"
@@ -3492,6 +3976,16 @@ function applyNodesFilters() {
     const futureAdvertCheckbox =
         document.getElementById(
             "nodeFutureAdvertFilter"
+        );
+
+    const distanceSelect =
+        document.getElementById(
+            "nodeDistanceFilter"
+        );
+
+    const distanceCustomInput =
+        document.getElementById(
+            "nodeDistanceCustomInput"
         );
 
     const nameFilter =
@@ -3514,6 +4008,11 @@ function applyNodesFilters() {
             ? lengthSelect.value
             : "all";
 
+    const hopCountFilterRaw =
+        hopCountInput
+            ? hopCountInput.value.trim()
+            : "";
+
     const notObservedFilter =
         notObservedCheckbox
             ? notObservedCheckbox.checked
@@ -3523,6 +4022,16 @@ function applyNodesFilters() {
         futureAdvertCheckbox
             ? futureAdvertCheckbox.checked
             : false;
+
+    const distanceFilterValue =
+        distanceSelect
+            ? distanceSelect.value
+            : "all";
+
+    const distanceCustomValue =
+        distanceCustomInput
+            ? distanceCustomInput.value
+            : "";
 
     safeLocalStorageSet(
         "nodeNameFilter",
@@ -3545,6 +4054,11 @@ function applyNodesFilters() {
     );
 
     safeLocalStorageSet(
+        "nodeHopCountFilter",
+        hopCountFilterRaw
+    );
+
+    safeLocalStorageSet(
         "nodeNotObservedFilter",
         notObservedFilter
     );
@@ -3554,14 +4068,35 @@ function applyNodesFilters() {
         futureAdvertFilter
     );
 
+    safeLocalStorageSet(
+        "nodeDistanceFilter",
+        distanceFilterValue
+    );
+
+    safeLocalStorageSet(
+        "nodeDistanceCustomValue",
+        distanceCustomValue
+    );
+
+    const distanceThresholdKm =
+        getNodeDistanceThresholdKm(
+            distanceFilterValue,
+            distanceCustomValue
+        );
+
+    const hopCountThreshold =
+        getNodeHopCountThreshold(
+            hopCountFilterRaw
+        );
+
     //
     // name, path e type sono in OR tra loro (modi alternativi di
     // cercare/restringere lo stesso insieme di nodi, non condizioni
     // da soddisfare tutte insieme) — se più di uno è valorizzato, un
-    // nodo compare se soddisfa ALMENO UNO. length, not-observed e
-    // future-advert restano invece un affinamento in AND: non sono
-    // criteri di ricerca, sono vincoli strutturali applicati sopra
-    // il risultato della ricerca.
+    // nodo compare se soddisfa ALMENO UNO. length, hop count,
+    // distance, not-observed e future-advert restano invece un
+    // affinamento in AND: non sono criteri di ricerca, sono vincoli
+    // strutturali applicati sopra il risultato della ricerca.
     //
     const typeFilterActive =
         !!typeFilter &&
@@ -3607,6 +4142,14 @@ function applyNodesFilters() {
                     nodeMatchesLengthFilter(
                         n,
                         lengthFilter
+                    ) &&
+                    nodeMatchesHopCountFilter(
+                        n,
+                        hopCountThreshold
+                    ) &&
+                    nodeMatchesDistanceFilter(
+                        n,
+                        distanceThresholdKm
                     ) &&
                     (
                         !notObservedFilter ||
@@ -3656,6 +4199,16 @@ function initNodesFilters() {
             "nodePathFilterClearBtn"
         );
 
+    const hopCountInput =
+        document.getElementById(
+            "nodeHopCountFilterInput"
+        );
+
+    const hopCountClearBtn =
+        document.getElementById(
+            "nodeHopCountFilterClearBtn"
+        );
+
     const notObservedCheckbox =
         document.getElementById(
             "nodeNotObservedFilter"
@@ -3664,6 +4217,16 @@ function initNodesFilters() {
     const futureAdvertCheckbox =
         document.getElementById(
             "nodeFutureAdvertFilter"
+        );
+
+    const distanceSelect =
+        document.getElementById(
+            "nodeDistanceFilter"
+        );
+
+    const distanceCustomInput =
+        document.getElementById(
+            "nodeDistanceCustomInput"
         );
 
     if (
@@ -3694,6 +4257,11 @@ function initNodesFilters() {
             "nodePathLengthFilter"
         ) || "all";
 
+    const savedHopCount =
+        safeLocalStorageGet(
+            "nodeHopCountFilter"
+        ) || "";
+
     const savedNotObserved =
         safeLocalStorageGet(
             "nodeNotObservedFilter"
@@ -3703,6 +4271,16 @@ function initNodesFilters() {
         safeLocalStorageGet(
             "nodeFutureAdvertFilter"
         ) === "true";
+
+    const savedDistance =
+        safeLocalStorageGet(
+            "nodeDistanceFilter"
+        ) || "all";
+
+    const savedDistanceCustom =
+        safeLocalStorageGet(
+            "nodeDistanceCustomValue"
+        ) || "";
 
     if (
         nameFilterInput
@@ -3732,6 +4310,14 @@ function initNodesFilters() {
         savedLength;
 
     if (
+        hopCountInput
+    ) {
+
+        hopCountInput.value =
+            savedHopCount;
+    }
+
+    if (
         notObservedCheckbox
     ) {
 
@@ -3746,6 +4332,38 @@ function initNodesFilters() {
         futureAdvertCheckbox.checked =
             savedFutureAdvert;
     }
+
+    if (
+        distanceSelect
+    ) {
+
+        distanceSelect.value =
+            savedDistance;
+    }
+
+    if (
+        distanceCustomInput
+    ) {
+
+        distanceCustomInput.value =
+            savedDistanceCustom;
+    }
+
+    //
+    // Ricalcolate ad ogni chiamata (non solo al primo bind, come i
+    // valori sopra): srcCoordsCache può diventare noto/cambiare tra
+    // un refresh e l'altro della tab, la visibilità del campo custom
+    // e lo stato abilitato/disabilitato del filtro devono restare
+    // allineati anche quando initNodesFilters() gira di nuovo senza
+    // che l'utente abbia toccato nulla. Stesso motivo per il tetto di
+    // "Max hop count": il valore restaurato di "Path length" da
+    // localStorage va riflesso subito, non solo al primo cambio manuale.
+    //
+    updateNodeDistanceCustomVisibility();
+
+    updateNodeDistanceFilterAvailability();
+
+    updateNodeHopCountMaxHint();
 
     if (
         filterInput.dataset.bound
@@ -3784,8 +4402,40 @@ function initNodesFilters() {
 
     lengthSelect.addEventListener(
         "change",
-        applyNodesFilters
+        () => {
+
+            updateNodeHopCountMaxHint();
+
+            applyNodesFilters();
+        }
     );
+
+    if (
+        hopCountInput
+    ) {
+
+        hopCountInput.addEventListener(
+            "input",
+            applyNodesFilters
+        );
+    }
+
+    if (
+        hopCountClearBtn &&
+        hopCountInput
+    ) {
+
+        hopCountClearBtn.addEventListener(
+            "click",
+            () => {
+
+                hopCountInput.value =
+                    "";
+
+                applyNodesFilters();
+            }
+        );
+    }
 
     if (
         notObservedCheckbox
@@ -3803,6 +4453,31 @@ function initNodesFilters() {
 
         futureAdvertCheckbox.addEventListener(
             "change",
+            applyNodesFilters
+        );
+    }
+
+    if (
+        distanceSelect
+    ) {
+
+        distanceSelect.addEventListener(
+            "change",
+            () => {
+
+                updateNodeDistanceCustomVisibility();
+
+                applyNodesFilters();
+            }
+        );
+    }
+
+    if (
+        distanceCustomInput
+    ) {
+
+        distanceCustomInput.addEventListener(
+            "input",
             applyNodesFilters
         );
     }
@@ -3880,6 +4555,48 @@ async function loadDeviceStatus() {
         renderDeviceStatusTable(
             status
         );
+
+        //
+        // Posizione di SRC per il filtro "Distance from SRC" (Known
+        // Nodes) — stessa risposta già ricevuta qui sopra per la
+        // tabella Device Status, nessuna fetch aggiuntiva. null
+        // quando il Companion non ha ancora fornito coordinate GPS
+        // (stesso controllo già usato in loadTraceDetail() per lo
+        // stesso dato).
+        //
+        srcCoordsCache =
+            (
+                status &&
+                status.adv_lat != null &&
+                status.adv_lon != null
+            )
+                ? {
+                    lat: status.adv_lat,
+                    lon: status.adv_lon
+                }
+                : null;
+
+        updateNodeDistanceFilterAvailability();
+
+        //
+        // Riapplica i filtri Nodes solo se /api/nodes ha già
+        // risposto almeno una volta su questa tab (nodesDataReady) —
+        // le due fetch partono insieme da loadNodesTab() senza
+        // await, ordine di risposta non garantito. Se /api/nodes non
+        // ha ancora risposto, il giro di applyNodesFilters() che lo
+        // segue comunque dentro loadNodesTab() basta da solo; farlo
+        // anche da qui con nodesDataCache ancora [] letterale
+        // ridisegnerebbe la tabella su "No nodes data available" un
+        // istante prima del render vero — lo stesso blink già
+        // eliminato altrove in questa tab (docs/ARCHITECTURE.md
+        // §65).
+        //
+        if (
+            nodesDataReady
+        ) {
+
+            applyNodesFilters();
+        }
     }
 
     catch (

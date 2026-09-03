@@ -1,7 +1,7 @@
 # MeshCore trace-mon
 
 Un piccolo backend + frontend web per monitorare una rete
-[MeshCore](https://meshcore.co.uk/) (LoRa) da un companion collegato
+[MeshCore](https://meshcore.io/) (LoRa) da un companion collegato
 a un Raspberry Pi (o altra macchina Linux equivalente).
 
 ## Cosa fa

@@ -555,18 +555,27 @@ class ContactSyncModule:
         #
         # Posizione geografica del companion connesso a trace-mon
         # stesso (adv_lat/adv_lon), per la pagina di dettaglio traccia
-        # con mappa (frontend). A differenza di core/radio/packets/
-        # device_info sopra, NON è una query locale al device: è già
-        # disponibile in mesh.self_info, popolato in modo asincrono
-        # dalla libreria ad ogni connessione/riconnessione (evento
-        # SELF_INFO, v. stesso pattern già documentato in
-        # SystemService._status_result()) — nessun comando aggiuntivo
-        # da inviare, nessun rischio di allungare questo giro di sync.
-        # Letta qui (non condizionata al successo delle quattro query
+        # con mappa (frontend), più i parametri radio LoRa attualmente
+        # configurati (radio_freq/radio_bw/radio_sf/radio_cr), per la
+        # riga "Radio settings" della tabella Device Status (frontend).
+        # A differenza di core/radio/packets/device_info sopra, NON
+        # sono query locali al device: sono già disponibili in
+        # mesh.self_info, popolato in modo asincrono dalla libreria ad
+        # ogni connessione/riconnessione (evento SELF_INFO, v. stesso
+        # pattern già documentato in SystemService._status_result()) —
+        # nessun comando aggiuntivo da inviare, nessun rischio di
+        # allungare questo giro di sync. I parametri radio sono già
+        # usati altrove nel progetto (SystemService._status_result(),
+        # core/trace_timeout_estimate.py) per stimare i timeout di
+        # tracce/altri servizi, ma finora mai persistiti in
+        # device_status — v. MIGRATIONS/upsert_device_status() in
+        # db.py per l'unità di misura (radio_bw in kHz) e la
+        # convenzione (radio_cr in formato RAW RadioLib, 5-8).
+        # Lette qui (non condizionate al successo delle quattro query
         # sopra, il cui esito combinato è verificato solo per decidere
         # se saltare l'intero upsert) così una connessione riuscita ma
         # con, per dire, get_stats_radio() fallita non perde comunque
-        # l'aggiornamento della posizione, se nota.
+        # l'aggiornamento di posizione/radio, se noti.
         #
         self_info = self.engine.mesh.self_info or {}
 
@@ -593,7 +602,11 @@ class ContactSyncModule:
             fw_build=device_info.get("fw_build"),
             fw_version=device_info.get("ver"),
             adv_lat=self_info.get("adv_lat"),
-            adv_lon=self_info.get("adv_lon")
+            adv_lon=self_info.get("adv_lon"),
+            radio_freq=self_info.get("radio_freq"),
+            radio_bw=self_info.get("radio_bw"),
+            radio_sf=self_info.get("radio_sf"),
+            radio_cr=self_info.get("radio_cr")
         )
 
     async def _get_stats_safe(self, label, factory):

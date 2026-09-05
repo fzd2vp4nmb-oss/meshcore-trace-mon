@@ -56,6 +56,29 @@ h3 {
 }
 
 /* =========================
+   FOOTER
+========================= */
+
+.footerBar {
+
+    margin-top: 30px;
+
+    padding-top: 15px;
+
+    border-top: 1px solid #cccccc;
+
+    text-align: center;
+
+    font-size: 0.85em;
+
+    color: #666666;
+
+    transition:
+        border-color 0.3s,
+        color 0.3s;
+}
+
+/* =========================
    SELECT
 ========================= */
 
@@ -225,6 +248,13 @@ body.dark #themeButton {
     color: #e0e0e0;
 
     border-color: #555555;
+}
+
+body.dark .footerBar {
+
+    border-top-color: #555555;
+
+    color: #999999;
 }
 
 body.dark table {

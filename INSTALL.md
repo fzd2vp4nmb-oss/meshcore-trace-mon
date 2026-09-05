@@ -594,6 +594,10 @@ fa parte del setup di base di trace-mon — il Nodo funziona
 autonomamente anche senza — ma estende ciò che puoi vedere
 aggregando le tue rilevazioni con quelle di altri.
 
+Il Collector ufficiale del progetto è raggiungibile all'indirizzo
+**https://www.trace-mon.it**, dove sono consultabili i dati aggregati
+di tutti i nodi iscritti.
+
 ### 14.1 Genera una chiave SSH
 
 ```bash

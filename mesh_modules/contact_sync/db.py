@@ -276,7 +276,26 @@ MIGRATIONS = {
         # "posizione non nota", non come 0.0/0.0 (che sarebbe una
         # coordinata reale, al largo del Golfo di Guinea).
         "adv_lat": "REAL",
-        "adv_lon": "REAL"
+        "adv_lon": "REAL",
+        # Parametri radio LoRa attualmente configurati sul companion
+        # (frequenza operativa, banda, Spreading Factor, Coding Rate),
+        # aggiunta per la tabella "Device Status" del frontend (riga
+        # "Radio settings"). Stessa fonte e stesso trattamento di
+        # adv_lat/adv_lon sopra: NON una delle quattro query locali
+        # (get_stats_core/radio/packets, send_device_query), arriva da
+        # mesh.self_info (evento SELF_INFO) — già letta da questo
+        # stesso file per adv_lat/adv_lon, e già consumata altrove nel
+        # progetto (mesh_modules/system/service.py,
+        # core/trace_timeout_estimate.py) per stimare i timeout delle
+        # tracce, ma mai persistita fino ad ora. radio_bw in kHz,
+        # radio_cr nella convenzione RAW RadioLib (5-8, non l'addendo
+        # 1-4 della formula standard) — stessa convenzione già
+        # documentata in docs/FIRMWARE_ANALYSIS.md §13.3 e
+        # docs/CHANGES_trace_timeout_dinamico_hop.md.
+        "radio_freq": "REAL",
+        "radio_bw": "REAL",
+        "radio_sf": "INTEGER",
+        "radio_cr": "INTEGER"
     },
     "repeater_config": {
         # Aggiunti ai comandi CLI testuali di CLI_QUERIES dopo la
@@ -636,25 +655,34 @@ class ContactDB:
         fw_build=None,
         fw_version=None,
         adv_lat=None,
-        adv_lon=None
+        adv_lon=None,
+        radio_freq=None,
+        radio_bw=None,
+        radio_sf=None,
+        radio_cr=None
     ):
         """
         Stato corrente del companion connesso a trace-mon stesso (non
         un repeater remoto) — riga singola (id=1 fisso), sovrascritta
         ad ogni giro invece che accumulata come repeater_status. Un
-        gruppo di campi None (es. tutti quelli 'radio') significa che
-        quella singola query locale è fallita in questo giro — resta
-        il valore del giro precedente (COALESCE), non viene azzerato.
-        Il chiamante è responsabile di non richiamare questa funzione
-        affatto se TUTTE le query del giro sono fallite (in tal caso
-        updated_at deve restare quello dell'ultimo giro riuscito).
+        gruppo di campi None (es. tutti quelli 'radio' delle quattro
+        query — non i parametri radio_*/adv_lat/adv_lon sotto, che
+        sono un gruppo indipendente) significa che quella singola
+        query locale è fallita in questo giro — resta il valore del
+        giro precedente (COALESCE), non viene azzerato. Il chiamante è
+        responsabile di non richiamare questa funzione affatto se
+        TUTTE le query del giro sono fallite (in tal caso updated_at
+        deve restare quello dell'ultimo giro riuscito).
 
-        adv_lat/adv_lon seguono la stessa convenzione COALESCE degli
-        altri campi, ma la loro fonte (mesh.self_info, v. chiamante in
-        contact_sync.py) non fa parte delle quattro query locali di
-        cui sopra: possono quindi essere presenti anche in un giro in
-        cui, per esempio, i campi 'radio' sono None per una query
-        fallita — indipendenza voluta, non un'incoerenza.
+        adv_lat/adv_lon/radio_freq/radio_bw/radio_sf/radio_cr seguono
+        la stessa convenzione COALESCE degli altri campi, ma la loro
+        fonte (mesh.self_info, v. chiamante in contact_sync.py) non fa
+        parte delle quattro query locali di cui sopra: possono quindi
+        essere presenti anche in un giro in cui, per esempio, i campi
+        'radio' (stats) sono None per una query fallita —
+        indipendenza voluta, non un'incoerenza. radio_bw in kHz,
+        radio_cr nella convenzione RAW RadioLib (5-8) — v. MIGRATIONS
+        sopra per il riferimento completo.
         """
 
         self._conn.execute(
@@ -664,9 +692,10 @@ class ContactDB:
                 queue_len, noise_floor, last_rssi, last_snr,
                 tx_air_secs, rx_air_secs, recv, sent, flood_tx,
                 direct_tx, flood_rx, direct_rx, recv_errors, model,
-                fw_build, fw_version, adv_lat, adv_lon
+                fw_build, fw_version, adv_lat, adv_lon, radio_freq,
+                radio_bw, radio_sf, radio_cr
             )
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 updated_at  = excluded.updated_at,
                 battery_mv  = COALESCE(excluded.battery_mv, device_status.battery_mv),
@@ -689,14 +718,19 @@ class ContactDB:
                 fw_build    = COALESCE(excluded.fw_build, device_status.fw_build),
                 fw_version  = COALESCE(excluded.fw_version, device_status.fw_version),
                 adv_lat     = COALESCE(excluded.adv_lat, device_status.adv_lat),
-                adv_lon     = COALESCE(excluded.adv_lon, device_status.adv_lon)
+                adv_lon     = COALESCE(excluded.adv_lon, device_status.adv_lon),
+                radio_freq  = COALESCE(excluded.radio_freq, device_status.radio_freq),
+                radio_bw    = COALESCE(excluded.radio_bw, device_status.radio_bw),
+                radio_sf    = COALESCE(excluded.radio_sf, device_status.radio_sf),
+                radio_cr    = COALESCE(excluded.radio_cr, device_status.radio_cr)
             """,
             (
                 updated_at, battery_mv, uptime_secs, errors, queue_len,
                 noise_floor, last_rssi, last_snr, tx_air_secs,
                 rx_air_secs, recv, sent, flood_tx, direct_tx, flood_rx,
                 direct_rx, recv_errors, model, fw_build, fw_version,
-                adv_lat, adv_lon
+                adv_lat, adv_lon, radio_freq, radio_bw, radio_sf,
+                radio_cr
             )
         )
 

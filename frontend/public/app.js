@@ -95,6 +95,26 @@ let nodesDataCache = [];
 let nodesDataReady = false;
 
 //
+// Period scelto per l'intera pagina Nodes (2026-09-10) — "live" o un
+// nome di file archivio (es. "path_observations-2026-08.json.gz").
+// Spostato qui dal dettaglio nodo (che non ha più un proprio
+// selettore, v. loadNodeDetail()): guida sia quale endpoint
+// interroga loadNodesTab() sia, per il nodo che si apre in
+// dettaglio, quale mese di osservazioni mostrare — a differenza dei
+// filtri sotto, che sono un affinamento CLIENT-SIDE su dati già
+// caricati, questo determina QUALI dati vengono caricati. Persistito
+// in localStorage (scelta utente, v. analisi 2026-09-10): a
+// differenza del vecchio selettore per-nodo (che ripartiva sempre da
+// "live" ad ogni apertura), qui la selezione sopravvive alla
+// chiusura/riapertura della tab.
+//
+let nodesArchivePeriod =
+    safeLocalStorageGet(
+        "nodesArchivePeriod"
+    ) ||
+    "live";
+
+//
 // Posizione di SRC per il filtro "Distance from SRC" (Known Nodes) —
 // popolata da loadDeviceStatus(), stessa fetch già usata per la
 // tabella Device Status qui sopra nella tab, nessuna chiamata di rete
@@ -168,7 +188,7 @@ let deviceStatusRequestId = 0;
 let dataSourcesRequestId = 0;
 let meshNodesRequestId = 0;
 let neighborsRepeaterListRequestId = 0;
-let nodeDetailArchiveListRequestId = 0;
+let nodesArchiveListRequestId = 0;
 let neighboursArchiveListRequestId = 0;
 let traceDetailRequestId = 0;
 
@@ -2872,28 +2892,55 @@ dataSourceSelector.addEventListener(
 }
 
 //
-// Selettore periodo (Live/mese archiviato) della vista dettaglio
-// nodo — a differenza di dataSourceSelector non c'è nulla da
-// caricare al DOMContentLoaded: la selezione viene popolata da
-// loadNodeDetailArchiveList() solo quando si apre un nodo (vedi
-// loadNodeDetail).
+// Selettore periodo (Live/mese archiviato) della pagina Nodes —
+// spostato qui dal dettaglio nodo il 2026-09-10 (v. commento su
+// nodesArchivePeriod in cima al file). A differenza del vecchio
+// selettore per-nodo, le opzioni vengono (ri)popolate da
+// populateNodesArchiveSelector() ogni volta che si apre la tab
+// Nodes (click sul tab, "Back to list", cambio nodo fisico sul
+// Collettore) — qui si registra solo il listener "change", una sola
+// volta, con lo stesso guard "dataset.bound" già in uso altrove
+// (es. initNodesFilters()) per non registrarlo più volte ad ogni
+// ripopolamento.
 //
-const nodeDetailArchiveSelector =
+const nodesArchiveSelector =
     document.getElementById(
-        "nodeDetailArchiveSelector"
+        "nodesArchiveSelector"
     );
 
 if (
-    nodeDetailArchiveSelector
+    nodesArchiveSelector &&
+    !nodesArchiveSelector.dataset.bound
 ) {
 
-    nodeDetailArchiveSelector.addEventListener(
+    nodesArchiveSelector.dataset.bound =
+        "true";
+
+    nodesArchiveSelector.addEventListener(
         "change",
         () => {
 
-            switchNodeDetailPeriod(
-                nodeDetailArchiveSelector.value
+            nodesArchivePeriod =
+                nodesArchiveSelector.value;
+
+            safeLocalStorageSet(
+                "nodesArchivePeriod",
+                nodesArchivePeriod
             );
+
+            //
+            // Riavvia (o ferma, se non più "live") l'auto-refresh
+            // in base al nuovo Period — startNodesAutoRefresh() fa
+            // già lei stessa questa scelta, v. la sua definizione.
+            //
+            if (
+                typeof startNodesAutoRefresh === "function"
+            ) {
+
+                startNodesAutoRefresh();
+            }
+
+            loadNodesTab();
         }
     );
 }
@@ -3223,7 +3270,29 @@ function buildAdvertPathHtml(hopCount, pathHex) {
         .join(" > ");
 }
 
+//
+// L'auto-refresh di Nodes ha senso solo sul Period "live" — un mese
+// archiviato è uno snapshot statico, ricaricarlo ogni 5 minuti
+// rifarebbe la stessa fetch per lo stesso identico risultato (stesso
+// principio già applicato alle pagine di dettaglio storico, v.
+// analisi-fattibilita-refresh-sse-frontend-2026-08-25.md, tabella
+// §1.1: "Node Detail / Trace Detail: Nessuno... viste statiche su
+// uno snapshot storico"). Centralizzato qui invece che in ciascuno
+// dei chiamanti (click sul tab, "Back to list", listener del
+// selettore Period) — stesso motivo per cui syncAutoRefreshToDataSource
+// esiste per Trace sul Collettore: un solo punto che decide se il
+// timer va acceso o no in base allo stato corrente.
+//
 function startNodesAutoRefresh() {
+
+    if (
+        nodesArchivePeriod !== "live"
+    ) {
+
+        stopAutoRefresh();
+
+        return;
+    }
 
     startAutoRefresh(
         loadNodesTab
@@ -3258,9 +3327,26 @@ async function loadNodesTab() {
 
     try {
 
+        //
+        // Period "live" invariato (stesso endpoint di sempre); un
+        // Period archiviato legge invece l'aggregato dell'intero
+        // mese via /api/nodes/archive/load (introdotto 2026-09-10,
+        // v. server.js) — stessa forma di riga di /api/nodes, quindi
+        // nessuna modifica richiesta a initNodesFilters()/
+        // applyNodesFilters()/renderNodesTable() per il rendering
+        // della tabella in sé.
+        //
+        const url =
+            nodesArchivePeriod === "live"
+                ? "/api/nodes"
+                : "/api/nodes/archive/load?file=" +
+                  encodeURIComponent(
+                      nodesArchivePeriod
+                  );
+
         const res =
             await fetch(
-                "/api/nodes"
+                url
             );
 
         assertResOk(res);
@@ -3305,6 +3391,129 @@ async function loadNodesTab() {
 
         table.innerHTML =
             "<tr><td>Error loading data.</td></tr>";
+    }
+}
+
+//
+// Popola il selettore Period della pagina Nodes — stesso elenco mesi
+// già esposto da /api/nodes/archive/list (introdotto per il vecchio
+// selettore del dettaglio nodo, riusato qui invariato: l'elenco dei
+// mesi disponibili non dipende da quale nodo si guarda). Richiamata
+// ad ogni apertura della tab Nodes (click sul tab, "Back to list"),
+// non da loadNodesTab() stessa — che gira anche ad ogni tick di
+// auto-refresh — per non ricostruire le <option> (e perdere lo stato
+// di focus/apertura del menu) ogni 5 minuti mentre l'utente la sta
+// eventualmente usando.
+//
+async function populateNodesArchiveSelector() {
+
+    const selector =
+        document.getElementById(
+            "nodesArchiveSelector"
+        );
+
+    if (
+        !selector
+    ) {
+
+        return;
+    }
+
+    const requestId =
+        ++nodesArchiveListRequestId;
+
+    try {
+
+        const res =
+            await fetch(
+                "/api/nodes/archive/list"
+            );
+
+        assertResOk(res);
+
+        const sources =
+            await res.json();
+
+        if (
+            requestId !== nodesArchiveListRequestId
+        ) {
+
+            return;
+        }
+
+        selector.innerHTML =
+            "";
+
+        sources.forEach(
+            source => {
+
+                const opt =
+                    document.createElement(
+                        "option"
+                    );
+
+                opt.value =
+                    source.id;
+
+                opt.textContent =
+                    source.label;
+
+                selector.appendChild(
+                    opt
+                );
+            }
+        );
+
+        //
+        // Ripristina la scelta persistita solo se il mese esiste
+        // ancora nell'elenco appena caricato (difesa contro un
+        // localStorage rimasto puntato a un file che nel frattempo
+        // non c'è più — non dovrebbe succedere, gli archivi non
+        // vengono mai cancellati, ma un valore corrotto/manuale in
+        // localStorage non deve poter mandare in errore il resto
+        // della tab): altrimenti si ricade silenziosamente su
+        // "live", stesso comportamento di initNodesFilters() per gli
+        // altri filtri quando il valore salvato non è più valido.
+        //
+        const stillAvailable =
+            sources.some(
+                source =>
+                    source.id === nodesArchivePeriod
+            );
+
+        if (
+            !stillAvailable
+        ) {
+
+            nodesArchivePeriod =
+                "live";
+
+            safeLocalStorageSet(
+                "nodesArchivePeriod",
+                "live"
+            );
+        }
+
+        selector.value =
+            nodesArchivePeriod;
+
+    }
+
+    catch (
+        err
+    ) {
+
+        if (
+            requestId !== nodesArchiveListRequestId
+        ) {
+
+            return;
+        }
+
+        console.error(
+            "Error loading nodes archive list:",
+            err
+        );
     }
 }
 
@@ -3941,6 +4150,83 @@ function updateNodeDistanceFilterAvailability() {
     }
 }
 
+//
+// "Not observed only" e "Future advert only" hanno senso solo sul
+// Period "live" (2026-09-10, scelta esplicita dell'utente in
+// quella sessione): un mese archiviato, per come /api/nodes/
+// archive/load è costruito, elenca solo i nodi con almeno un
+// ascolto in quel mese — "not observed" non ha mai un solo risultato
+// da mostrare, e "future advert" confronta un last_advert storico
+// con l'orologio DI OGGI, un confronto senza senso. Stesso schema
+// disabled+tooltip di updateNodeDistanceFilterAvailability() sopra,
+// tooltip sulla <label> per lo stesso motivo (mouseover non affidabile
+// su un controllo disabilitato in alcuni browser).
+//
+function updateNodesPeriodFilterAvailability() {
+
+    const available =
+        nodesArchivePeriod === "live";
+
+    [
+        {
+            checkboxId: "nodeNotObservedFilter",
+            tooltip:
+                "Disponibile solo per il periodo Live: un mese " +
+                "archiviato elenca solo i nodi effettivamente " +
+                "osservati in quel mese."
+        },
+        {
+            checkboxId: "nodeFutureAdvertFilter",
+            tooltip:
+                "Disponibile solo per il periodo Live: confronta " +
+                "l'Advert Time con l'orologio di adesso, non ha " +
+                "senso su un mese archiviato."
+        }
+    ].forEach(
+        ({ checkboxId, tooltip }) => {
+
+            const checkbox =
+                document.getElementById(
+                    checkboxId
+                );
+
+            const label =
+                document.querySelector(
+                    `label[for="${checkboxId}"]`
+                );
+
+            if (
+                checkbox
+            ) {
+
+                checkbox.disabled =
+                    !available;
+            }
+
+            if (
+                label
+            ) {
+
+                if (
+                    available
+                ) {
+
+                    label.removeAttribute(
+                        "data-tooltip"
+                    );
+
+                } else {
+
+                    label.setAttribute(
+                        "data-tooltip",
+                        tooltip
+                    );
+                }
+            }
+        }
+    );
+}
+
 function applyNodesFilters() {
 
     const nameFilterInput =
@@ -4152,12 +4438,25 @@ function applyNodesFilters() {
                         distanceThresholdKm
                     ) &&
                     (
+                        //
+                        // Disattivati fuori da "live" (2026-09-10) —
+                        // v. updateNodesPeriodFilterAvailability():
+                        // ignorati qui a prescindere dallo stato
+                        // (persistito) della checkbox, non solo
+                        // disabilitati in UI, altrimenti una
+                        // checkbox rimasta spuntata da una sessione
+                        // Live precedente svuoterebbe silenziosamente
+                        // ogni vista storica (che per costruzione non
+                        // ha mai righe "not observed").
+                        //
+                        nodesArchivePeriod !== "live" ||
                         !notObservedFilter ||
                         nodeIsNotObserved(
                             n
                         )
                     ) &&
                     (
+                        nodesArchivePeriod !== "live" ||
                         !futureAdvertFilter ||
                         nodeHasFutureAdvert(
                             n
@@ -4362,6 +4661,8 @@ function initNodesFilters() {
     updateNodeDistanceCustomVisibility();
 
     updateNodeDistanceFilterAvailability();
+
+    updateNodesPeriodFilterAvailability();
 
     updateNodeHopCountMaxHint();
 
@@ -4865,10 +5166,11 @@ async function loadNodeDetail(
 
     //
     // Token catturato ORA: se l'utente apre un altro nodo (o cambia
-    // periodo via switchNodeDetailPeriod) prima che questa chiamata
-    // finisca, requestId non sarà più quello corrente ai controlli
-    // sotto e il risultato tardivo viene scartato invece di
-    // sovrascrivere la vista del nodo aperto nel frattempo.
+    // periodo via switchNodeDetailPeriod, richiamata più sotto)
+    // prima che questa chiamata finisca, requestId non sarà più
+    // quello corrente ai controlli sotto e il risultato tardivo
+    // viene scartato invece di sovrascrivere la vista del nodo
+    // aperto nel frattempo.
     //
     const requestId =
         ++nodeDetailRequestId;
@@ -4890,33 +5192,11 @@ async function loadNodeDetail(
     ).innerHTML = "";
 
     //
-    // Ogni volta che si apre un nodo si riparte da Live — un mese
-    // archiviato scelto per il nodo precedente non ha senso
-    // riproposto qui, a differenza del selettore Trace (che è una
-    // preferenza di pagina, non legata a un singolo elemento).
+    // Non c'è più un selettore Period locale al dettaglio nodo
+    // (rimosso 2026-09-10, v. commento su nodesArchivePeriod in cima
+    // al file): il nodo si apre sempre sul Period scelto a monte
+    // nella pagina Nodes, non più forzato a "Live" ad ogni apertura.
     //
-    await loadNodeDetailArchiveList();
-
-    if (
-        requestId !== nodeDetailRequestId
-    ) {
-
-        return;
-    }
-
-    const selector =
-        document.getElementById(
-            "nodeDetailArchiveSelector"
-        );
-
-    if (
-        selector
-    ) {
-
-        selector.value =
-            "live";
-    }
-
     try {
 
         const res =
@@ -4953,9 +5233,27 @@ async function loadNodeDetail(
             return;
         }
 
+        //
+        // L'identità del nodo (nome/tipo/posizione) viene SEMPRE da
+        // qui, live — un mese archiviato non ne ha una propria (v.
+        // switchNodeDetailPeriod più sotto). Se il Period scelto a
+        // monte non è "live", questo render viene subito dopo
+        // sovrascritto solo nella parte osservazioni (grafico +
+        // tabella) da switchNodeDetailPeriod(), che lascia intatta
+        // l'intestazione appena disegnata qui.
+        //
         renderNodeDetail(
             data
         );
+
+        if (
+            nodesArchivePeriod !== "live"
+        ) {
+
+            await switchNodeDetailPeriod(
+                nodesArchivePeriod
+            );
+        }
 
     }
 
@@ -4982,85 +5280,17 @@ async function loadNodeDetail(
     }
 }
 
-async function loadNodeDetailArchiveList() {
-
-    const selector =
-        document.getElementById(
-            "nodeDetailArchiveSelector"
-        );
-
-    if (
-        !selector
-    ) {
-
-        return;
-    }
-
-    const requestId =
-        ++nodeDetailArchiveListRequestId;
-
-    try {
-
-        const res =
-            await fetch(
-                "/api/nodes/archive/list"
-            );
-
-        assertResOk(res);
-
-        const sources =
-            await res.json();
-
-        if (
-            requestId !== nodeDetailArchiveListRequestId
-        ) {
-
-            return;
-        }
-
-        selector.innerHTML =
-            "";
-
-        sources.forEach(
-            source => {
-
-                const opt =
-                    document.createElement(
-                        "option"
-                    );
-
-                opt.value =
-                    source.id;
-
-                opt.textContent =
-                    source.label;
-
-                selector.appendChild(
-                    opt
-                );
-            }
-        );
-
-    }
-
-    catch (
-        err
-    ) {
-
-        if (
-            requestId !== nodeDetailArchiveListRequestId
-        ) {
-
-            return;
-        }
-
-        console.error(
-            "Error loading node archive list:",
-            err
-        );
-    }
-}
-
+//
+// Cambia la sorgente delle osservazioni mostrate nel dettaglio nodo
+// (grafico + tabella), lasciando invariata l'intestazione identità.
+// Fino al 2026-09-05 era richiamata dal listener "change" di un
+// selettore Period locale al dettaglio; da quando quel selettore è
+// stato rimosso (2026-09-10, spostato a livello di pagina Nodes) è
+// chiamata solo da loadNodeDetail(), una volta, subito dopo il
+// render "live" iniziale, quando il Period scelto a monte non è
+// "live" — la firma e la logica restano invariate, cambia solo chi
+// la richiama.
+//
 async function switchNodeDetailPeriod(
     source
 ) {

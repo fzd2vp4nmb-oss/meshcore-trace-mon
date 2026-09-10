@@ -939,6 +939,243 @@ app.get(
 );
 
 /* =========================
+   NODES ARCHIVE AGGREGATE LOAD API
+
+   Introdotto il 2026-09-10 per spostare il selettore Period dal
+   dettaglio nodo alla pagina Nodes (v.
+   docs/CHANGES_nodes_period_selector_page_level.md e
+   docs/ARCHITECTURE.md). Costruisce, per un mese già archiviato,
+   l'equivalente aggregato di /api/nodes (tutti i nodi insieme, non
+   uno solo) leggendo path_observations-YYYY-MM.json.gz — che
+   contiene già gli ascolti di ogni nodo per quel mese, esattamente
+   come /api/nodes/:publicKey/archive/load fa per un nodo singolo.
+
+   Due scelte di design DELIBERATE, decise con l'utente in questa
+   stessa sessione (non dedotte dal codice):
+
+   1. Nessun blocco "not observed": a differenza della vista live,
+      qui vengono restituiti SOLO i nodi con almeno un ascolto in
+      quel mese. Un "not observed" storico userebbe per forza
+      l'elenco CORRENTE di 'nodes' (mai ruotata, mai svuotata) come
+      universo di riferimento, includendo nodi scoperti DOPO il mese
+      in questione — semanticamente ambiguo ("non osservato a
+      giugno" per un nodo nato ad agosto). Scartato esplicitamente.
+   2. adv_name/node_type/adv_lat/adv_lon restano quelli CORRENTI di
+      'nodes': l'archivio contiene solo gli ascolti (path_hex,
+      hop_count, ecc.), mai un'istantanea dell'anagrafica del nodo —
+      stessa scelta già in uso, e già documentata, per il dettaglio
+      nodo (switchNodeDetailPeriod() in app.js, "un mese archiviato
+      non ha un suo 'stato del nodo' a sé"). Non è un limite di
+      questa modifica, è un limite dello schema dati (rotate_path_
+      observations.py archivia solo path_observations, mai nodes).
+
+   last_advert nella riga restituita NON è n.last_advert (quel campo
+   vive solo nel presente, non ha senso per un mese passato): è
+   adv_timestamp dell'osservazione scelta per quel nodo in quel
+   mese — stesso campo concettuale (timestamp auto-dichiarato
+   dall'advert), sorgente diversa perché qui non c'è una riga
+   'nodes' storica a cui attingere. L'ordinamento della lista resta
+   invece su observed_at (ricezione), non su adv_timestamp
+   (auto-dichiarato, può derivare) — stesso motivo per cui /api/nodes
+   ordina su po.observed_at e non su n.last_advert.
+========================= */
+
+app.get(
+    "/api/nodes/archive/load",
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const file =
+                req.query.file;
+
+            const fullPath =
+                safeArchivePath(
+                    file,
+                    /^path_observations-\d{4}-\d{2}\.json\.gz$/
+                );
+
+            if (
+                !fullPath
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        error:
+                            "Missing or invalid file parameter"
+                    });
+            }
+
+            if (
+                !fs.existsSync(
+                    fullPath
+                )
+            ) {
+
+                return res
+                    .status(404)
+                    .json({
+                        error:
+                            "Archive not found"
+                    });
+            }
+
+            const compressed =
+                await fs.promises.readFile(
+                    fullPath
+                );
+
+            const content =
+                (
+                    await gunzipAsync(
+                        compressed
+                    )
+                )
+                    .toString(
+                        "utf8"
+                    );
+
+            const allRows =
+                JSON.parse(
+                    content
+                );
+
+            //
+            // Un solo ascolto per nodo: il più recente nel mese
+            // (stesso concetto della subquery di /api/nodes, qui
+            // senza bisogno di 'id' come tie-break — l'archivio non
+            // lo conserva — a parità di observed_at vince l'ultima
+            // riga incontrata, e il file è già in ordine di
+            // observed_at crescente per costruzione, v.
+            // rotate_path_observations.py).
+            //
+            const latestByNode =
+                new Map();
+
+            allRows.forEach(
+                r => {
+
+                    const prev =
+                        latestByNode.get(
+                            r.public_key
+                        );
+
+                    if (
+                        !prev ||
+                        r.observed_at >= prev.observed_at
+                    ) {
+
+                        latestByNode.set(
+                            r.public_key,
+                            r
+                        );
+                    }
+                }
+            );
+
+            const latestObservations =
+                Array.from(
+                    latestByNode.values()
+                ).sort(
+                    (a, b) =>
+                        b.observed_at -
+                        a.observed_at
+                );
+
+            let identityByKey =
+                new Map();
+
+            if (
+                latestObservations.length > 0 &&
+                fs.existsSync(
+                    CONTACTS_DB_FILE
+                )
+            ) {
+
+                const db =
+                    new DatabaseSync(
+                        CONTACTS_DB_FILE,
+                        { readOnly: true }
+                    );
+
+                try {
+
+                    const identityRows =
+                        db.prepare(
+                            `SELECT
+                                public_key, adv_name, node_type,
+                                adv_lat, adv_lon
+                            FROM nodes`
+                        ).all();
+
+                    identityByKey =
+                        new Map(
+                            identityRows.map(
+                                row => [row.public_key, row]
+                            )
+                        );
+
+                } finally {
+
+                    db.close();
+                }
+            }
+
+            const result =
+                latestObservations.map(
+                    obs => {
+
+                        const identity =
+                            identityByKey.get(
+                                obs.public_key
+                            ) || {};
+
+                        return {
+                            public_key: obs.public_key,
+                            adv_name: identity.adv_name ?? null,
+                            node_type: identity.node_type ?? null,
+                            adv_lat: identity.adv_lat ?? null,
+                            adv_lon: identity.adv_lon ?? null,
+                            last_advert:
+                                obs.adv_timestamp ??
+                                obs.observed_at,
+                            hop_count: obs.hop_count,
+                            path_hex: obs.path_hex
+                        };
+                    }
+                );
+
+            res.json(
+                result
+            );
+        }
+
+        catch (
+            err
+        ) {
+
+            console.error(
+                "API ERROR (/api/nodes/archive/load):",
+                err
+            );
+
+            res
+                .status(
+                    500
+                )
+                .json({
+                    error:
+                        GENERIC_ERROR_MESSAGE
+                });
+        }
+    }
+);
+
+/* =========================
    NODE DETAIL ARCHIVE LOAD API
 
    A differenza di /api/nodes/:publicKey (che legge contacts.db live),

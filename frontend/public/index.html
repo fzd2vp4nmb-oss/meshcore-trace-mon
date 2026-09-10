@@ -143,6 +143,19 @@
 
 <h3 id="nodesTabHeading">Known Nodes</h3>
 
+<!--
+    Period selector spostato qui dal dettaglio nodo (2026-09-10, v.
+    docs/CHANGES_nodes_period_selector_page_level.md) — sceglie se la
+    lista sottostante (e i filtri, che lavorano sul risultato di
+    questa scelta) mostra i dati live del mese corrente o un mese
+    già archiviato. Il dettaglio nodo non ha più un proprio
+    selettore: eredita sempre il Period scelto qui (v.
+    goToNodeDetail()/loadNodeDetail() in app.js).
+-->
+<span><b>Period:</b></span>
+<select id="nodesArchiveSelector"></select>
+<br><br>
+
 <div class="nodesFilterBar">
 
     <div class="nodesFilterRow">
@@ -242,9 +255,6 @@
 <table id="nodeDetailInfoTable"></table>
 
 <br>
-<span><b>Period:</b></span>
-<select id="nodeDetailArchiveSelector"></select>
-<br><br>
 
 <h4>Observation History (RSSI / SNR)</h4>
 <div id="nodeDetailChartContainer">
@@ -420,6 +430,13 @@ document.querySelectorAll(
                 ) {
 
                     if (
+                        typeof populateNodesArchiveSelector === "function"
+                    ) {
+
+                        populateNodesArchiveSelector();
+                    }
+
+                    if (
                         typeof loadNodesTab === "function"
                     ) {
 
@@ -556,6 +573,13 @@ document.getElementById(
             "activeTab",
             "nodesPage"
         );
+
+        if (
+            typeof populateNodesArchiveSelector === "function"
+        ) {
+
+            populateNodesArchiveSelector();
+        }
 
         if (
             typeof loadNodesTab === "function"

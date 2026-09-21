@@ -46,11 +46,32 @@ class ClockSyncResult:
 
     error: Optional[str] = None
 
+    #
+    # True quando il device è AVANTI del Raspberry di almeno
+    # DRIFT_THRESHOLD_SECS (drift_before <= -DRIFT_THRESHOLD_SECS):
+    # il firmware del companion accetta CMD_SET_DEVICE_TIME solo con
+    # un valore >= all'ora corrente del device, altrimenti risponde
+    # ERR_CODE_ILLEGAL_ARG (6) — quindi il set NON viene nemmeno
+    # tentato (sarebbe rifiutato in ogni caso) e il risultato è
+    # ok=True, synced=False: non è un errore di comunicazione, è una
+    # correzione che il firmware non consente. Aggiunto in coda ai
+    # campi esistenti, default False, così ogni chiamante che non lo
+    # conosce si comporta come prima. V. docs/ARCHITECTURE.md §78.
+    #
+    device_ahead: bool = False
+
 
 async def sync_clock(mesh, dry_run=False):
     """
     Legge l'ora del device, la confronta con quella locale, e la
-    corregge se lo scarto supera DRIFT_THRESHOLD_SECS secondi.
+    corregge se lo scarto supera DRIFT_THRESHOLD_SECS secondi e il
+    device è INDIETRO rispetto al Raspberry.
+
+    Il device avanti (scarto negativo, <= -DRIFT_THRESHOLD_SECS) non
+    viene corretto: il firmware non permette di riportare indietro
+    l'orologio (v. ClockSyncResult.device_ahead). Il caso è segnalato
+    con device_ahead=True, anche in dry_run, senza inviare alcun
+    comando di scrittura.
 
     dry_run=True legge e riporta lo scarto senza modificare nulla
     (equivalente a --check nel tool CLI).
@@ -78,10 +99,17 @@ async def sync_clock(mesh, dry_run=False):
         ok=True,
         device_time_before=device_time,
         local_time=local_time,
-        drift_before=drift
+        drift_before=drift,
+        device_ahead=(drift <= -DRIFT_THRESHOLD_SECS)
     )
 
-    if dry_run or abs(drift) < DRIFT_THRESHOLD_SECS:
+    #
+    # device_ahead esce PRIMA di set_time: con il device avanti il
+    # firmware rifiuterebbe comunque il comando (secs < ora corrente
+    # => ERR_CODE_ILLEGAL_ARG), quindi non lo inviamo. Il caso opposto
+    # (device indietro di >= soglia) prosegue invariato.
+    #
+    if dry_run or result.device_ahead or abs(drift) < DRIFT_THRESHOLD_SECS:
         return result
 
     set_result = await mesh.commands.set_time(local_time)

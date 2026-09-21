@@ -737,17 +737,29 @@ class Engine:
 
         await self._teardown_mesh()
 
-    async def reconnect(self):
+    async def reconnect(self, force=False):
         """
         Ricrea completamente la connessione MeshCore. Protetto da
         lock: se un'altra chiamata concorrente ha già ripristinato
         la connessione mentre eravamo in attesa del lock, non fa
         nulla.
+
+        force=True (default False: TUTTI i chiamanti preesistenti —
+        oggi solo _recovery_loop() — restano invariati) salta quel
+        controllo "già connessi" e ricrea comunque la connessione. Serve
+        dopo un riavvio del companion COMANDATO dal daemon stesso
+        (services/daemon.py, riavvio automatico per il clock sync,
+        docs/ARCHITECTURE.md §79): subito dopo un reboot del device la
+        connessione TCP/seriale precedente è morta ma self.connected
+        può restare True ancora per un heartbeat (il RST arriva solo
+        alla prima scrittura successiva), quindi il controllo
+        "connected" non è un'informazione affidabile e una connessione
+        NUOVA verso il device riavviato va creata esplicitamente.
         """
 
         async with self._reconnect_lock:
 
-            if self.connected:
+            if self.connected and not force:
                 log.info(
                     "Reconnect: connessione già ripristinata da "
                     "un'altra chiamata concorrente, nessuna azione."
@@ -755,7 +767,8 @@ class Engine:
                 return self.mesh
 
             log.warning(
-                "MeshCore full reconnect requested."
+                "MeshCore full reconnect requested%s.",
+                " (forzato)" if force else ""
             )
 
             await self._teardown_mesh()

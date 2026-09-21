@@ -138,10 +138,19 @@
 
 <div id="nodesPage" class="tabPage" style="display:none">
 
-<h3>Device Status</h3>
+<!--
+    Nome del device companion in cima al tab (2026-09-21, v.
+    docs/ARCHITECTURE.md §77): vale per tutto il tab — Device Status e
+    Known Nodes — come il nome del repeater nel tab Repeaters. Le due
+    sezioni sono h4 sotto questo h3, stessa gerarchia di Repeaters e
+    del dettaglio nodo. Popolato da renderNodesDeviceName() (app.js).
+-->
+<h3 id="nodesDeviceName"></h3>
+
+<h4>Device Status</h4>
 <table id="deviceStatusTable"></table>
 
-<h3 id="nodesTabHeading">Known Nodes</h3>
+<h4 id="nodesTabHeading">Known Nodes</h4>
 
 <!--
     Period selector spostato qui dal dettaglio nodo (2026-09-10, v.

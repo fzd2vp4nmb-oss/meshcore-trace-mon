@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import time
 
@@ -295,7 +296,42 @@ MIGRATIONS = {
         "radio_freq": "REAL",
         "radio_bw": "REAL",
         "radio_sf": "INTEGER",
-        "radio_cr": "INTEGER"
+        "radio_cr": "INTEGER",
+        # Telemetria del companion connesso a trace-mon stesso
+        # (DeviceCommands.get_self_telemetry(), evento
+        # TELEMETRY_RESPONSE), aggiunta per le righe "Telemetry - ..."
+        # della tabella "Device Status" del frontend, subito dopo
+        # "Radio settings". Lista di misure Cayenne LPP già decodificate
+        # dalla libreria, serializzata come JSON in UNA SOLA colonna
+        # TEXT — [{"channel": 1, "type": "voltage", "value": 4.26}, ...]
+        # — invece di una tabella dedicata: device_status è per design
+        # una riga singola "stato attuale", sovrascritta ad ogni sync,
+        # senza storico (v. commento su CREATE TABLE device_status), e
+        # le misure di telemetria seguono la stessa semantica (nessuno
+        # storico richiesto, scelta esplicita dell'utente 2026-09-21).
+        # Il numero e il tipo di canali dipendono dai sensori del
+        # device (oggi verosimilmente solo voltage + temperature, come
+        # sul repeater), quindi non un insieme di colonne fisse. A
+        # differenza di repeater_telemetry (value REAL NOT NULL), il
+        # valore di una misura può essere non scalare (es. gps,
+        # accelerometer: dict) — un motivo in più per non forzarlo in
+        # una colonna REAL. NULL = mai ottenuta (o mai riuscita dopo la
+        # migrazione); '[]' = il device ha risposto ma non riporta
+        # nessuna misura — distinzione voluta, v.
+        # upsert_device_status().
+        "telemetry": "TEXT",
+        # Nome del companion connesso a trace-mon stesso (quello che il
+        # device annuncia in rete come adv_name), aggiunto per
+        # l'intestazione del tab Nodes del frontend, che indica a quale
+        # device si riferiscono Device Status e Known Nodes (stesso
+        # ruolo del nome del repeater nel tab Repeaters). Stessa fonte e
+        # stesso trattamento di adv_lat/adv_lon/radio_* sopra: NON una
+        # query locale, arriva da mesh.self_info["name"] (evento
+        # SELF_INFO, popolato ad ogni connessione/riconnessione) — un
+        # campo già presente nel frame, letto ma mai persistito.
+        # Normalizzato da _normalize_device_name() prima della scrittura.
+        # NULL = nome mai ottenuto (o vuoto).
+        "device_name": "TEXT"
     },
     "repeater_config": {
         # Aggiunti ai comandi CLI testuali di CLI_QUERIES dopo la
@@ -327,6 +363,63 @@ MAX_PATH_HEX_LEN = 256
 MAX_REGION_DUMP_LEN = 4096
 MAX_CLI_TEXT_LEN = 128
 
+#
+# Limite di sicurezza sulla lunghezza del JSON di device_status.telemetry
+# (stessa logica di difesa in profondità dei limiti sopra, anche se qui
+# la fonte è il companion collegato localmente, non un nodo remoto):
+# un frame di telemetria è limitato dal protocollo a pochi byte (una
+# misura Cayenne LPP occupa almeno 3 byte, il payload di un frame
+# companion non supera 255 byte), quindi il JSON reale resta ampiamente
+# sotto questo tetto — mai troncato in condizioni normali. Un JSON
+# troncato a metà sarebbe invalido, quindi oltre il tetto il valore
+# viene scartato per intero (v. _serialize_device_telemetry()), non
+# accorciato.
+#
+MAX_DEVICE_TELEMETRY_JSON_LEN = 8192
+
+
+def _serialize_device_telemetry(telemetry):
+    """
+    Serializza la lista di misure di telemetria del companion per la
+    colonna device_status.telemetry. Ritorna il testo JSON, oppure None
+    se telemetry è None (nessun aggiornamento richiesto), non
+    serializzabile in JSON, o oltre MAX_DEVICE_TELEMETRY_JSON_LEN — in
+    ogni caso None significa "non aggiornare" (COALESCE in
+    upsert_device_status() conserva il valore del giro precedente), mai
+    "azzera". Lista vuota -> '[]' (il device ha risposto senza misure,
+    un dato valido e diverso da "mai ottenuto").
+    """
+
+    if telemetry is None:
+        return None
+
+    try:
+        text = json.dumps(telemetry, separators=(",", ":"))
+
+    except (TypeError, ValueError):
+
+        log.warning(
+            "ContactDB: telemetria del companion non serializzabile in "
+            "JSON, scartata (device_status.telemetry non aggiornata "
+            "per questo giro)."
+        )
+
+        return None
+
+    if len(text) > MAX_DEVICE_TELEMETRY_JSON_LEN:
+
+        log.warning(
+            "ContactDB: telemetria del companion oltre il limite di "
+            "%d caratteri (%d), scartata (device_status.telemetry non "
+            "aggiornata per questo giro).",
+            MAX_DEVICE_TELEMETRY_JSON_LEN,
+            len(text)
+        )
+
+        return None
+
+    return text
+
 
 def _clamp_text(value, max_len):
     """Tronca value a max_len caratteri se è una stringa più lunga;
@@ -337,6 +430,32 @@ def _clamp_text(value, max_len):
         return value[:max_len]
 
     return value
+
+
+def _normalize_device_name(name):
+    """
+    Normalizza il nome del companion (mesh.self_info["name"]) per la
+    colonna device_status.device_name. Ritorna None se name non è una
+    stringa o è vuoto dopo aver tolto spazi e NUL — in ogni caso None
+    significa "non aggiornare" (COALESCE in upsert_device_status()
+    conserva il nome del giro precedente), mai "azzera": un nome vuoto
+    riportato per un giro (es. self_info non ancora completo) non deve
+    cancellare quello già noto. Il frame SELF_INFO porta il nome come
+    resto del pacchetto decodificato con errors="ignore" (v. meshcore
+    reader.py), senza vincoli di formato a monte: lunghezza limitata a
+    MAX_ADV_NAME_LEN (stesso tetto di adv_name, difesa in profondità
+    come per gli altri campi TEXT di questo file).
+    """
+
+    if not isinstance(name, str):
+        return None
+
+    name = name.replace("\x00", "").strip()
+
+    if not name:
+        return None
+
+    return _clamp_text(name, MAX_ADV_NAME_LEN)
 
 
 class ContactDB:
@@ -659,7 +778,9 @@ class ContactDB:
         radio_freq=None,
         radio_bw=None,
         radio_sf=None,
-        radio_cr=None
+        radio_cr=None,
+        telemetry=None,
+        device_name=None
     ):
         """
         Stato corrente del companion connesso a trace-mon stesso (non
@@ -683,7 +804,31 @@ class ContactDB:
         indipendenza voluta, non un'incoerenza. radio_bw in kHz,
         radio_cr nella convenzione RAW RadioLib (5-8) — v. MIGRATIONS
         sopra per il riferimento completo.
+
+        telemetry è la lista di misure Cayenne LPP del companion
+        (dict con chiavi 'channel', 'type', 'value', già decodificate
+        dalla libreria — v. ContactSyncModule._get_self_telemetry()),
+        serializzata qui in JSON nella colonna device_status.telemetry
+        (v. _serialize_device_telemetry()). Stessa convenzione COALESCE
+        degli altri campi: None = telemetria non ottenuta in questo
+        giro (query fallita, risposta scartata, non serializzabile) —
+        resta il valore del giro precedente. Lista vuota (device
+        risponde ma non riporta nessuna misura) NON è None: viene
+        scritta come '[]' e sovrascrive le misure precedenti, perché è
+        un dato reale ("nessuna misura disponibile ora"), non
+        un'assenza di dato. Gruppo indipendente dagli altri, come
+        adv_lat/adv_lon/radio_*.
+
+        device_name è il nome del companion (mesh.self_info["name"],
+        v. chiamante in contact_sync.py), normalizzato qui da
+        _normalize_device_name(). Stessa convenzione COALESCE: None,
+        non-stringa o stringa vuota = nome non aggiornato in questo
+        giro (resta il precedente). Gruppo indipendente dagli altri,
+        come adv_lat/adv_lon/radio_*.
         """
+
+        telemetry_json = _serialize_device_telemetry(telemetry)
+        device_name = _normalize_device_name(device_name)
 
         self._conn.execute(
             """
@@ -693,9 +838,9 @@ class ContactDB:
                 tx_air_secs, rx_air_secs, recv, sent, flood_tx,
                 direct_tx, flood_rx, direct_rx, recv_errors, model,
                 fw_build, fw_version, adv_lat, adv_lon, radio_freq,
-                radio_bw, radio_sf, radio_cr
+                radio_bw, radio_sf, radio_cr, telemetry, device_name
             )
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 updated_at  = excluded.updated_at,
                 battery_mv  = COALESCE(excluded.battery_mv, device_status.battery_mv),
@@ -722,7 +867,9 @@ class ContactDB:
                 radio_freq  = COALESCE(excluded.radio_freq, device_status.radio_freq),
                 radio_bw    = COALESCE(excluded.radio_bw, device_status.radio_bw),
                 radio_sf    = COALESCE(excluded.radio_sf, device_status.radio_sf),
-                radio_cr    = COALESCE(excluded.radio_cr, device_status.radio_cr)
+                radio_cr    = COALESCE(excluded.radio_cr, device_status.radio_cr),
+                telemetry   = COALESCE(excluded.telemetry, device_status.telemetry),
+                device_name = COALESCE(excluded.device_name, device_status.device_name)
             """,
             (
                 updated_at, battery_mv, uptime_secs, errors, queue_len,
@@ -730,7 +877,7 @@ class ContactDB:
                 rx_air_secs, recv, sent, flood_tx, direct_tx, flood_rx,
                 direct_rx, recv_errors, model, fw_build, fw_version,
                 adv_lat, adv_lon, radio_freq, radio_bw, radio_sf,
-                radio_cr
+                radio_cr, telemetry_json, device_name
             )
         )
 

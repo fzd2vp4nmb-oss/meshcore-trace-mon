@@ -4918,7 +4918,74 @@ async function loadDeviceStatus() {
 
         table.innerHTML =
             "<tr><td>Error loading device status.</td></tr>";
+
+        //
+        // Stesso motivo del ramo "!status" di renderDeviceStatusTable():
+        // con la tabella in errore, un nome device rimasto dal giro
+        // precedente sarebbe una attribuzione non più verificata (sul
+        // Collettore potrebbe essere quello del nodo fisico
+        // precedentemente selezionato).
+        //
+        renderNodesDeviceName(
+            null
+        );
     }
+}
+
+//
+// Intestazione del tab Nodes con il nome del device companion a cui si
+// riferiscono Device Status e Known Nodes — docs/ARCHITECTURE.md §77.
+// Stesso ruolo e stesso stile di #neighborRepeaterName nel tab
+// Repeaters (nome in h3 in cima, sezioni h4 sotto, "(unknown)" quando
+// il nome non c'è), così l'attribuzione vale per tutto il tab senza
+// ripeterla nelle label delle singole tabelle.
+//
+// Il nome arriva da status.device_name (colonna di device_status,
+// dallo stesso /api/device_status già usato dalla tabella Device
+// Status — nessuna fetch aggiuntiva, e nessun accoppiamento con
+// /api/nodes: le due fetch partono insieme senza await, v. commento su
+// nodesDataReady). Dato da un device esterno: scritto con textContent,
+// mai innerHTML (stessa scelta di neighborRepeaterName). Tre stati:
+//   - status assente (nessun dato / errore di caricamento): vuoto —
+//     nessun nome da attribuire, e uno stantio sarebbe fuorviante;
+//   - status presente ma senza nome (colonna non ancora migrata,
+//     daemon Python non ancora aggiornato, nome mai ottenuto):
+//     "(unknown)", come per un repeater senza adv_name;
+//   - nome presente: il nome.
+//
+function renderNodesDeviceName(
+    status
+) {
+
+    const heading =
+        document.getElementById(
+            "nodesDeviceName"
+        );
+
+    if (
+        !heading
+    ) {
+
+        return;
+    }
+
+    if (
+        !status
+    ) {
+
+        heading.textContent =
+            "";
+
+        return;
+    }
+
+    heading.textContent =
+        (
+            typeof status.device_name === "string" &&
+            status.device_name !== ""
+        )
+            ? status.device_name
+            : "(unknown)";
 }
 
 function renderDeviceStatusTable(
@@ -4929,6 +4996,10 @@ function renderDeviceStatusTable(
         document.getElementById(
             "deviceStatusTable"
         );
+
+    renderNodesDeviceName(
+        status
+    );
 
     if (
         !status
@@ -5008,6 +5079,7 @@ function renderDeviceStatusTable(
         <tr><th data-tooltip="Versione e build del firmware in esecuzione sul device companion collegato localmente a trace-mon, riportata da una query diretta al device (non un comando CLI come per i Repeaters).">Firmware Version</th><td>${escapeHtml(status.fw_version ?? "n/a")}${status.fw_build ? ` (${escapeHtml(status.fw_build)})` : ""}</td></tr>
         <tr><th data-tooltip="Modello hardware del device companion collegato localmente a trace-mon (es. la scheda su cui gira il firmware), riportato da una query diretta al device.">Hardware</th><td>${escapeHtml(status.model ?? "n/a")}</td></tr>
         <tr><th data-tooltip="Parametri di configurazione radio LoRa: Freq = frequenza operativa (MHz), SF = Spreading Factor, BW = larghezza di banda (kHz), CR = Coding Rate. Insieme determinano il compromesso tra portata, velocità di trasmissione e resistenza al rumore. CR mostrato in convenzione RAW RadioLib (5-8): il valore effettivo della formula standard è raw-4 (es. CR=8 raw → 4/8).">Radio settings (Freq | SF | BW | CR)</th><td>${status.radio_freq != null ? status.radio_freq + " MHz" : "n/a"} | ${status.radio_sf ?? "n/a"} | ${status.radio_bw != null ? status.radio_bw + " kHz" : "n/a"} | ${status.radio_cr ?? "n/a"}</td></tr>
+        ${buildDeviceTelemetryRowsHtml(status.telemetry)}
     `;
 }
 
@@ -6254,6 +6326,179 @@ function formatTelemetryValue(
     // spoglio ma corretto che un'unità inventata.
     //
     return `${value}`;
+}
+
+//
+// Telemetria del device companion locale, righe della tabella Device
+// Status (tab Nodes) — v. docs/ARCHITECTURE.md §76.
+//
+// Una riga <tr> per misura, subito dopo "Radio settings", con
+// etichetta "Telemetry - <Tipo> (ch N)" e valore con unità. Il dato
+// arriva da status.telemetry, colonna TEXT di device_status che
+// contiene una lista JSON [{channel, type, value}, ...] (v.
+// contact_sync.py::_get_self_telemetry()). Il server la restituisce
+// così com'è (SELECT *, nessuna modifica a server.js), quindi qui
+// arriva come STRINGA JSON — accettata anche come array già parsato.
+//
+// Tre stati, tutti resi come UNA sola riga "Telemetry | n/a" invece
+// di righe vuote o di un errore:
+//   - colonna assente (DB non ancora migrato, daemon Python vecchio
+//     o mai girato): status.telemetry === undefined;
+//   - NULL: telemetria mai ottenuta dal device;
+//   - "[]" o JSON non valido: nessuna misura utilizzabile.
+//
+// Formattazione dei valori: formatTelemetryType()/
+// formatTelemetryValue() sono le STESSE della tabella Telemetry dei
+// Repeaters (tensione → "V", temperatura → "°C", tutto il resto senza
+// unità inventata) e NON vanno toccate da qui — sono condivise. Per i
+// valori non scalari che meshcore_py può restituire per certi tipi
+// LPP (dict per gps/accelerometer/colour, lista per gyrometer/
+// direction) formatDeviceTelemetryValue() li appiattisce in testo.
+//
+// type/channel/value sono dati provenienti da un device esterno (il
+// tipo LPP è un nome libero lato firmware), quindi tutto ciò che
+// finisce in innerHTML passa da escapeHtml() — la tabella Telemetry
+// dei Repeaters li inietta grezzi, ma non è un buon motivo per
+// replicarlo qui. I tooltip sono testi statici: descrivono cosa
+// mostra la riga, non da dove arriva il dato (v. §72.1).
+//
+function formatDeviceTelemetryValue(
+    type,
+    value
+) {
+
+    if (
+        value == null
+    ) {
+
+        return "n/a";
+    }
+
+    const flatten =
+        (v) => {
+
+            if (
+                v == null
+            ) {
+
+                return "n/a";
+            }
+
+            if (
+                typeof v === "object"
+            ) {
+
+                try {
+
+                    return JSON.stringify(v);
+
+                } catch (e) {
+
+                    return "n/a";
+                }
+            }
+
+            return String(v);
+        };
+
+    let text;
+
+    if (
+        Array.isArray(value)
+    ) {
+
+        text =
+            value.map(flatten).join(", ");
+
+    } else if (
+        typeof value === "object"
+    ) {
+
+        text =
+            Object.entries(value)
+                .map(([k, v]) => `${k}: ${flatten(v)}`)
+                .join(", ");
+
+    } else {
+
+        text =
+            formatTelemetryValue(type, value);
+    }
+
+    return text === "" ? "n/a" : text;
+}
+
+function buildDeviceTelemetryRowsHtml(
+    raw
+) {
+
+    let list = raw;
+
+    if (
+        typeof raw === "string"
+    ) {
+
+        try {
+
+            list = JSON.parse(raw);
+
+        } catch (e) {
+
+            list = null;
+        }
+    }
+
+    const measures =
+        Array.isArray(list)
+            ? list.filter(
+                (t) => t !== null && typeof t === "object"
+            )
+            : [];
+
+    if (
+        measures.length === 0
+    ) {
+
+        return `<tr><th data-tooltip="Misure di telemetria (tensione, temperatura, ecc.) del device companion locale, una riga per misura. n/a se il device non ne ha riportate.">Telemetry</th><td>n/a</td></tr>`;
+    }
+
+    return measures.map(
+        (t) => {
+
+            const type =
+                typeof t.type === "string"
+                    ? t.type
+                    : null;
+
+            const channel =
+                Number.isInteger(t.channel)
+                    ? ` (ch ${t.channel})`
+                    : "";
+
+            let tooltip =
+                "Misura di telemetria del device companion locale sul canale indicato. Il valore è mostrato come riportato dal device, senza unità di misura se non nota.";
+
+            if (
+                type === "voltage"
+            ) {
+
+                tooltip =
+                    "Tensione misurata sul canale di telemetria indicato, in Volt. Può coincidere con la tensione di batteria mostrata sopra.";
+
+            } else if (
+                type === "temperature"
+            ) {
+
+                tooltip =
+                    "Temperatura misurata sul canale di telemetria indicato, in °C.";
+            }
+
+            const label =
+                `Telemetry - ${formatTelemetryType(type)}${channel}`;
+
+            return `<tr><th data-tooltip="${tooltip}">${escapeHtml(label)}</th><td>${escapeHtml(formatDeviceTelemetryValue(type, t.value))}</td></tr>`;
+        }
+    ).join("\n        ");
 }
 
 function renderNeighborData(

@@ -22,6 +22,12 @@ occupata.
 Uso:
     ./tools/sync_clock.py            # mostra l'ora attuale del device, poi sincronizza
     ./tools/sync_clock.py --check    # mostra solo l'ora attuale, nessuna modifica
+
+Se il device è AVANTI del Raspberry di 5 secondi o più, la
+sincronizzazione non è possibile: il firmware del companion accetta
+l'impostazione dell'ora solo in avanti (ERR_CODE_ILLEGAL_ARG
+altrimenti). Il tool lo segnala e non invia alcun comando di scrittura
+(exit code 1 senza --check, invariato rispetto a prima; 0 con --check).
 """
 
 from pathlib import Path
@@ -128,6 +134,35 @@ async def main():
         print(f"Ora del device:     {format_time(result.device_time_before)}")
         print(f"Ora del Raspberry:  {format_time(result.local_time)}")
         print(f"Differenza:         {result.drift_before:+d} secondi")
+
+        if result.device_ahead:
+
+            #
+            # Device avanti di >= soglia: sync_clock() non ha inviato
+            # nessun set (il firmware lo rifiuterebbe). Con --check è
+            # solo una nota; senza --check la sincronizzazione
+            # richiesta non è stata eseguita, quindi resta un errore
+            # (exit 1, come prima quando il set veniva rifiutato).
+            #
+            ahead_note = (
+                f"Il device è in anticipo di {-result.drift_before} "
+                f"secondi rispetto al Raspberry. Il firmware del "
+                f"companion accetta l'impostazione dell'ora solo in "
+                f"avanti, quindi non è possibile correggerlo (nessun "
+                f"comando inviato). Se l'orologio del Raspberry non è "
+                f"sincronizzato via NTP, potrebbe essere il Raspberry "
+                f"a essere indietro."
+            )
+
+            if args.check:
+
+                print(ahead_note)
+                print("Modalità --check: nessuna modifica effettuata.")
+                return
+
+            print(f"ERRORE: {ahead_note}", file=sys.stderr)
+
+            sys.exit(1)
 
         if args.check:
             print("Modalità --check: nessuna modifica effettuata.")

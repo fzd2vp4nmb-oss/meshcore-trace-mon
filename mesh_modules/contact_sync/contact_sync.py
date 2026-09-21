@@ -511,6 +511,13 @@ class ContactSyncModule:
         TUTTE E QUATTRO, l'aggiornamento viene saltato del tutto —
         updated_at resta quello dell'ultimo giro riuscito, un segnale
         onesto di quanto il dato sia vecchio invece di un errore.
+
+        A queste quattro si aggiunge una quinta query locale, la
+        telemetria del companion (_get_self_telemetry(), v.
+        ARCHITECTURE.md §76): gruppo indipendente come gli altri, ma
+        FUORI dalla condizione "tutte fallite" sopra — eseguita solo
+        dopo quel controllo e mai motivo, da sola, per saltare
+        l'aggiornamento.
         """
 
         core = await self._get_stats_safe(
@@ -552,6 +559,32 @@ class ContactSyncModule:
         packets = packets or {}
         device_info = device_info or {}
 
+        self_info = self.engine.mesh.self_info or {}
+
+        #
+        # Telemetria del companion (get_self_telemetry(), evento
+        # TELEMETRY_RESPONSE) — quinta query locale, per le righe
+        # "Telemetry - ..." della tabella Device Status (frontend). Come
+        # le altre quattro è un comando diretto al device, nessun
+        # traffico radio (il firmware risponde con le proprie misure:
+        # tensione di batteria e ogni sensore presente, senza passare
+        # dalla mesh — a differenza di req_telemetry_sync() usata da
+        # neighbor_monitor per i repeater remoti). Deliberatamente
+        # eseguita DOPO il controllo "tutte e quattro fallite" qui
+        # sopra, non insieme alle altre: (1) una connessione con il
+        # device evidentemente non funzionante non deve costare un
+        # ulteriore timeout (15s di default della libreria) inutile;
+        # (2) NON entra in quella condizione di salto — updated_at
+        # resta legato al successo delle quattro query originali,
+        # come prima, e la telemetria è un gruppo indipendente
+        # (COALESCE in upsert_device_status(): un fallimento qui
+        # conserva le misure del giro precedente, mai le azzera).
+        # None = non ottenuta/scartata in questo giro (v.
+        # _get_self_telemetry()); lista vuota = il device ha risposto
+        # senza misure, dato valido da scrivere come tale.
+        #
+        telemetry = await self._get_self_telemetry(self_info)
+
         #
         # Posizione geografica del companion connesso a trace-mon
         # stesso (adv_lat/adv_lon), per la pagina di dettaglio traccia
@@ -575,10 +608,11 @@ class ContactSyncModule:
         # sopra, il cui esito combinato è verificato solo per decidere
         # se saltare l'intero upsert) così una connessione riuscita ma
         # con, per dire, get_stats_radio() fallita non perde comunque
-        # l'aggiornamento di posizione/radio, se noti.
+        # l'aggiornamento di posizione/radio/nome, se noti. self_info è letta
+        # più sopra (prima della query di telemetria, che ne usa la
+        # chiave pubblica per verificare l'identità della risposta) —
+        # stessa istanza, un solo punto di lettura per l'intero giro.
         #
-        self_info = self.engine.mesh.self_info or {}
-
         await self._run_db(
             self.db.upsert_device_status,
             updated_at=now,
@@ -606,16 +640,125 @@ class ContactSyncModule:
             radio_freq=self_info.get("radio_freq"),
             radio_bw=self_info.get("radio_bw"),
             radio_sf=self_info.get("radio_sf"),
-            radio_cr=self_info.get("radio_cr")
+            radio_cr=self_info.get("radio_cr"),
+            telemetry=telemetry,
+            # Nome del companion (mesh.self_info["name"], stesso frame
+            # SELF_INFO di adv_lat/adv_lon/radio_* sopra — nessun comando
+            # aggiuntivo) per l'intestazione del tab Nodes. Normalizzato
+            # (spazi/NUL, lunghezza) da upsert_device_status(); None o
+            # vuoto = nome non aggiornato, mai azzerato.
+            device_name=self_info.get("name")
         )
+
+    async def _get_self_telemetry(self, self_info):
+        """
+        Telemetria del companion connesso a trace-mon stesso, via
+        DeviceCommands.get_self_telemetry() (comando diretto al
+        device, stesso percorso _get_stats_safe() delle altre query di
+        stato locale — command_lock, nessun traffico radio).
+
+        Ritorna la lista di misure [{"channel", "type", "value"}, ...]
+        già decodificata dalla libreria (Cayenne LPP), nell'ordine
+        riportato dal device — lista vuota se il device ha risposto
+        senza misure — oppure None se la query è fallita o la risposta
+        non è utilizzabile (nessun aggiornamento, v. COALESCE in
+        upsert_device_status()).
+
+        Verifica di identità della risposta (stessa classe di problema
+        già incontrata più volte nel progetto, v. neighbor_monitor.py e
+        trace.py: un evento arrivato per un'altra richiesta scambiato
+        per la risposta corrente): send() della libreria si sottoscrive
+        al SOLO tipo di evento TELEMETRY_RESPONSE, senza alcun filtro
+        di correlazione, ma lo stesso tipo di evento viene emesso anche
+        per le risposte di telemetria dei repeater remoti richieste da
+        neighbor_monitor (req_telemetry_sync(), via BINARY_RESPONSE).
+        Un ritardatario di una richiesta remota scaduta, arrivato
+        mentre questa query è in attesa, verrebbe altrimenti salvato
+        come telemetria del companion. Il frame di risposta a una
+        richiesta "self" contiene invece sempre il prefisso di 6 byte
+        della PROPRIA chiave pubblica (payload "pubkey_pre", esadecimale,
+        12 caratteri — MyMesh.cpp del firmware companion, gestore di
+        CMD_SEND_TELEMETRY_REQ a 4 byte), mentre l'evento delle
+        richieste remote usa una chiave diversa ("pubkey_prefix") e
+        riporta il prefisso del repeater interrogato. Se il prefisso
+        atteso (da self_info["public_key"]) non è noto, o la risposta
+        non lo riporta uguale, il risultato è scartato con un warning —
+        meglio nessun aggiornamento che telemetria di un altro nodo
+        presentata come propria.
+        """
+
+        payload = await self._get_stats_safe(
+            "self_telemetry",
+            self.engine.mesh.commands.get_self_telemetry
+        )
+
+        if payload is None:
+            return None
+
+        expected_prefix = str(
+            self_info.get("public_key") or ""
+        )[:12].lower()
+
+        received_prefix = str(
+            payload.get("pubkey_pre") or ""
+        ).lower()
+
+        if (
+            not expected_prefix or
+            received_prefix != expected_prefix
+        ):
+
+            log.warning(
+                "ContactSyncModule: self_telemetry scartata — prefisso "
+                "chiave pubblica nella risposta '%s' non corrisponde a "
+                "quello atteso del companion '%s' (risposta non "
+                "verificabile come propria, telemetria non aggiornata "
+                "per questo giro).",
+                received_prefix,
+                expected_prefix
+            )
+
+            return None
+
+        lpp = payload.get("lpp")
+
+        if not isinstance(lpp, list):
+
+            log.warning(
+                "ContactSyncModule: self_telemetry scartata — payload "
+                "'lpp' assente o non è una lista (%s), telemetria non "
+                "aggiornata per questo giro.",
+                type(lpp).__name__
+            )
+
+            return None
+
+        #
+        # Solo le voci ben formate (dict con 'type' stringa, il minimo
+        # indispensabile per mostrarle); il resto è scartato in
+        # silenzio, non c'è un campo utile da salvare in una misura
+        # senza tipo. 'channel'/'value' passano invariati: value può
+        # essere non scalare (es. gps -> dict, accelerometer -> dict),
+        # serializzato in JSON da upsert_device_status().
+        #
+        return [
+            {
+                "channel": t.get("channel"),
+                "type": t.get("type"),
+                "value": t.get("value")
+            }
+            for t in lpp
+            if isinstance(t, dict) and isinstance(t.get("type"), str)
+        ]
 
     async def _get_stats_safe(self, label, factory):
         """
-        Esegue una delle quattro query di stato locale sotto command_lock
+        Esegue una delle query di stato locale (stats core/radio/packets,
+        device_query, self_telemetry) sotto command_lock
         (condivisa con IPC/bot come ogni altro comando sulla stessa
         connessione — locale sì, ma pur sempre unica connessione).
         Ritorna il payload (dict) o None se fallita — un fallimento
-        qui non deve mai impedire alle altre tre di essere salvate.
+        qui non deve mai impedire alle altre di essere salvate.
         send() della libreria non solleva mai per timeout, ritorna un
         Event(ERROR) sintetico — controlliamo .type, non un except
         dedicato al timeout.

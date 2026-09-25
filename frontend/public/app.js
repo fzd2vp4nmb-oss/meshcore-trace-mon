@@ -5731,6 +5731,31 @@ function renderNodeDetailChart(
                     plugins: {
                         legend: {
                             labels: { color: tickColor }
+                        },
+                        //
+                        // Senza questa callback, il tooltip mostra il valore
+                        // grezzo dell'asse X (millisecondi Unix, es.
+                        // "1,789,746,975,000" — formattazione numerica di
+                        // default di Chart.js su una scala "linear") invece
+                        // di una data leggibile: bug segnalato dall'utente
+                        // il 2026-09-25, stesso codice condiviso col
+                        // Collettore. Stesso fix già presente in renderChart()
+                        // (tab Trace, "snrChart", riga ~1420) per lo stesso
+                        // tipo di scala — qui mancava. formatDateFull()
+                        // (unica funzione di formattazione data/ora completa
+                        // del file, v. commento sopra la sua definizione)
+                        // invece di formatDateShort() (usata sui tick
+                        // dell'asse, dove lo spazio è poco): il tooltip ha
+                        // spazio per l'anno e un dato specifico guadagna
+                        // dalla precisione in più.
+                        //
+                        tooltip: {
+                            callbacks: {
+                                title: function (context) {
+
+                                    return formatDateFull(new Date(context[0].parsed.x));
+                                }
+                            }
                         }
                     }
                 }

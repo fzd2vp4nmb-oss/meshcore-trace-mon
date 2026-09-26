@@ -6330,26 +6330,36 @@ function formatTelemetryValue(
     value
 ) {
 
+    //
+    // Unità Cayenne LPP STANDARD (non inventate — stesse della
+    // libreria cayennelpp usata da meshcore_py, v.
+    // docs/ARCHITECTURE.md §81) per i tipi finora osservati in campo:
+    // voltage/temperature da IK2XYP-RPT (docs/NEIGHBOR_MONITORING.md
+    // §10, 2026-08-08), più altitude/barometer/humidity da
+    // node_04/IT-VEN-AlpiBL-D (§81, 2026-09-26). Qualunque tipo LPP
+    // non elencato qui resta senza unità — principio invariato dal
+    // §10: meglio un dato spoglio ma corretto che un'unità inventata
+    // per un tipo mai verificato contro la libreria. Costante LOCALE
+    // (non top-level): le funzioni di questo file vengono estratte
+    // singolarmente nei test tramite conteggio graffe a partire da
+    // "function <nome>(" — una costante dichiarata fuori da qui non
+    // sarebbe inclusa nell'estrazione.
+    //
+    const TELEMETRY_UNITS = {
+        voltage: "V",
+        temperature: "°C",
+        altitude: "m",
+        barometer: "hPa",
+        humidity: "%",
+    };
+
     if (
-        type === "voltage"
+        Object.prototype.hasOwnProperty.call(TELEMETRY_UNITS, type)
     ) {
 
-        return `${value} V`;
+        return `${value} ${TELEMETRY_UNITS[type]}`;
     }
 
-    if (
-        type === "temperature"
-    ) {
-
-        return `${value} °C`;
-    }
-
-    //
-    // Unità note solo per i due canali attualmente riportati da
-    // IK2XYP-RPT (vedi docs/NEIGHBOR_MONITORING.md). Per qualunque
-    // altro tipo LPP, valore grezzo senza unità — meglio un dato
-    // spoglio ma corretto che un'unità inventata.
-    //
     return `${value}`;
 }
 
@@ -6374,10 +6384,11 @@ function formatTelemetryValue(
 //
 // Formattazione dei valori: formatTelemetryType()/
 // formatTelemetryValue() sono le STESSE della tabella Telemetry dei
-// Repeaters (tensione → "V", temperatura → "°C", tutto il resto senza
-// unità inventata) e NON vanno toccate da qui — sono condivise. Per i
-// valori non scalari che meshcore_py può restituire per certi tipi
-// LPP (dict per gps/accelerometer/colour, lista per gyrometer/
+// Repeaters (unità standard Cayenne LPP per i tipi noti — vedi
+// TELEMETRY_UNITS sopra formatTelemetryValue(), §81 — tutto il resto
+// senza unità inventata) e NON vanno toccate da qui — sono condivise.
+// Per i valori non scalari che meshcore_py può restituire per certi
+// tipi LPP (dict per gps/accelerometer/colour, lista per gyrometer/
 // direction) formatDeviceTelemetryValue() li appiattisce in testo.
 //
 // type/channel/value sono dati provenienti da un device esterno (il

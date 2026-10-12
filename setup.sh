@@ -672,6 +672,27 @@ if [ $? -ne 0 ]; then
 fi
 
 #
+# Pulizia dei repeater non piu' monitorati (docs/ARCHITECTURE.md §82):
+# rimuove da contacts.db le righe dei repeater che NON risolvono a un
+# nome di neighbor_monitoring.repeaters in config.yaml E sono inattivi
+# da piu' di 7 giorni (copia di sicurezza in backup/repeater_removed-*).
+# Va DOPO le due rotazioni (repeater_neighbours del mese chiuso gia'
+# archiviato) e DENTRO questo lock, cosi' il Collettore riceve da
+# contact_sync.sh un contacts.db gia' ripulito. Non e' critica per gli
+# invii qui sotto: un suo fallimento NON impedisce i due scp (gli
+# archivi del mese sono gia' pronti), viene solo riportato con exit 1
+# a fine script (PURGE_FAILED).
+#
+PURGE_FAILED=0
+
+./tools/purge_removed_repeaters.py
+
+if [ $? -ne 0 ]; then
+    log_err "Errore durante la pulizia dei repeater rimossi (purge_removed_repeaters)"
+    PURGE_FAILED=1
+fi
+
+#
 # Se non è stato prodotto alcun archivio (es. nessuna osservazione
 # nel mese appena concluso), non c'è nulla da inviare — esce senza
 # errore.
@@ -729,7 +750,7 @@ if [ -f "$FILEOUTZIP2" ]; then
     fi
 fi
 
-if [ $SCP_FAILED -ne 0 ]; then
+if [ $SCP_FAILED -ne 0 ] || [ $PURGE_FAILED -ne 0 ]; then
     exit 1
 fi
 

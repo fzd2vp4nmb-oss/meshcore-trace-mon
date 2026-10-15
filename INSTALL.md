@@ -655,6 +655,16 @@ bot non la salva, ma considerala compromessa: generane una nuova (§14.1)
 e invia solo il file `.pub`. Se il bot risponde che la ricezione delle
 chiavi non è attiva, riprova più tardi.
 
+Se reinvii una chiave che l'admin ha già abilitato, il bot risponde che
+è già installata: non devi fare altro. Per **cambiare chiave** (per
+esempio perché la chiave privata è stata esposta) genera una nuova
+coppia (§14.1), salvandola con un nome di file diverso per non
+sovrascrivere quella in uso, e incolla la nuova chiave pubblica nella
+stessa chat. L'admin abilita la nuova al posto della precedente e ti
+scrive quando ha finito: fino a quel messaggio il nodo deve continuare
+a usare la chiave attuale. Node ID e IP del server non cambiano e non
+devi rifare il §14.3.
+
 ### 14.3 Configura Node ID e IP del server
 
 Il Node ID e l'IP del server (`IP_SERVER`) vengono impostati dal

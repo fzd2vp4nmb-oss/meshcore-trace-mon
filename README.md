@@ -21,8 +21,10 @@ a un Raspberry Pi (o altra macchina Linux equivalente).
 
 Il Nodo locale può inoltre inviare periodicamente i propri dati a un
 server centrale (Collector) che li aggrega con quelli di altri nodi
-della rete. Per configurare il Nodo perché acceda al server serve
-contattare l'admin del servizio — vedi
+della rete. Per configurare il Nodo perché acceda al server si invia
+la propria chiave pubblica SSH al bot Telegram del progetto
+(`@TraceMon_bot`) e si attende l'abilitazione dell'admin, che risponde
+con Node ID e IP del server — vedi
 [INSTALL.md](INSTALL.md#14-collegarsi-al-server-collector).
 
 Tutto accessibile da un'interfaccia web semplice, servita

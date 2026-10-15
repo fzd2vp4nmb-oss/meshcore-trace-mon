@@ -434,9 +434,10 @@ Lo script è diviso in tre parti, in quest'ordine:
 
 1. **Script di manutenzione** — ti chiede il **Node ID** e l'**IP del
    server** a cui gli script inviano backup/sincronizzazioni via
-   `scp`. Questi due valori non li scegli tu: te li assegna l'admin
-   del server Collector — contattalo prima di arrivare a questo
-   punto (§14.2) se non li hai già. Genera `backup.sh`,
+   `scp`. Questi due valori non li scegli tu: te li comunica l'admin
+   del server Collector su Telegram dopo che gli hai inviato la tua
+   chiave pubblica (§14.2) — fai quel passo prima di arrivare a questo
+   punto se non li hai già. Genera `backup.sh`,
    `contact_sync.sh`, `rotate_contacts.sh`, `trace.sh`, tutti già
    eseguibili.
 2. **`config.yaml`** — ti chiede il tipo di connessione al companion
@@ -604,27 +605,54 @@ di tutti i nodi iscritti.
 ssh-keygen -t ed25519 -C "etichetta"
 ```
 
-Sostituisci `etichetta` con un nome che ti aiuti a riconoscere questa
-chiave in futuro (es. il nome del tuo companion nell'app MeshCore) —
-serve solo a te e all'admin per distinguerla da altre chiavi, **non**
-è il `node_XX` che userai nel resto di questa guida: quello lo
-assegna l'admin al passo successivo. Lascia vuota la passphrase se
-prevedi di usare la chiave da script automatici.
+Il Collector accetta solo chiavi `ed25519`. Sostituisci `etichetta`
+con un nome che ti aiuti a riconoscere questa chiave in futuro (es. il
+nome del tuo companion nell'app MeshCore) — serve solo a te e
+all'admin per distinguerla da altre chiavi, **non** è il `node_XX` che
+userai nel resto di questa guida: quello lo assegna l'admin al passo
+successivo. Lascia vuota la passphrase se prevedi di usare la chiave
+da script automatici.
 
-### 14.2 Contatta l'admin del servizio
+### 14.2 Invia la chiave pubblica al bot
 
-Scrivi a:
+La chiave pubblica si invia al bot Telegram del progetto,
+`@TraceMon_bot`. Serve un account Telegram.
 
-```
-fzd2vp4nmb [at] privaterelay [dot] appleid [dot] com
-```
+1. Apri [t.me/TraceMon_bot](https://t.me/TraceMon_bot) (o cerca
+   `@TraceMon_bot` nell'app Telegram) e premi **Start/Avvia**. Senza
+   questo passaggio il bot non può scriverti, e quindi non potrà
+   mandarti Node ID e IP del server. Il bot ti risponde con il tuo
+   chat ID: ti servirà anche al §16.
+2. Sul Raspberry mostra la chiave pubblica:
 
-allegando la chiave pubblica generata al passo precedente
-(`~/.ssh/id_ed25519.pub`). L'admin ti risponderà con le istruzioni
-per completare l'accesso, il **Node ID** (`node_XX`) da usare per
-questa installazione, e l'IP del server da usare al passo
-successivo — sono entrambi assegnati dall'admin, non vanno decisi
-autonomamente.
+   ```bash
+   cat ~/.ssh/id_ed25519.pub
+   ```
+
+   È una sola riga che inizia con `ssh-ed25519`. Il file senza `.pub`
+   (`id_ed25519`) è la chiave **privata**: non incollarla mai da nessuna
+   parte.
+3. Copia l'intera riga e incollala nella chat con il bot, in un unico
+   messaggio.
+4. Il bot risponde con il **fingerprint** della chiave ricevuta.
+   Controlla che coincida con quello del tuo file:
+
+   ```bash
+   ssh-keygen -lf ~/.ssh/id_ed25519.pub
+   ```
+
+5. L'admin riceve la richiesta, abilita la chiave sul server e ti
+   scrive nella stessa chat con il **Node ID** (`node_XX`) e l'**IP del
+   server** da usare al passo successivo. Sono assegnati dall'admin, non
+   vanno decisi autonomamente. L'abilitazione è manuale: il messaggio
+   arriva quando l'admin la completa.
+
+Se il bot rifiuta la chiave, il messaggio ne spiega il motivo (chiave
+privata, tipo diverso da `ed25519`, riga incompleta o su più righe):
+correggi e reinvia. Se hai incollato per errore la chiave privata, il
+bot non la salva, ma considerala compromessa: generane una nuova (§14.1)
+e invia solo il file `.pub`. Se il bot risponde che la ricezione delle
+chiavi non è attiva, riprova più tardi.
 
 ### 14.3 Configura Node ID e IP del server
 
@@ -672,7 +700,13 @@ o dalla pagina dei dispositivi connessi del tuo router.
 
 ---
 
-## 16. Notifiche Telegram (opzionale)
+## 16. Bot Telegram e notifiche
+
+L'iscrizione a **@TraceMon_bot** (§16.1) **non è opzionale** se colleghi
+il nodo al Collector: serve già al §14.2, per inviare la chiave
+pubblica e ricevere Node ID e IP del server. Sono invece opzionali le
+**notifiche** descritte qui sotto: si attivano solo se completi anche
+il §16.2.
 
 `trace-mon` può inviarti notifiche via Telegram su eventi relativi al
 tuo ripetitore — oggi: temperatura sopra 49°C o sotto 0°C, TX Duty
@@ -689,10 +723,10 @@ serve avere configurato il canale `#bot` per usare questa funzione,
 né viceversa.
 
 Il servizio di invio vero e proprio gira sul Collettore, non sul tuo
-Raspberry — quello che devi fare tu è solo iscriverti al bot e
-comunicare il tuo chat ID al tuo nodo, che lo porta al Collettore
-automaticamente al prossimo giro di sincronizzazione (nessuna azione
-ulteriore richiesta).
+Raspberry — quello che devi fare tu è solo iscriverti al bot (se hai già
+completato il §14.2 l'hai già fatto) e comunicare il tuo chat ID al
+tuo nodo, che lo porta al Collettore automaticamente al prossimo giro
+di sincronizzazione (nessuna azione ulteriore richiesta).
 
 Le notifiche possono raggiungere anche più persone (es. se gestisci
 il nodo insieme a qualcun altro): ognuna si iscrive separatamente al
@@ -707,7 +741,9 @@ Un solo passaggio: apri [t.me/TraceMon_bot](https://t.me/TraceMon_bot)
 numerico personale — è il valore da usare al passo successivo.
 
 Questo stesso passaggio autorizza anche l'invio delle notifiche
-future.
+future. Se hai già premuto Start al §14.2 non devi ripeterlo: il chat ID
+è nel primo messaggio del bot, e puoi rivederlo in qualsiasi momento
+inviando `/start`.
 
 ### 16.2 Configuralo su trace-mon
 

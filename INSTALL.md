@@ -622,7 +622,8 @@ La chiave pubblica si invia al bot Telegram del progetto,
    `@TraceMon_bot` nell'app Telegram) e premi **Start/Avvia**. Senza
    questo passaggio il bot non può scriverti, e quindi non potrà
    mandarti Node ID e IP del server. Il bot ti risponde con il tuo
-   chat ID: ti servirà anche al §16.
+   chat ID: annotalo, ti servirà al §16 se attiverai le notifiche
+   (facoltative).
 2. Sul Raspberry mostra la chiave pubblica:
 
    ```bash
@@ -700,13 +701,11 @@ o dalla pagina dei dispositivi connessi del tuo router.
 
 ---
 
-## 16. Bot Telegram e notifiche
+## 16. Notifiche Telegram (opzionale)
 
-L'iscrizione a **@TraceMon_bot** (§16.1) **non è opzionale** se colleghi
-il nodo al Collector: serve già al §14.2, per inviare la chiave
-pubblica e ricevere Node ID e IP del server. Sono invece opzionali le
-**notifiche** descritte qui sotto: si attivano solo se completi anche
-il §16.2.
+Il bot **@TraceMon_bot** l'hai già avviato al §14.2: qui configuri solo
+le notifiche, che sono facoltative. Partono dal Collector, quindi
+funzionano solo con il nodo già collegato (§14).
 
 `trace-mon` può inviarti notifiche via Telegram su eventi relativi al
 tuo ripetitore — oggi: temperatura sopra 49°C o sotto 0°C, TX Duty
@@ -717,33 +716,31 @@ non rientra e la risupera, niente avvisi ripetuti) — un servizio
 distinto dal modulo **Bot** già
 visto al §1.3: quello risponde a comandi ricevuti via radio sul
 canale `#bot` della mesh, questo qui invia messaggi in uscita al
-**tuo account Telegram personale**, tramite un bot Telegram del
-progetto a cui ti iscrivi. Le due cose non sono collegate — non
+**tuo account Telegram personale**, tramite il bot Telegram del
+progetto, lo stesso del §14.2. Le due cose non sono collegate — non
 serve avere configurato il canale `#bot` per usare questa funzione,
 né viceversa.
 
 Il servizio di invio vero e proprio gira sul Collettore, non sul tuo
-Raspberry — quello che devi fare tu è solo iscriverti al bot (se hai già
-completato il §14.2 l'hai già fatto) e comunicare il tuo chat ID al
+Raspberry — quello che devi fare tu è solo comunicare il tuo chat ID al
 tuo nodo, che lo porta al Collettore automaticamente al prossimo giro
 di sincronizzazione (nessuna azione ulteriore richiesta).
 
 Le notifiche possono raggiungere anche più persone (es. se gestisci
-il nodo insieme a qualcun altro): ognuna si iscrive separatamente al
-bot (§16.1) e tutti i chat ID vengono inseriti insieme, separati da
-virgola, al passo §16.2.
+il nodo insieme a qualcun altro): ognuna deve aver avviato il bot dal
+proprio account (§16.1) e tutti i chat ID vengono inseriti insieme,
+separati da virgola, al passo §16.2.
 
-### 16.1 Iscriviti al bot e ottieni il tuo chat ID
+### 16.1 Il tuo chat ID
 
-Un solo passaggio: apri [t.me/TraceMon_bot](https://t.me/TraceMon_bot)
-(o cerca `@TraceMon_bot` dentro l'app Telegram) e premi
-**Start/Avvia**. Il bot ti risponde subito con il tuo **chat ID**
-numerico personale — è il valore da usare al passo successivo.
+È il numero che il bot ti ha mandato quando hai premuto **Start/Avvia**
+al §14.2; se non lo hai più, invia `/start` al bot e te lo ripete. È il
+valore da usare al passo successivo.
 
-Questo stesso passaggio autorizza anche l'invio delle notifiche
-future. Se hai già premuto Start al §14.2 non devi ripeterlo: il chat ID
-è nel primo messaggio del bot, e puoi rivederlo in qualsiasi momento
-inviando `/start`.
+Per ogni altra persona che vuoi avvisare: deve aprire
+[t.me/TraceMon_bot](https://t.me/TraceMon_bot) dal proprio account e
+premere **Start/Avvia**. Il bot le risponde con il suo chat ID; senza
+questo passaggio non può scriverle.
 
 ### 16.2 Configuralo su trace-mon
 
@@ -755,8 +752,8 @@ cd ~/trace-mon
 Scegli la voce **"8) Telegram"** dal menu principale, poi:
 - **"1) Imposta il/i chat ID"** — incolla il numero ottenuto al passo
   precedente. Per più destinatari, incolla tutti i numeri separati da
-  virgola (es. `111111111,222222222`) — ognuno deve aver fatto il
-  passo §16.1 separatamente;
+  virgola (es. `111111111,222222222`) — ognuno deve aver avviato il
+  bot dal proprio account (§16.1);
 - **"2) Abilita le notifiche"**.
 
 Al termine, come per ogni altra modifica di `config.sh`, ti viene

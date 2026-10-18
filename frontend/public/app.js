@@ -72,7 +72,6 @@ let chart = null;
 let autoRefreshTimer = null;
 let meshNodes = {};
 let currentRepeaterPublicKey = null;
-let nodeDetailChart = null;
 let nodesDataCache = [];
 
 //
@@ -121,15 +120,17 @@ let nodesArchivePeriod =
 // aggiuntiva. null finché non nota o se il Companion non ha ancora
 // fornito coordinate GPS: getNodeDistanceThresholdKm() tratta questo
 // caso disattivando il filtro (nessun nodo escluso), mai come "nessun
-// nodo entro il raggio".
+// nodo entro il raggio". Dal §86 «non ha fornito coordinate» include anche
+// (0,0) e i valori fuori range: un Companion senza GPS annuncia (0,0) e
+// quel valore non è una posizione (v. loadDeviceStatus()).
 //
 let srcCoordsCache = null;
 
 //
 // Mappa Leaflet della pagina di dettaglio traccia — creata una sola
 // volta (v. ensureTraceDetailMap() più sotto) e riutilizzata ad ogni
-// apertura, a differenza di nodeDetailChart (Chart.js) che viene
-// distrutto e ricreato ogni volta. traceDetailLayerGroup è lo strato
+// apertura, a differenza dei grafici Chart.js (renderChart(), tab Trace)
+// che vengono distrutti e ricreati ogni volta. traceDetailLayerGroup è lo strato
 // svuotato e ripopolato ad ogni apertura (solo i marker dei nodi — non
 // dipendono dallo zoom), mentre traceSegmentLayerGroup (segmenti +
 // frecce) viene svuotato e ripopolato sia ad ogni apertura sia ad
@@ -145,6 +146,32 @@ let traceDetailLayerGroup = null;
 let traceSegmentLayerGroup = null;
 let traceSegmentDefs = [];
 let traceArrowPane = null;
+
+//
+// Mappa Leaflet del path di un advert nel dettaglio nodo (tab Nodes,
+// v. sezione "NODE DETAIL — MAPPA PATH ADVERT" più sotto, che ha preso
+// il posto del vecchio grafico Observation History RSSI/SNR). Stessa
+// struttura di quella di Trace sopra — mappa creata UNA volta sola
+// (ensureNodeDetailPathMap()) e riutilizzata, uno strato per i marker,
+// uno per segmenti+frecce (ridisegnato ad ogni zoom), lista "grezza"
+// dei segmenti indipendente dallo zoom — ma istanza e stato SEPARATI:
+// le due mappe vivono su pagine diverse e non devono mai condividere
+// layer o definizioni (una traccia aperta non deve poter sporcare il
+// path di un advert né viceversa).
+//
+// nodeDetailObservations/nodeDetailNodeInfo: l'array di osservazioni
+// attualmente in tabella e l'identità LIVE del nodo aperto (stesso
+// oggetto data.node di renderNodeDetail()) — il click su un link
+// "Received" porta con sé solo l'indice della riga (data-obs-index),
+// il resto lo legge da qui.
+//
+let nodePathMap = null;
+let nodePathMarkerLayerGroup = null;
+let nodePathSegmentLayerGroup = null;
+let nodePathSegmentDefs = [];
+let nodePathInfoControl = null;
+let nodeDetailObservations = [];
+let nodeDetailNodeInfo = null;
 
 //
 // Nodo attualmente aperto nella vista dettaglio — serve al listener
@@ -191,6 +218,18 @@ let neighborsRepeaterListRequestId = 0;
 let nodesArchiveListRequestId = 0;
 let neighboursArchiveListRequestId = 0;
 let traceDetailRequestId = 0;
+
+//
+// Correlazione della fetch di /api/device_status (posizione di SRC)
+// lanciata dal click su un link "Received" nel dettaglio nodo — v.
+// showNodeDetailAdvertPath(). Contatore SEPARATO da
+// nodeDetailRequestId: quello protegge il caricamento del nodo/Period,
+// questo la sola mappa path (cambiare riga selezionata non deve
+// invalidare la tabella, né ricaricare il nodo deve lasciare in volo
+// un disegno di mappa del nodo precedente — resetNodeDetailPathMap()
+// lo incrementa per questo).
+//
+let nodePathRequestId = 0;
 
 /* ==========================================
    AUTO REFRESH INTERVAL
@@ -1500,6 +1539,28 @@ function renderChart(
    traccia vecchia, solo quella CORRENTE è disponibile, per SRC come
    per ogni altro nodo. Nota nota esplicitamente all'utente in fase di
    analisi, non una scelta implementativa silenziosa.
+
+   Posizioni NON disegnabili (correzione 2026-10-18, v.
+   docs/ARCHITECTURE.md §85): un nodo senza GPS annuncia in MeshCore la
+   coppia (0,0) — nel contacts.db reale 366 nodi sono a (0,0), uno ha
+   lat/lon fuori range — e resolveNodePosition() la restituisce come
+   "ok" (non è stata modificata: la usa anche il path advert del
+   dettaglio nodo). Prima di questa correzione quei nodi (e SRC, se il
+   Companion annunciava (0,0)) venivano disegnati nel Golfo di Guinea,
+   con segmenti di migliaia di km e una vista zoomata sull'intero
+   globo. Ora loadTraceDetail() applica isUsableMapCoordinate() (sezione
+   PATH ADVERT, più sotto) sia a SRC sia ai repeater: una coppia non
+   disegnabile segue lo STESSO ramo di "posizione non disponibile" già
+   previsto per i nodi senza coordinate — avviso sotto la mappa,
+   nessun marker, segmenti che lo toccano saltati — con il motivo
+   specifico ("coordinate 0,0 (nodo senza GPS)").
+
+   Vista con un solo punto (correzione 2026-10-18, v. §86): se dopo il
+   filtro resta UN solo punto disegnabile, o tutti i punti hanno le stesse
+   coordinate, fitBounds() su un'estensione nulla andrebbe al zoom massimo
+   delle tile (19); loadTraceDetail() usa invece setView() a zoom 13 (lo
+   stesso valore della mappa del path advert, §84). Con due o più punti
+   distinti fitBounds() è invariato.
 ========================= */
 
 //
@@ -1516,7 +1577,11 @@ function renderChart(
 //                   posizione di SRC arriva da /api/device_status,
 //                   non da meshNodes — v. loadTraceDetail()).
 //   "ok"          — un solo nodo risolto, con adv_lat/adv_lon
-//                   entrambi non nulli.
+//                   entrambi non nulli. NON implica "disegnabile":
+//                   (0,0) e valori fuori range sono "ok" anche qui, e
+//                   i chiamanti che disegnano devono applicare
+//                   isUsableMapCoordinate() (loadTraceDetail() e
+//                   buildAdvertPathModel() lo fanno).
 //   "no-position" — nodo risolto in modo univoco ma senza posizione
 //                   nota in contacts.db (mai ricevuto un advert con
 //                   GPS, o Companion/nodo senza fix).
@@ -1888,12 +1953,26 @@ const TRACE_ARROW_MIN_SEPARATION_PIXELS = 16;
 // perché renderTraceSegmentsAtCurrentZoom() la richiama due volte per
 // ogni segmento — v. il commento sopra.
 //
+// "layerGroup" (opzionale, aggiunto con la mappa path del dettaglio
+// nodo — v. renderNodeDetailPathSegmentsAtCurrentZoom()): strato in cui
+// aggiungere la freccia. Omesso, vale traceSegmentLayerGroup come
+// prima di questa aggiunta, quindi i due chiamanti di
+// renderTraceSegmentsAtCurrentZoom() restano byte per byte invariati
+// nel comportamento. Il pane "traceArrowPane" resta lo stesso nome: i
+// pane sono per-istanza di mappa (L.Map.createPane()), ognuna delle
+// due mappe ha il proprio con questo nome.
+//
 function addTraceArrowMarker(
     offset,
     bearing,
     color,
-    t
+    t,
+    layerGroup
 ) {
+
+    const targetGroup =
+        layerGroup ||
+        traceSegmentLayerGroup;
 
     const lat =
         offset[0][0] +
@@ -1924,7 +2003,7 @@ function addTraceArrowMarker(
             pane: "traceArrowPane"
         }
     ).addTo(
-        traceSegmentLayerGroup
+        targetGroup
     );
 }
 
@@ -2128,11 +2207,53 @@ const TRACE_REPEATER_ICON =
     );
 
 //
+// Marker dei room server (node_type 3) — aggiunto con la mappa path del
+// dettaglio nodo (2026-10-18): la mappa di Trace non ne ha bisogno
+// (nei percorsi di una traccia compaiono solo SRC e repeater), il path
+// di un advert invece può avere come ORIGINE anche un room server.
+// Grafica generata dall'esempio fornito dall'utente (icona verde con
+// due figure, ritagliata su un cerchio trasparente come src/repeater;
+// stesse dimensioni 32x32 + variante -2x, stesso ancoraggio al centro
+// del cerchio).
+//
+const TRACE_ROOM_SERVER_ICON =
+    L.icon(
+        {
+            iconUrl: "images/markers/room.png",
+            iconRetinaUrl: "images/markers/room-2x.png",
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+            popupAnchor: [0, -16]
+        }
+    );
+
+//
+// Tile layer OpenStreetMap condiviso dalle due mappe Leaflet del file
+// (dettaglio traccia e path advert del dettaglio nodo): un'unica
+// definizione di URL/attribuzione/maxZoom invece di due copie che
+// potrebbero divergere (la Tile Usage Policy di OSM impone
+// l'attribuzione, e la decisione "tile dinamiche via Internet, nessuna
+// pre-scaricata" del 2026-08-25 — v. commento in
+// ensureTraceDetailMap() — vale identica per entrambe). Estratta da
+// ensureTraceDetailMap() senza alcun cambiamento di valori.
+//
+function createOsmTileLayer() {
+
+    return L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+            maxZoom: 19,
+            attribution:
+                '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+        }
+    );
+}
+
+//
 // Mappa Leaflet creata UNA VOLTA sola e riutilizzata ad ogni apertura
 // del dettaglio (clearLayers() su traceDetailLayerGroup invece di
-// distruggere/ricreare la mappa) — a differenza di nodeDetailChart
-// (Chart.js), distrutto e ricreato ad ogni rendering
-// (renderNodeDetailChart(): "nodeDetailChart.destroy()" seguito da
+// distruggere/ricreare la mappa) — a differenza dei grafici Chart.js
+// della tab Trace (renderChart(): "chart.destroy()" seguito da
 // "new Chart(...)"). Le due librerie hanno costi opposti per questa
 // operazione: Chart.js ricrea un <canvas> in pochi millisecondi senza
 // alcuna richiesta di rete, mentre un L.map() nuovo comporterebbe uno
@@ -2167,14 +2288,7 @@ function ensureTraceDetailMap() {
     // possibili"). Attribuzione riportata come richiesto dalla Tile
     // Usage Policy di OpenStreetMap.
     //
-    L.tileLayer(
-        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        {
-            maxZoom: 19,
-            attribution:
-                '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
-        }
-    ).addTo(
+    createOsmTileLayer().addTo(
         traceDetailMap
     );
 
@@ -2385,10 +2499,30 @@ async function loadTraceDetail(
                 status.adv_lon != null
             ) {
 
-                srcPosition = {
-                    lat: status.adv_lat,
-                    lon: status.adv_lon
-                };
+                //
+                // (0,0) o fuori range = Companion senza GPS (v. il
+                // commento in cima a questa sezione): non è una
+                // posizione da disegnare, stesso trattamento di "nessuna
+                // coordinata" qui sotto, ma con il motivo specifico.
+                //
+                if (
+                    isUsableMapCoordinate(
+                        status.adv_lat,
+                        status.adv_lon
+                    )
+                ) {
+
+                    srcPosition = {
+                        lat: status.adv_lat,
+                        lon: status.adv_lon
+                    };
+
+                } else {
+
+                    notices.push(
+                        `Posizione del nodo locale (SRC) non disponibile: ${describeUnusableCoordinates(status.adv_lat, status.adv_lon)}.`
+                    );
+                }
 
             } else {
 
@@ -2455,10 +2589,33 @@ async function loadTraceDetail(
                 resolved.status === "ok"
             ) {
 
-                positions[id] = {
-                    lat: resolved.lat,
-                    lon: resolved.lon
-                };
+                //
+                // "ok" di resolveNodePosition() = coordinate presenti in
+                // contacts.db, NON necessariamente disegnabili: un
+                // repeater senza GPS annuncia (0,0) (v. il commento in
+                // cima a questa sezione). Una coppia non disegnabile non
+                // entra in positions: nessun marker, e i segmenti che lo
+                // toccano vengono saltati dal ciclo sui segmenti più
+                // sotto, esattamente come per "no-position".
+                //
+                if (
+                    isUsableMapCoordinate(
+                        resolved.lat,
+                        resolved.lon
+                    )
+                ) {
+
+                    positions[id] = {
+                        lat: resolved.lat,
+                        lon: resolved.lon
+                    };
+
+                } else {
+
+                    notices.push(
+                        `Posizione di ${resolveNodeName(id)} (${id}) non disponibile: ${describeUnusableCoordinates(resolved.lat, resolved.lon)}.`
+                    );
+                }
 
             } else if (
                 resolved.status === "no-position"
@@ -2578,10 +2735,11 @@ async function loadTraceDetail(
             ) {
 
                 //
-                // Uno dei due estremi non ha posizione risolta (già
-                // segnalato sopra in notices): il segmento viene
-                // saltato invece di disegnare una linea verso
-                // [0,0]/un punto arbitrario.
+                // Uno dei due estremi non ha una posizione risolta e
+                // disegnabile (già segnalato sopra in notices, anche per
+                // (0,0)/fuori range): il segmento viene saltato invece
+                // di disegnare una linea verso [0,0]/un punto
+                // arbitrario.
                 //
                 return;
             }
@@ -2662,10 +2820,37 @@ async function loadTraceDetail(
         // zoom di partenza (2, v. ensureTraceDetailMap()) o di un
         // valore intermedio dell'animazione ancora in corso.
         //
-        map.fitBounds(
-            bounds,
-            { padding: [30, 30], animate: false }
-        );
+        const allPointsCoincide =
+            bounds.every(
+                b =>
+                    b[0] === bounds[0][0] &&
+                    b[1] === bounds[0][1]
+            );
+
+        if (
+            allPointsCoincide
+        ) {
+
+            //
+            // Un solo punto disegnabile (o più punti con le stesse
+            // coordinate): fitBounds() su un'estensione nulla va al
+            // zoom massimo delle tile (19), inutilmente ravvicinato
+            // — v. docs/ARCHITECTURE.md §86. Stesso zoom (13) che la
+            // mappa del path advert (§84) usa per un punto solo.
+            //
+            map.setView(
+                bounds[0],
+                13,
+                { animate: false }
+            );
+
+        } else {
+
+            map.fitBounds(
+                bounds,
+                { padding: [30, 30], animate: false }
+            );
+        }
 
     } else {
 
@@ -3945,14 +4130,23 @@ function haversineDistanceKm(
 // "non misurabile" già usato da getPathChunkSize()/
 // nodeMatchesLengthFilter() per i nodi senza un path definito).
 //
+// Dal §86 «senza posizione» comprende anche (0,0) e i valori fuori range
+// (isUsableMapCoordinate()): (0,0) è ciò che un nodo senza GPS annuncia
+// (366 nodi nel contacts.db reale), non una posizione — prima risultava a
+// circa 5.000 km da un SRC italiano e rientrava in una soglia Custom
+// abbastanza alta. Stesso trattamento dei nodi con adv_lat/adv_lon nulli:
+// escluso quando il filtro è attivo.
+//
 function nodeDistanceFromSrcKm(
     n
 ) {
 
     if (
         !srcCoordsCache ||
-        n.adv_lat == null ||
-        n.adv_lon == null
+        !isUsableMapCoordinate(
+            n.adv_lat,
+            n.adv_lon
+        )
     ) {
 
         return null;
@@ -4865,11 +5059,18 @@ async function loadDeviceStatus() {
         // (stesso controllo già usato in loadTraceDetail() per lo
         // stesso dato).
         //
+        // Dal §86 anche (0,0) e i valori fuori range contano come «non
+        // fornite» (isUsableMapCoordinate()): un Companion senza GPS
+        // annuncia (0,0), e misurare da lì sarebbe misurare dal Golfo di
+        // Guinea — il filtro resta disabilitato, come per null.
+        //
         srcCoordsCache =
             (
                 status &&
-                status.adv_lat != null &&
-                status.adv_lon != null
+                isUsableMapCoordinate(
+                    status.adv_lat,
+                    status.adv_lon
+                )
             )
                 ? {
                     lat: status.adv_lat,
@@ -5264,6 +5465,18 @@ async function loadNodeDetail(
     ).innerHTML = "";
 
     //
+    // Stesso azzeramento per la mappa path e per lo stato che la
+    // alimenta: il nodo precedente non deve restare visibile (né
+    // cliccabile, via nodeDetailObservations/nodeDetailNodeInfo) mentre
+    // quello nuovo carica — e resetNodeDetailPathMap() invalida anche
+    // un'eventuale fetch di SRC ancora in volo per un click precedente.
+    //
+    nodeDetailNodeInfo = null;
+    nodeDetailObservations = [];
+
+    resetNodeDetailPathMap();
+
+    //
     // Non c'è più un selettore Period locale al dettaglio nodo
     // (rimosso 2026-09-10, v. commento su nodesArchivePeriod in cima
     // al file): il nodo si apre sempre sul Period scelto a monte
@@ -5310,8 +5523,8 @@ async function loadNodeDetail(
         // qui, live — un mese archiviato non ne ha una propria (v.
         // switchNodeDetailPeriod più sotto). Se il Period scelto a
         // monte non è "live", questo render viene subito dopo
-        // sovrascritto solo nella parte osservazioni (grafico +
-        // tabella) da switchNodeDetailPeriod(), che lascia intatta
+        // sovrascritto solo nella parte osservazioni (tabella +
+        // mappa path) da switchNodeDetailPeriod(), che lascia intatta
         // l'intestazione appena disegnata qui.
         //
         renderNodeDetail(
@@ -5354,7 +5567,7 @@ async function loadNodeDetail(
 
 //
 // Cambia la sorgente delle osservazioni mostrate nel dettaglio nodo
-// (grafico + tabella), lasciando invariata l'intestazione identità.
+// (tabella + mappa path), lasciando invariata l'intestazione identità.
 // Fino al 2026-09-05 era richiamata dal listener "change" di un
 // selettore Period locale al dettaglio; da quando quel selettore è
 // stato rimosso (2026-09-10, spostato a livello di pagina Nodes) è
@@ -5479,14 +5692,14 @@ async function switchNodeDetailPeriod(
             [];
 
         //
-        // Solo storico osservazioni (grafico+tabella) — le info
+        // Solo storico osservazioni (tabella; la mappa path riparte dal
+        // messaggio guida, v. renderNodeDetailObsTable()) — le info
         // identità nodo in cima restano quelle live, un mese
-        // archiviato non ha un suo "stato del nodo" a sé.
+        // archiviato non ha un suo "stato del nodo" a sé: è anche per
+        // questo che la mappa path usa la posizione CORRENTE
+        // dell'origine, di SRC e degli hop (v. sezione "NODE DETAIL —
+        // MAPPA PATH ADVERT"), come già Trace per le tracce archiviate.
         //
-        renderNodeDetailChart(
-            observations
-        );
-
         renderNodeDetailObsTable(
             observations
         );
@@ -5559,15 +5772,20 @@ function renderNodeDetail(
     infoTable.innerHTML = `
         <tr><th>Type</th><td>${formatNodeType(node.node_type)}</td></tr>
         <tr><th>Public Key</th><td>${node.public_key}</td></tr>
-        <tr><th>Position</th><td>${node.adv_lat ?? "-"}, ${node.adv_lon ?? "-"}</td></tr>
+        <tr><th>Position</th><td>${formatNodePosition(node.adv_lat, node.adv_lon)}</td></tr>
         <tr><th>Advert Time</th><td>${formatUnixTime(node.last_advert)}</td></tr>
         <tr><th>Last Activity</th><td>${formatUnixTime(node.last_seen)}</td></tr>
         <tr><th>Total Observations</th><td id="nodeDetailObsCount">${observations.length}</td></tr>
     `;
 
-    renderNodeDetailChart(
-        observations
-    );
+    //
+    // Identità LIVE del nodo, conservata per la mappa path (origine
+    // dell'advert = questo nodo, con la sua posizione corrente) — sia
+    // che le osservazioni vengano da qui sia che le sostituisca poi
+    // switchNodeDetailPeriod() con quelle di un mese archiviato.
+    //
+    nodeDetailNodeInfo =
+        node;
 
     renderNodeDetailObsTable(
         observations
@@ -5577,6 +5795,22 @@ function renderNodeDetail(
 function renderNodeDetailObsTable(
     observations
 ) {
+
+    //
+    // Ogni (ri)disegno della tabella osservazioni riporta la mappa path
+    // al messaggio guida e ne azzera lo stato: la riga che era
+    // selezionata potrebbe non esistere più (cambio di Period, nuovo
+    // nodo) e un path "orfano" accanto a una tabella diversa sarebbe
+    // fuorviante. nodeDetailObservations viene riassegnato qui — unico
+    // punto in cui la tabella nasce, chiamato sia dal render live
+    // (renderNodeDetail()) sia da quello di un mese archiviato
+    // (switchNodeDetailPeriod()) — così l'indice data-obs-index dei
+    // link "Received" punta sempre all'array realmente in tabella.
+    //
+    nodeDetailObservations =
+        observations;
+
+    resetNodeDetailPathMap();
 
     const table =
         document.getElementById(
@@ -5598,15 +5832,44 @@ function renderNodeDetailObsTable(
 
     //
     // Più recente in cima — stesso principio già usato in
-    // tools/test_contacts_list.py lato Python.
+    // tools/test_contacts_list.py lato Python. L'indice originale
+    // (posizione in "observations", non in ordine inverso) viaggia con
+    // ogni riga in data-obs-index: è quello che il click handler
+    // sotto usa per ritrovare l'osservazione in nodeDetailObservations.
     //
-    [...observations]
+    observations
+        .map(
+            (o, i) => ({ o: o, i: i })
+        )
         .reverse()
         .forEach(
-            o => {
+            ({ o, i }) => {
+
+                //
+                // Colonna Received -> link cliccabile verso la mappa
+                // path di QUESTA osservazione (stesso schema del
+                // timestamp in Scheduled Trace-Path, v. renderTable():
+                // <a class="traceLink"> + listener agganciato dopo
+                // l'innerHTML). formatUnixTime() produce solo cifre e
+                // separatori (o "never"), nessun dato esterno passa
+                // attraverso innerHTML senza escape.
+                //
+                // Nessun link quando hop_count è null/undefined
+                // ("not observed", v. buildAdvertPathHtml()): senza
+                // sapere se l'advert era DIRECT o passato per dei
+                // ripetitori, un segmento origine→SRC disegnato in
+                // linea retta sarebbe un'affermazione falsa.
+                //
+                const receivedHtml =
+                    (
+                        o.hop_count === null ||
+                        o.hop_count === undefined
+                    ) ?
+                        formatUnixTime(o.observed_at) :
+                        `<a href="#" class="traceLink nodePathLink" data-obs-index="${i}">${formatUnixTime(o.observed_at)}</a>`;
 
                 html += "<tr>";
-                html += `<td>${formatUnixTime(o.observed_at)}</td>`;
+                html += `<td>${receivedHtml}</td>`;
                 html += `<td>${o.hop_count}</td>`;
                 html += `<td>${buildAdvertPathHtml(o.hop_count, o.path_hex)}</td>`;
                 html += `<td>${o.rssi ?? "-"}</td>`;
@@ -5616,151 +5879,1326 @@ function renderNodeDetailObsTable(
         );
 
     table.innerHTML = html;
+
+    table.querySelectorAll(
+        ".nodePathLink"
+    ).forEach(
+        link => {
+
+            link.addEventListener(
+                "click",
+                (e) => {
+
+                    e.preventDefault();
+
+                    showNodeDetailAdvertPath(
+                        Number(
+                            link.dataset.obsIndex
+                        )
+                    );
+                }
+            );
+        }
+    );
 }
 
-function renderNodeDetailChart(
-    observations
+/* =========================
+   NODE DETAIL — MAPPA PATH ADVERT
+
+   Vedi docs/ARCHITECTURE.md §84 e CHANGES_nodes_advert_path_map.md.
+   Sostituisce (2026-10-18, richiesta utente) il grafico Chart.js
+   "Observation History (RSSI / SNR)" del dettaglio nodo: cliccando il
+   valore della colonna Received di una riga di Observations, la
+   stessa pagina mostra su una mappa Leaflet il percorso seguito
+   dall'advert di QUELLA osservazione. RSSI/SNR restano consultabili
+   nella tabella (colonne omonime), non più nel grafico.
+
+   Ordine del percorso (verificato su dati reali, non assunto —
+   28.954 osservazioni di path_observations): path_hex contiene gli
+   hop NELL'ORDINE DI PROPAGAZIONE, dal più vicino al nodo che ha
+   emesso l'advert al più vicino al ricevitore. Il percorso completo
+   disegnato è quindi
+       ORIGINE (il nodo di cui si apre il dettaglio)
+         -> hop 1 -> ... -> hop N (da path_hex)
+         -> SRC (il Companion locale che ha ricevuto l'advert)
+   cioè hop_count + 2 punti. hop_count = 0 (DIRECT): solo
+   ORIGINE -> SRC.
+
+   Regole decise dall'utente (2026-10-18):
+     1. un punto senza coordinate geografiche viene OMESSO dalla
+        mappa e la linea interpola direttamente al primo punto
+        successivo che le ha (qui: segmento ambra tratteggiato, v.
+        sotto);
+     2. un hash ambiguo (più repeater con quel prefisso) è trattato
+        come il caso 1;
+     3. in entrambi i casi, e in generale ogni volta che un elemento
+        del path non può essere mostrato, la mappa lo dichiara
+        (riquadro sulla mappa, con motivo: dato mancante o dato
+        duplicato);
+     4. marker: companion (chat) = icona SRC esistente, repeater =
+        icona repeater esistente, room server = icona nuova.
+
+   "Senza coordinate" comprende anche (0,0) e valori fuori range
+   (|lat|>90, |lon|>180, non numerici): in MeshCore (0,0) è il valore
+   con cui un nodo senza GPS annuncia la propria posizione (nel
+   contacts.db reale 366 nodi sono esattamente a 0,0, e uno ha
+   lat/lon fuori range) — disegnarli vorrebbe dire piazzare un
+   marker nel Golfo di Guinea e una linea di migliaia di km verso
+   di esso. Controllo SOVRAPPOSTO a resolveNodePosition() (che
+   restituisce "ok" anche per 0,0 e NON è stata modificata: la usa
+   anche il dettaglio traccia, che dal §85 applica lo stesso controllo
+   in loadTraceDetail(), v. ARCHITECTURE.md §84 e §85) —
+   isUsableMapCoordinate() qui sotto (usata dal §86 anche dal filtro
+   Distance from SRC e dalla cella Position, v. il suo commento).
+
+   Posizioni sempre CORRENTI (contacts.db non ha storico posizioni),
+   anche per le osservazioni di un mese archiviato — stessa
+   limitazione, già documentata, della mappa di dettaglio traccia.
+   Osservazioni multiple dello stesso advert NON vengono mai
+   deduplicate: ogni riga è un percorso distinto (decisione di
+   progetto, v. ARCHITECTURE.md sui percorsi multipli).
+========================= */
+
+//
+// Colori dei tratti: grigio per i collegamenti tra punti consecutivi
+// (come nell'esempio fornito dall'utente, l'app MeshCore "View Advert
+// Path"), blu per le frecce di direzione (idem), ambra per il tratto
+// che SALTA uno o più punti omessi — il colore diverso è ciò che
+// distingue visivamente "collegamento reale tra due nodi adiacenti
+// nel path" da "interpolazione sopra un buco di dati".
+//
+const NODE_PATH_LINE_COLOR = "#7a7a7a";
+const NODE_PATH_ARROW_COLOR = "#1e6fd9";
+const NODE_PATH_BRIDGE_COLOR = "#e69500";
+
+//
+// Marker per i node_type che non hanno un'icona dedicata (10 = sensore
+// /sconosciuto, o valori mai visti): pin standard di Leaflet, già
+// presente in vendor/leaflet/images/. Esplicito invece di
+// L.Icon.Default per non dipendere dall'autodetect del percorso
+// immagini di Leaflet (che legge il CSS e può sbagliare se i file sono
+// serviti da un sottopercorso).
+//
+const NODE_PATH_DEFAULT_ICON =
+    L.icon(
+        {
+            iconUrl: "vendor/leaflet/images/marker-icon.png",
+            iconRetinaUrl: "vendor/leaflet/images/marker-icon-2x.png",
+            shadowUrl: "vendor/leaflet/images/marker-shadow.png",
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        }
+    );
+
+//
+// true solo per una coppia lat/lon che si può davvero disegnare:
+// entrambe numeri finiti, nei range geografici validi, e NON la
+// coppia esatta (0,0) — v. il commento della sezione sopra. Nessuna
+// coercizione di tipo: una stringa (es. "45.1") non è un numero qui,
+// i valori arrivano da JSON e sono già numerici o null.
+//
+// CONDIVISA (§85, §86) — chiamanti: buildAdvertPathModel() (§84) e
+// loadTraceDetail() (§85) per i punti da disegnare; loadDeviceStatus() e
+// nodeDistanceFromSrcKm() (§86) per il filtro Distance from SRC (SRC e
+// nodi a (0,0) o fuori range sono «non misurabili»); formatNodePosition()
+// (§86) per la cella Position. describeUnusableCoordinates() qui sotto
+// serve buildAdvertPathModel(), loadTraceDetail() e formatNodePosition().
+// Sono dichiarazioni di funzione di primo livello (hoisting) e restano
+// qui, dove sono nate: chi le modifica deve controllare TUTTI i chiamanti.
+//
+function isUsableMapCoordinate(
+    lat,
+    lon
+) {
+
+    return (
+        Number.isFinite(lat) &&
+        Number.isFinite(lon) &&
+        Math.abs(lat) <= 90 &&
+        Math.abs(lon) <= 180 &&
+        !(lat === 0 && lon === 0)
+    );
+}
+
+//
+// Motivo (testo per il riquadro sulla mappa) per cui una coppia lat/lon
+// NON è disegnabile, da chiamare solo quando isUsableMapCoordinate()
+// ha già risposto false. "noPositionText" è il testo per il caso
+// "posizione non nota" (null), che cambia a seconda del punto
+// (nodo in contacts.db / Companion senza GPS).
+//
+function describeUnusableCoordinates(
+    lat,
+    lon,
+    noPositionText
 ) {
 
     if (
-        nodeDetailChart
+        lat === null ||
+        lat === undefined ||
+        lon === null ||
+        lon === undefined
     ) {
 
-        nodeDetailChart.destroy();
-
-        nodeDetailChart = null;
+        return noPositionText;
     }
 
-    const darkMode =
-        document.body.classList.contains(
-            "dark"
+    if (
+        lat === 0 &&
+        lon === 0
+    ) {
+
+        return "coordinate 0,0 (nodo senza GPS)";
+    }
+
+    return `coordinate non valide (${lat}, ${lon})`;
+}
+
+//
+// Testo della cella «Position» del dettaglio nodo (tab Nodes) — v.
+// docs/ARCHITECTURE.md §86. Restituisce HTML già escapato, da inserire
+// nel template di renderNodeDetail():
+//   - lat o lon assenti (null/undefined): invariato rispetto a prima,
+//     «-» al posto del valore mancante («-, -» se mancano entrambi);
+//   - coordinate disegnabili (isUsableMapCoordinate()): «lat, lon»
+//     come prima, invariato;
+//   - (0,0) o fuori range: NON il dato grezzo «0, 0» — in MeshCore è il
+//     valore con cui un nodo senza GPS annuncia la propria posizione,
+//     non una posizione — ma «Non disponibile: <motivo>», con lo stesso
+//     motivo che la mappa del path advert (§84) e il dettaglio traccia
+//     (§85) scrivono per lo stesso nodo.
+// Il dato grezzo resta in contacts.db: cambia solo come viene mostrato.
+//
+function formatNodePosition(
+    lat,
+    lon
+) {
+
+    if (
+        lat === null ||
+        lat === undefined ||
+        lon === null ||
+        lon === undefined
+    ) {
+
+        return escapeHtml(
+            `${lat ?? "-"}, ${lon ?? "-"}`
+        );
+    }
+
+    if (
+        isUsableMapCoordinate(
+            lat,
+            lon
+        )
+    ) {
+
+        return escapeHtml(
+            `${lat}, ${lon}`
+        );
+    }
+
+    return escapeHtml(
+        `Non disponibile: ${describeUnusableCoordinates(lat, lon)}`
+    );
+}
+
+//
+// Costruisce un punto del path a partire da una posizione grezza.
+// Struttura comune a origine/hop/SRC:
+//   role     "origin" | "hop" | "src"
+//   step     etichetta della posizione nel path ("Origine", "Hop 2",
+//            "SRC") — per il riquadro dei punti mancanti
+//   name     nome risolto, o null
+//   hash     prefisso hex dell'hop (solo per role "hop"), o null
+//   nodeType node_type (solo per role "origin"), o null
+//   shown    true se ha coordinate disegnabili
+//   lat/lon  solo se shown
+//   reason   null se shown, altrimenti { kind: "missing"|"duplicate",
+//            text } — "missing" = dato mancante/non valido,
+//            "duplicate" = hash ambiguo (v. buildAdvertPathModel())
+//
+function buildPathPoint(
+    spec
+) {
+
+    const usable =
+        isUsableMapCoordinate(
+            spec.lat,
+            spec.lon
         );
 
-    const tickColor =
-        darkMode
-            ? "#dddddd"
-            : "#444444";
+    return {
+        role: spec.role,
+        step: spec.step,
+        name: spec.name === undefined ? null : spec.name,
+        hash: spec.hash === undefined ? null : spec.hash,
+        nodeType: spec.nodeType === undefined ? null : spec.nodeType,
+        shown: usable,
+        lat: usable ? spec.lat : null,
+        lon: usable ? spec.lon : null,
+        reason:
+            usable ?
+                null :
+                {
+                    kind: "missing",
+                    text:
+                        describeUnusableCoordinates(
+                            spec.lat,
+                            spec.lon,
+                            spec.noPositionText
+                        )
+                }
+    };
+}
 
-    const gridColor =
-        darkMode
-            ? "rgba(255,255,255,0.15)"
-            : "rgba(0,0,0,0.10)";
+//
+// Modello PURO (nessun DOM, nessuna fetch) del path di una singola
+// osservazione — separato dal disegno perché la logica delle regole
+// utente (punti omessi, ambiguità, tratti che saltano) sia testabile
+// da sola (sandbox_tests/test_node_detail_advert_path_map_2026_10_18.js).
+// Legge solo resolveNodePosition()/resolveNodeName() (meshNodes) e
+// splitAdvertPathHops(): nessuna delle tre è modificata.
+//
+// node      identità LIVE del nodo aperto (data.node di
+//           /api/nodes/:publicKey) = ORIGINE dell'advert
+// observation  riga di path_observations ({hop_count, path_hex, ...})
+// srcInfo   { fetchFailed: bool, lat, lon } — posizione di SRC da
+//           /api/device_status (lat/lon null se il Companion non ha
+//           GPS), oppure fetchFailed:true se la fetch è fallita
+//
+// Ritorna:
+//   points    tutti i punti nell'ordine del path (origine, hop, SRC),
+//             mostrati o no
+//   missing   i punti con shown=false (stesso ordine)
+//   segments  { from, to, bridged } fra punti MOSTRATI consecutivi;
+//             bridged=true se fra i due c'è almeno un punto omesso
+//   notes     avvisi generali (incoerenze nei dati dell'osservazione)
+//
+function buildAdvertPathModel(
+    node,
+    observation,
+    srcInfo
+) {
 
-    const rssiData =
-        observations
-            .filter(o => typeof o.rssi === "number")
-            .map(o => ({ x: o.observed_at * 1000, y: o.rssi }));
+    const points = [];
+    const notes = [];
 
-    const snrData =
-        observations
-            .filter(o => typeof o.snr === "number")
-            .map(o => ({ x: o.observed_at * 1000, y: o.snr }));
-
-    const ctx =
-        document.getElementById(
-            "nodeDetailChart"
-        );
-
-    nodeDetailChart =
-        new Chart(
-            ctx,
+    points.push(
+        buildPathPoint(
             {
-                type: "line",
+                role: "origin",
+                step: "Origine",
+                name: node.adv_name || "(unknown)",
+                nodeType: node.node_type,
+                lat: node.adv_lat,
+                lon: node.adv_lon,
+                noPositionText:
+                    "posizione non nota in contacts.db"
+            }
+        )
+    );
 
-                data: {
-                    datasets: [
-                        {
-                            label: "RSSI (dBm)",
-                            data: rssiData,
-                            borderColor: "#4a90e2",
-                            borderWidth: 2,
-                            tension: 0.2,
-                            pointRadius: 2,
-                            yAxisID: "yRssi"
-                        },
-                        {
-                            label: "SNR (dB)",
-                            data: snrData,
-                            borderColor: "#2e7d32",
-                            borderWidth: 2,
-                            tension: 0.2,
-                            pointRadius: 2,
-                            yAxisID: "ySnr"
-                        }
-                    ]
-                },
+    const hopCount =
+        observation.hop_count;
 
-                options: {
+    const hops =
+        splitAdvertPathHops(
+            hopCount,
+            observation.path_hex
+        );
 
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    parsing: false,
+    if (
+        hopCount > 0 &&
+        hops.length === 0
+    ) {
 
-                    scales: {
-
-                        x: {
-                            type: "linear",
-                            ticks: {
-                                color: tickColor,
-                                callback: function (value) {
-
-                                    return formatDateShort(new Date(value));
-                                },
-                                maxTicksLimit: 6
-                            },
-                            grid: { color: gridColor }
-                        },
-
-                        yRssi: {
-                            type: "linear",
-                            position: "left",
-                            ticks: { color: tickColor },
-                            grid: { color: gridColor },
-                            title: { display: true, text: "RSSI (dBm)", color: tickColor }
-                        },
-
-                        ySnr: {
-                            type: "linear",
-                            position: "right",
-                            ticks: { color: tickColor },
-                            grid: { display: false },
-                            title: { display: true, text: "SNR (dB)", color: tickColor }
-                        }
-                    },
-
-                    plugins: {
-                        legend: {
-                            labels: { color: tickColor }
-                        },
-                        //
-                        // Senza questa callback, il tooltip mostra il valore
-                        // grezzo dell'asse X (millisecondi Unix, es.
-                        // "1,789,746,975,000" — formattazione numerica di
-                        // default di Chart.js su una scala "linear") invece
-                        // di una data leggibile: bug segnalato dall'utente
-                        // il 2026-09-25, stesso codice condiviso col
-                        // Collettore. Stesso fix già presente in renderChart()
-                        // (tab Trace, "snrChart", riga ~1420) per lo stesso
-                        // tipo di scala — qui mancava. formatDateFull()
-                        // (unica funzione di formattazione data/ora completa
-                        // del file, v. commento sopra la sua definizione)
-                        // invece di formatDateShort() (usata sui tick
-                        // dell'asse, dove lo spazio è poco): il tooltip ha
-                        // spazio per l'anno e un dato specifico guadagna
-                        // dalla precisione in più.
-                        //
-                        tooltip: {
-                            callbacks: {
-                                title: function (context) {
-
-                                    return formatDateFull(new Date(context[0].parsed.x));
-                                }
-                            }
-                        }
-                    }
+        //
+        // hop_count dichiara degli hop ma path_hex è vuoto/assente: gli
+        // hop intermedi esistono ma non sono noti — un unico punto
+        // "mancante" che rappresenta tutti (non ha senso inventarne N
+        // senza hash), così il tratto origine->SRC risulta "ambra" e
+        // il riquadro lo dichiara.
+        //
+        points.push(
+            {
+                role: "hop",
+                step: `Hop intermedi (${hopCount})`,
+                name: null,
+                hash: null,
+                nodeType: null,
+                shown: false,
+                lat: null,
+                lon: null,
+                reason: {
+                    kind: "missing",
+                    text:
+                        "path_hex non registrato: gli hop intermedi non sono noti"
                 }
             }
         );
+
+    } else {
+
+        if (
+            hops.length !== hopCount
+        ) {
+
+            notes.push(
+                `hop_count (${hopCount}) non coerente con path_hex (${hops.length} elementi): il percorso potrebbe essere incompleto.`
+            );
+        }
+
+        hops.forEach(
+            (hash, i) => {
+
+                const step =
+                    `Hop ${i + 1}`;
+
+                const resolved =
+                    resolveNodePosition(
+                        hash
+                    );
+
+                if (
+                    resolved.status === "ok" ||
+                    resolved.status === "no-position"
+                ) {
+
+                    //
+                    // "no-position" ha lat/lon undefined: finisce nel
+                    // ramo "posizione non nota" di buildPathPoint();
+                    // "ok" con (0,0)/fuori range finisce in quello
+                    // "coordinate non valide" — stesso controllo
+                    // sovrapposto per entrambi.
+                    //
+                    points.push(
+                        buildPathPoint(
+                            {
+                                role: "hop",
+                                step: step,
+                                name: resolveNodeName(hash),
+                                hash: hash,
+                                lat: resolved.lat,
+                                lon: resolved.lon,
+                                noPositionText:
+                                    "nessuna posizione GPS nota in contacts.db"
+                            }
+                        )
+                    );
+
+                    return;
+                }
+
+                points.push(
+                    {
+                        role: "hop",
+                        step: step,
+                        name: null,
+                        hash: hash,
+                        nodeType: null,
+                        shown: false,
+                        lat: null,
+                        lon: null,
+                        reason:
+                            resolved.status === "ambiguous" ?
+                                {
+                                    kind: "duplicate",
+                                    text:
+                                        "hash ambiguo: più repeater iniziano con questo prefisso"
+                                } :
+                                {
+                                    kind: "missing",
+                                    text:
+                                        "nessun repeater noto con questo hash in contacts.db"
+                                }
+                    }
+                );
+            }
+        );
+    }
+
+    if (
+        srcInfo &&
+        srcInfo.fetchFailed
+    ) {
+
+        points.push(
+            {
+                role: "src",
+                step: "SRC",
+                name: "SRC (nodo locale)",
+                hash: null,
+                nodeType: null,
+                shown: false,
+                lat: null,
+                lon: null,
+                reason: {
+                    kind: "missing",
+                    text:
+                        "posizione non leggibile da /api/device_status"
+                }
+            }
+        );
+
+    } else {
+
+        points.push(
+            buildPathPoint(
+                {
+                    role: "src",
+                    step: "SRC",
+                    name: "SRC (nodo locale)",
+                    lat: srcInfo ? srcInfo.lat : null,
+                    lon: srcInfo ? srcInfo.lon : null,
+                    noPositionText:
+                        "il Companion non ha ancora fornito coordinate GPS"
+                }
+            )
+        );
+    }
+
+    const segments = [];
+
+    let previous = null;
+    let previousIndex = -1;
+
+    points.forEach(
+        (p, index) => {
+
+            if (
+                !p.shown
+            ) {
+
+                return;
+            }
+
+            if (
+                previous
+            ) {
+
+                segments.push(
+                    {
+                        from: previous,
+                        to: p,
+                        bridged: index - previousIndex > 1
+                    }
+                );
+            }
+
+            previous = p;
+            previousIndex = index;
+        }
+    );
+
+    return {
+        points: points,
+        missing: points.filter(p => !p.shown),
+        segments: segments,
+        notes: notes
+    };
+}
+
+//
+// HTML del riquadro "punti mancanti" sovrapposto alla mappa (richiesta
+// utente: la mappa deve dichiarare quali punti non sono mostrati e
+// perché). Stringa vuota se non c'è nulla da dichiarare (tutti i
+// punti mostrati, nessuna nota): il chiamante nasconde allora il
+// riquadro. Ogni testo variabile (nomi di nodo, hash) passa da
+// escapeHtml(): i nomi arrivano da contacts.db, cioè da advert
+// radio ricevuti dalla rete.
+//
+function buildNodePathInfoHtml(
+    model
+) {
+
+    const parts = [];
+
+    if (
+        model.missing.length > 0
+    ) {
+
+        parts.push(
+            `<div class="nodePathInfoTitle">Punti del percorso non mostrati: ${model.missing.length} su ${model.points.length}</div>`
+        );
+
+        parts.push(
+            '<div class="nodePathInfoSub">per mancanza di dati o dati duplicati</div>'
+        );
+
+        parts.push(
+            "<ul>" +
+            model.missing
+                .map(
+                    p => {
+
+                        const who =
+                            [
+                                p.name &&
+                                p.role !== "src" ?
+                                    p.name :
+                                    null,
+                                p.hash ?
+                                    `(${p.hash})` :
+                                    null
+                            ]
+                                .filter(Boolean)
+                                .join(" ");
+
+                        const kindLabel =
+                            p.reason.kind === "duplicate" ?
+                                "dato duplicato" :
+                                "dato mancante";
+
+                        return (
+                            "<li>" +
+                            `<b>${escapeHtml(p.step)}</b>` +
+                            (who ? ` ${escapeHtml(who)}` : "") +
+                            ` — ${kindLabel}: ${escapeHtml(p.reason.text)}` +
+                            "</li>"
+                        );
+                    }
+                )
+                .join("") +
+            "</ul>"
+        );
+    }
+
+    if (
+        model.segments.some(
+            s => s.bridged
+        )
+    ) {
+
+        parts.push(
+            '<div class="nodePathInfoLegend"><span class="nodePathInfoSwatch"></span>tratteggio ambra: collegamento che salta uno o più punti non mostrati</div>'
+        );
+    }
+
+    model.notes.forEach(
+        n => {
+
+            parts.push(
+                `<div class="nodePathInfoNote">${escapeHtml(n)}</div>`
+            );
+        }
+    );
+
+    return parts.join("");
+}
+
+//
+// Icona del marker per un punto del path (v. regola 4 in cima alla
+// sezione): SRC e repeater hanno icona fissa per ruolo; l'ORIGINE
+// dipende dal node_type del nodo aperto — 1 companion/chat = icona SRC,
+// 2 repeater = icona repeater, 3 room server = icona room server,
+// altro = pin standard.
+//
+function nodePathIconForPoint(
+    p
+) {
+
+    if (
+        p.role === "src"
+    ) {
+
+        return TRACE_SRC_ICON;
+    }
+
+    if (
+        p.role === "hop"
+    ) {
+
+        return TRACE_REPEATER_ICON;
+    }
+
+    if (
+        p.nodeType === 1
+    ) {
+
+        return TRACE_SRC_ICON;
+    }
+
+    if (
+        p.nodeType === 2
+    ) {
+
+        return TRACE_REPEATER_ICON;
+    }
+
+    if (
+        p.nodeType === 3
+    ) {
+
+        return TRACE_ROOM_SERVER_ICON;
+    }
+
+    return NODE_PATH_DEFAULT_ICON;
+}
+
+//
+// Mappa creata UNA volta sola, al primo click su un link Received
+// (non all'apertura del dettaglio: il contenitore è display:none
+// finché non c'è un path da mostrare, e Leaflet calcola le proprie
+// dimensioni alla creazione — v. loadTraceDetail() per lo stesso
+// motivo dell'invalidateSize()). Riutilizzata poi per ogni click su
+// qualunque nodo; stessa struttura di ensureTraceDetailMap().
+//
+function ensureNodeDetailPathMap() {
+
+    if (
+        nodePathMap
+    ) {
+
+        return nodePathMap;
+    }
+
+    nodePathMap =
+        L.map(
+            "nodeDetailPathMap"
+        ).setView(
+            [0, 0],
+            2
+        );
+
+    createOsmTileLayer().addTo(
+        nodePathMap
+    );
+
+    nodePathMarkerLayerGroup =
+        L.layerGroup().addTo(
+            nodePathMap
+        );
+
+    nodePathSegmentLayerGroup =
+        L.layerGroup().addTo(
+            nodePathMap
+        );
+
+    //
+    // Stesso pane per le frecce di Trace (v. ensureTraceDetailMap(): z-index
+    // sopra marker e tooltip nativi), creato su QUESTA istanza di mappa —
+    // i pane sono per-mappa, il nome identico non collide.
+    //
+    const arrowPane =
+        nodePathMap.createPane(
+            "traceArrowPane"
+        );
+
+    arrowPane.style.zIndex = 660;
+    arrowPane.style.pointerEvents = "none";
+
+    //
+    // Riquadro "punti mancanti": controllo Leaflet in alto a destra
+    // (il controllo zoom resta in alto a sinistra), contenuto scritto
+    // da updateNodePathInfo(). click/scroll non devono arrivare alla
+    // mappa sottostante (altrimenti scorrere la lista farebbe zoom).
+    //
+    nodePathInfoControl =
+        L.control(
+            { position: "topright" }
+        );
+
+    nodePathInfoControl.onAdd =
+        function () {
+
+            const div =
+                L.DomUtil.create(
+                    "div",
+                    "nodePathInfo"
+                );
+
+            L.DomEvent.disableClickPropagation(
+                div
+            );
+
+            L.DomEvent.disableScrollPropagation(
+                div
+            );
+
+            div.style.display = "none";
+
+            return div;
+        };
+
+    nodePathInfoControl.addTo(
+        nodePathMap
+    );
+
+    nodePathMap.on(
+        "zoomend",
+        renderNodeDetailPathSegmentsAtCurrentZoom
+    );
+
+    return nodePathMap;
+}
+
+function updateNodePathInfo(
+    html
+) {
+
+    if (
+        !nodePathInfoControl
+    ) {
+
+        return;
+    }
+
+    const container =
+        nodePathInfoControl.getContainer();
+
+    if (
+        !container
+    ) {
+
+        return;
+    }
+
+    container.innerHTML =
+        html;
+
+    container.style.display =
+        html ?
+            "block" :
+            "none";
+}
+
+//
+// Riporta la sezione al suo stato iniziale: messaggio guida visibile,
+// mappa nascosta e svuotata, nessun link selezionato. Chiamata ad ogni
+// (ri)disegno della tabella osservazioni e all'apertura di un nuovo
+// nodo. Incrementa nodePathRequestId: una fetch di SRC lanciata da un
+// click precedente e ancora in volo, quando risponde, trova il token
+// cambiato e scarta il proprio risultato invece di disegnare su una
+// pagina che nel frattempo non mostra più quella osservazione.
+// Tollera elementi DOM assenti (test con DOM minimale).
+//
+function resetNodeDetailPathMap() {
+
+    ++nodePathRequestId;
+
+    nodePathSegmentDefs = [];
+
+    if (
+        nodePathMarkerLayerGroup
+    ) {
+
+        nodePathMarkerLayerGroup.clearLayers();
+    }
+
+    if (
+        nodePathSegmentLayerGroup
+    ) {
+
+        nodePathSegmentLayerGroup.clearLayers();
+    }
+
+    updateNodePathInfo(
+        ""
+    );
+
+    const guide =
+        document.getElementById(
+            "nodeDetailPathGuide"
+        );
+
+    const caption =
+        document.getElementById(
+            "nodeDetailPathCaption"
+        );
+
+    const mapEl =
+        document.getElementById(
+            "nodeDetailPathMap"
+        );
+
+    if (
+        guide
+    ) {
+
+        guide.style.display = "";
+    }
+
+    if (
+        caption
+    ) {
+
+        caption.textContent = "";
+    }
+
+    if (
+        mapEl
+    ) {
+
+        mapEl.style.display = "none";
+    }
+}
+
+//
+// Evidenzia il link Received della riga selezionata (e la sua riga),
+// togliendo l'evidenziazione dalla precedente.
+//
+function markSelectedAdvertPathLink(
+    index
+) {
+
+    document.querySelectorAll(
+        "#nodeDetailObsTable .nodePathLink"
+    ).forEach(
+        link => {
+
+            const selected =
+                Number(
+                    link.dataset.obsIndex
+                ) === index;
+
+            link.classList.toggle(
+                "selected",
+                selected
+            );
+
+            const row =
+                link.closest(
+                    "tr"
+                );
+
+            if (
+                row
+            ) {
+
+                row.classList.toggle(
+                    "nodePathSelectedRow",
+                    selected
+                );
+            }
+        }
+    );
+}
+
+//
+// Click su un link Received: legge la posizione LIVE di SRC (stessa
+// fonte e stesso motivo di loadTraceDetail(): /api/device_status, mai
+// in cache dell'osservazione — né in contacts.db come nodo —, vale
+// anche per un mese archiviato), costruisce il modello del path e lo
+// disegna. L'unica richiesta di rete di tutta la funzionalità: origine
+// e hop sono già in nodeDetailNodeInfo/meshNodes.
+//
+async function showNodeDetailAdvertPath(
+    index
+) {
+
+    const observation =
+        nodeDetailObservations[index];
+
+    const node =
+        nodeDetailNodeInfo;
+
+    if (
+        !observation ||
+        !node
+    ) {
+
+        return;
+    }
+
+    //
+    // Token catturato DOPO il controllo sopra e PRIMA di qualunque
+    // await: due click ravvicinati su righe diverse devono far vincere
+    // l'ultimo, non il più lento a rispondere.
+    //
+    const requestId =
+        ++nodePathRequestId;
+
+    markSelectedAdvertPathLink(
+        index
+    );
+
+    const srcInfo = {
+        fetchFailed: false,
+        lat: null,
+        lon: null
+    };
+
+    try {
+
+        const res =
+            await fetch(
+                "/api/device_status"
+            );
+
+        assertResOk(res);
+
+        const status =
+            await res.json();
+
+        if (
+            requestId !== nodePathRequestId
+        ) {
+
+            return;
+        }
+
+        if (
+            status
+        ) {
+
+            srcInfo.lat =
+                status.adv_lat;
+
+            srcInfo.lon =
+                status.adv_lon;
+        }
+
+    } catch (
+        err
+    ) {
+
+        if (
+            requestId !== nodePathRequestId
+        ) {
+
+            return;
+        }
+
+        console.error(
+            "Error loading device status for advert path:",
+            err
+        );
+
+        srcInfo.fetchFailed = true;
+    }
+
+    renderNodeDetailAdvertPath(
+        buildAdvertPathModel(
+            node,
+            observation,
+            srcInfo
+        ),
+        observation
+    );
+}
+
+//
+// Disegna il modello sulla mappa: marker dei punti mostrati, vista
+// adattata ai loro limiti, segmenti+frecce (via
+// renderNodeDetailPathSegmentsAtCurrentZoom()), riquadro dei punti
+// mancanti e didascalia sopra la mappa.
+//
+function renderNodeDetailAdvertPath(
+    model,
+    observation
+) {
+
+    const guide =
+        document.getElementById(
+            "nodeDetailPathGuide"
+        );
+
+    const mapEl =
+        document.getElementById(
+            "nodeDetailPathMap"
+        );
+
+    const caption =
+        document.getElementById(
+            "nodeDetailPathCaption"
+        );
+
+    if (
+        guide
+    ) {
+
+        guide.style.display = "none";
+    }
+
+    //
+    // Il contenitore va reso visibile PRIMA di creare la mappa o di
+    // chiamare invalidateSize() (v. ensureNodeDetailPathMap()).
+    //
+    mapEl.style.display = "block";
+
+    const map =
+        ensureNodeDetailPathMap();
+
+    map.invalidateSize();
+
+    nodePathMarkerLayerGroup.clearLayers();
+    nodePathSegmentLayerGroup.clearLayers();
+
+    const bounds = [];
+
+    model.points.forEach(
+        p => {
+
+            if (
+                !p.shown
+            ) {
+
+                return;
+            }
+
+            const label =
+                p.role === "origin" ?
+                    `${p.name} (origine)` :
+                    p.role === "src" ?
+                        p.name :
+                        `${p.name} (${p.hash})`;
+
+            L.marker(
+                [p.lat, p.lon],
+                { icon: nodePathIconForPoint(p) }
+            ).bindTooltip(
+                escapeHtml(label),
+                {
+                    permanent: true,
+                    direction: "top"
+                }
+            ).addTo(
+                nodePathMarkerLayerGroup
+            );
+
+            bounds.push(
+                [p.lat, p.lon]
+            );
+        }
+    );
+
+    //
+    // Dati "grezzi" dei segmenti, indipendenti dallo zoom — il disegno
+    // vero lo fa renderNodeDetailPathSegmentsAtCurrentZoom() dopo che
+    // la vista ha lo zoom definitivo (stessa divisione di Trace).
+    //
+    nodePathSegmentDefs =
+        model.segments.map(
+            s => ({
+                latlngFrom: { lat: s.from.lat, lng: s.from.lon },
+                latlngTo: { lat: s.to.lat, lng: s.to.lon },
+                bridged: s.bridged,
+                isDegenerate:
+                    s.from.lat === s.to.lat &&
+                    s.from.lon === s.to.lon
+            })
+        );
+
+    if (
+        bounds.length >= 2
+    ) {
+
+        //
+        // maxZoom 16: se tutti i punti coincidono (o quasi) fitBounds()
+        // andrebbe al massimo zoom delle tile (19), inutilmente
+        // ravvicinato per un path.
+        //
+        map.fitBounds(
+            bounds,
+            {
+                padding: [30, 30],
+                animate: false,
+                maxZoom: 16
+            }
+        );
+
+    } else if (
+        bounds.length === 1
+    ) {
+
+        map.setView(
+            bounds[0],
+            13,
+            { animate: false }
+        );
+    }
+
+    renderNodeDetailPathSegmentsAtCurrentZoom();
+
+    updateNodePathInfo(
+        buildNodePathInfoHtml(
+            model
+        )
+    );
+
+    if (
+        caption
+    ) {
+
+        const hopCount =
+            observation.hop_count;
+
+        caption.textContent =
+            `Advert ricevuto il ${formatUnixTime(observation.observed_at)} — ` +
+            (
+                hopCount === 0 ?
+                    "DIRECT (0 hop)" :
+                    `${hopCount} hop`
+            ) +
+            ` — punti sulla mappa: ${bounds.length} su ${model.points.length}`;
+    }
+
+    //
+    // La mappa sta SOPRA la tabella, che può essere lunga: dopo un
+    // click su una riga lontana dalla cima la mappa potrebbe essere
+    // fuori dallo schermo. block:"nearest" scorre solo se la sezione
+    // non è già interamente visibile.
+    //
+    const section =
+        document.getElementById(
+            "nodeDetailPathSection"
+        );
+
+    if (
+        section &&
+        typeof section.scrollIntoView === "function"
+    ) {
+
+        section.scrollIntoView(
+            { block: "nearest", behavior: "smooth" }
+        );
+    }
+}
+
+//
+// Ridisegna segmenti+frecce con lo zoom corrente — stessa ragione di
+// renderTraceSegmentsAtCurrentZoom() (le frecce "di arrivo" sono a
+// distanza fissa in pixel schermo dal marker di destinazione, quindi
+// la loro posizione lungo il segmento dipende dallo zoom). Riusa
+// offsetSegmentPixels()/bearingDegrees()/addTraceArrowMarker() di
+// Trace e le sue costanti; NON ne riusa il ciclo, perché qui i segmenti
+// non hanno etichette SNR, non hanno andata/ritorno da separare (sign
+// sempre 0: in un percorso di propagazione un repeater non compare due
+// volte) e il colore dipende da "bridged" invece che dal valore SNR.
+//
+function renderNodeDetailPathSegmentsAtCurrentZoom() {
+
+    if (
+        !nodePathMap ||
+        !nodePathSegmentLayerGroup
+    ) {
+
+        return;
+    }
+
+    nodePathSegmentLayerGroup.clearLayers();
+
+    const zoom =
+        nodePathMap.getZoom();
+
+    nodePathSegmentDefs.forEach(
+        def => {
+
+            const offsetResult =
+                offsetSegmentPixels(
+                    nodePathMap,
+                    zoom,
+                    def.latlngFrom,
+                    def.latlngTo,
+                    0
+                );
+
+            const offset =
+                offsetResult.latlngs;
+
+            const lineColor =
+                def.bridged ?
+                    NODE_PATH_BRIDGE_COLOR :
+                    NODE_PATH_LINE_COLOR;
+
+            const arrowColor =
+                def.bridged ?
+                    NODE_PATH_BRIDGE_COLOR :
+                    NODE_PATH_ARROW_COLOR;
+
+            const line =
+                L.polyline(
+                    offset,
+                    {
+                        color: lineColor,
+                        weight: 3,
+                        dashArray:
+                            def.bridged ?
+                                "8 6" :
+                                "4 6"
+                    }
+                );
+
+            if (
+                def.bridged
+            ) {
+
+                line.bindTooltip(
+                    "Collegamento che salta uno o più punti non mostrati (dati mancanti o duplicati)",
+                    { sticky: true }
+                );
+            }
+
+            line.addTo(
+                nodePathSegmentLayerGroup
+            );
+
+            //
+            // Segmento degenere (due punti alla stessa posizione):
+            // nessuna freccia, il bearing non è definito.
+            //
+            if (
+                def.isDegenerate
+            ) {
+
+                return;
+            }
+
+            const bearing =
+                bearingDegrees(
+                    offset[0],
+                    offset[1]
+                );
+
+            //
+            // Due frecce per segmento, stessa logica e stesse costanti
+            // di renderTraceSegmentsAtCurrentZoom() ("a metà" al 70% +
+            // "di arrivo" a TRACE_ARROW_END_BACKOFF_PIXELS dal marker
+            // di destinazione, mai più vicina di
+            // TRACE_ARROW_MIN_SEPARATION_PIXELS alla prima): permette
+            // di leggere la direzione guardando il marker di un nodo.
+            //
+            const ARROW_MID_T = 0.7;
+
+            addTraceArrowMarker(
+                offset,
+                bearing,
+                arrowColor,
+                ARROW_MID_T,
+                nodePathSegmentLayerGroup
+            );
+
+            const desiredEndT =
+                1 -
+                TRACE_ARROW_END_BACKOFF_PIXELS /
+                    offsetResult.lengthPixels;
+
+            const minEndT =
+                ARROW_MID_T +
+                TRACE_ARROW_MIN_SEPARATION_PIXELS /
+                    offsetResult.lengthPixels;
+
+            const ARROW_END_T =
+                Math.min(
+                    0.98,
+                    Math.max(
+                        desiredEndT,
+                        minEndT
+                    )
+                );
+
+            addTraceArrowMarker(
+                offset,
+                bearing,
+                arrowColor,
+                ARROW_END_T,
+                nodePathSegmentLayerGroup
+            );
+        }
+    );
 }
 
 /* =========================

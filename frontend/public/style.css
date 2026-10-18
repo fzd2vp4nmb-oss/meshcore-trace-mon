@@ -1006,3 +1006,162 @@ body.dark .leaflet-tooltip-right:before {
 
     border-bottom: 12px solid;
 }
+
+/* =========================
+   NODE DETAIL — MAPPA PATH ADVERT
+
+   Vedi docs/ARCHITECTURE.md §84. Sostituisce il vecchio grafico
+   Observation History (RSSI/SNR) del dettaglio nodo. Stessa
+   convenzione di #traceDetailMap sopra: Leaflet non disegna nulla in
+   un contenitore di altezza 0, quindi altezza esplicita; bordo
+   arrotondato + overflow:hidden per ritagliare le tile.
+   #nodeDetailPathMap parte display:none (inline in index.html) e
+   diventa visibile solo al primo click su un link "Received".
+========================= */
+
+#nodeDetailPathMap {
+
+    width: 100%;
+
+    height: 500px;
+
+    border: 1px solid #cccccc;
+
+    border-radius: 4px;
+
+    overflow: hidden;
+}
+
+body.dark #nodeDetailPathMap {
+
+    border-color: #555555;
+}
+
+/*
+   Messaggio guida (stato iniziale, prima del primo click) e
+   didascalia della mappa (quale osservazione è mostrata). Colori
+   attenuati rispetto al testo normale: informazione di contorno.
+*/
+.nodePathGuide {
+
+    color: #555555;
+
+    font-size: 14px;
+}
+
+body.dark .nodePathGuide {
+
+    color: #b0b0b0;
+}
+
+.nodePathCaption {
+
+    margin-bottom: 6px;
+
+    font-size: 14px;
+
+    color: #333333;
+}
+
+body.dark .nodePathCaption {
+
+    color: #d0d0d0;
+}
+
+/*
+   Link Received selezionato (e la sua riga): sottolineato e con la
+   riga leggermente evidenziata, così nella tabella si capisce sempre
+   quale osservazione è quella disegnata sulla mappa. Riga
+   evidenziata via sfondo semitrasparente: funziona su tema chiaro e
+   scuro senza due colori distinti.
+*/
+.nodePathLink.selected {
+
+    text-decoration: underline;
+}
+
+tr.nodePathSelectedRow td {
+
+    background-color: rgba(74, 144, 226, 0.18);
+}
+
+/*
+   Riquadro "punti del percorso non mostrati" sovrapposto alla mappa
+   (L.control in alto a destra, v. ensureNodeDetailPathMap() in
+   app.js). Larghezza/altezza massime relative alla mappa e overflow
+   scorrevole: con molti punti mancanti la lista non deve coprire la
+   mappa intera. Stessa palette ambra di .traceNotice (avviso) — e lo
+   stesso ambra del tratteggio dei collegamenti che saltano punti
+   omessi (.nodePathInfoSwatch, v. NODE_PATH_BRIDGE_COLOR in app.js).
+*/
+.nodePathInfo {
+
+    max-width: min(360px, 70%);
+
+    max-height: 70%;
+
+    overflow-y: auto;
+
+    padding: 8px 10px;
+
+    border: 1px solid #d9a441;
+
+    border-radius: 4px;
+
+    background-color: rgba(255, 246, 224, 0.95);
+
+    color: #6b4c00;
+
+    font-size: 12px;
+
+    line-height: 1.35;
+}
+
+body.dark .nodePathInfo {
+
+    background-color: rgba(58, 47, 16, 0.95);
+
+    color: #f0d090;
+
+    border-color: #8a6a20;
+}
+
+.nodePathInfo ul {
+
+    margin: 4px 0;
+
+    padding-left: 16px;
+}
+
+.nodePathInfoTitle {
+
+    font-weight: bold;
+}
+
+.nodePathInfoSub {
+
+    font-style: italic;
+}
+
+.nodePathInfoNote {
+
+    margin-top: 4px;
+}
+
+.nodePathInfoLegend {
+
+    margin-top: 4px;
+}
+
+.nodePathInfoSwatch {
+
+    display: inline-block;
+
+    width: 22px;
+
+    margin-right: 6px;
+
+    vertical-align: middle;
+
+    border-top: 3px dashed #e69500;
+}

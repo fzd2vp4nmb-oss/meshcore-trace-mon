@@ -580,7 +580,7 @@ risultato sia valido prima di considerarlo definitivo. Al termine,
 propone di riavviare `trace-mon.service` per applicare le modifiche.
 
 Qualora fosse necessario allineare un nuovo parametro di
-configurazione, esiste l'opzione **"8) Allinea al template"** che
+configurazione, esiste l'opzione **"9) Allinea al template"** che
 aggiunge a `config.yaml` solo i parametri mancanti, senza modificare
 le altre scelte già salvate in precedenza.
 

@@ -355,7 +355,7 @@ menu_services() {
         echo "--- Servizi del daemon ---"
         engine service-list
         echo
-        echo "Nomi validi: system, trace, advert, bot, contact_sync, neighbor_monitor"
+        echo "Nomi validi: system, trace, advert, bot, contact_sync, neighbor_monitor, sonar"
         echo "  1) Attiva un servizio"
         echo "  2) Disattiva un servizio"
         echo "  0) Torna indietro"
@@ -484,13 +484,138 @@ menu_telegram() {
 }
 
 # ============================================================
+# Sottomenu: sonar (docs/ARCHITECTURE.md §87) — canale pubblico
+# dedicato da cui si acquisiscono i path dei messaggi, e trasmissione
+# periodica del messaggio numerato. NON è il modulo "Bot" (menu 3): il
+# bot legge solo il suo canale (#bot), il sonar solo il proprio. Il
+# segreto del canale non viene mai mostrato a video.
+# ============================================================
+menu_sonar() {
+
+    while true; do
+
+        current_channel=$(engine get sonar.channel_name)
+        current_secret=$(engine get sonar.channel_secret)
+        current_tx=$(engine get sonar.tx.enabled)
+        current_scope=$(engine get sonar.tx.scope)
+        current_min_interval=$(engine get sonar.tx.min_interval)
+
+        if [ -n "$current_secret" ] && [[ "$current_secret" != __*__ ]]; then
+            secret_label="impostato"
+        else
+            secret_label="NON impostato"
+        fi
+
+        if [ "$current_tx" = "True" ]; then
+            tx_label="abilitata"
+        else
+            tx_label="disabilitata"
+        fi
+
+        echo
+        echo "--- Sonar (canale dedicato per l'acquisizione dei path) ---"
+        echo "(per attivare/disattivare l'intero modulo: menu 6 'Servizi')"
+        echo "Canale: ${current_channel:-TM-Sonar} — segreto: $secret_label"
+        echo "Trasmissione: $tx_label — scope: ${current_scope:-non impostato} — intervallo minimo: ${current_min_interval:-600}s"
+        echo "  1) Imposta il segreto del canale (32 caratteri esadecimali)"
+        echo "  2) Abilita la trasmissione"
+        echo "  3) Disabilita la trasmissione"
+        echo "  4) Imposta lo scope di trasmissione"
+        echo "  5) Imposta l'intervallo minimo tra due invii"
+        echo "  6) Verifica/crea il canale sul companion (richiede il daemon attivo)"
+        echo "  0) Torna indietro"
+        read -p "Scelta: " choice || { echo; return; }
+
+        case "$choice" in
+
+            1)
+                echo
+                echo "Il segreto è UGUALE su tutti i nodi della rete sonar e di norma"
+                echo "arriva dal template (setup.sh, oppure la voce 9 'Allinea al template'):"
+                echo "questa voce serve solo per impostarlo o sostituirlo a mano su questo"
+                echo "nodo. Non viene mostrato mentre lo digiti."
+                read -r -s -p "Segreto (32 caratteri esadecimali): " secret
+                echo
+                if [[ "$secret" =~ ^[0-9a-fA-F]{32}$ ]]; then
+                    engine set sonar.channel_secret "$secret"
+                    CHANGES_MADE=1
+                else
+                    echo "Segreto non valido: servono esattamente 32 caratteri esadecimali (0-9, a-f). Nessuna modifica."
+                fi
+                ;;
+
+            2)
+                engine set sonar.tx.enabled true
+                CHANGES_MADE=1
+                ;;
+
+            3)
+                engine set sonar.tx.enabled false
+                CHANGES_MADE=1
+                ;;
+
+            4)
+                echo
+                echo "Scope dell'invio: * (oppure U) = unscoped, D = default del device,"
+                echo "oppure il nome di una regione (es. it-lom). Si può sempre"
+                echo "sovrascrivere nel crontab con: sonar.sh --scope <valore>."
+                read -p "Scope [$current_scope]: " scope
+                scope="${scope:-$current_scope}"
+                engine set sonar.tx.scope "$scope"
+                CHANGES_MADE=1
+                ;;
+
+            5)
+                echo
+                echo "Secondi minimi tra due trasmissioni (0 = nessuna guardia). Evita"
+                echo "che due voci di crontab ravvicinate occupino l'aria due volte."
+                read -p "Intervallo [$current_min_interval]: " interval
+                interval="${interval:-$current_min_interval}"
+                engine set sonar.tx.min_interval "$interval"
+                CHANGES_MADE=1
+                ;;
+
+            6)
+                echo
+                echo "Cerca il canale sul companion tramite il daemon (deve essere in"
+                echo "esecuzione, con il servizio 'sonar' abilitato)."
+                args=()
+                read -p "Creare il canale se manca? [y/N]: " yn
+                [[ "$yn" =~ ^[Yy]$ ]] && args+=(--create)
+                read -p "Mostrare il segreto del canale a video? [y/N]: " yn
+                [[ "$yn" =~ ^[Yy]$ ]] && args+=(--show-secret)
+                read -p "Salvare il segreto in config.yaml se non ancora impostato? [y/N]: " yn
+                [[ "$yn" =~ ^[Yy]$ ]] && args+=(--save-config)
+                "$PY" tools/sonar_channel.py "${args[@]}"
+                rc=$?
+                if [ "$rc" -eq 0 ] && [[ " ${args[*]} " == *" --save-config "* ]]; then
+                    CHANGES_MADE=1
+                fi
+                pause
+                ;;
+
+            0)
+                return
+                ;;
+
+            *)
+                echo "Scelta non valida."
+                ;;
+        esac
+    done
+}
+
+# ============================================================
 # Allinea al template (docs/ARCHITECTURE.md §45) — aggiunge a
 # config.yaml solo le chiavi che config/config.yaml.template definisce
 # ma che qui non ci sono ancora (es. un parametro introdotto da una
 # versione più recente del codice, non ancora presente su
 # un'installazione già in uso). Non tocca MAI una chiave già presente
 # né una lista (path tracciati, repeater, regioni bot, servizi) — per
-# quelle restano i menu dedicati sopra.
+# quelle restano i menu dedicati sopra. Unica eccezione: la chiave del
+# canale Sonar (sonar.channel_secret), uguale su tutti i nodi e scritta
+# nel template dall'amministratore: viene copiata anche se è presente
+# ma vuota, e non viene mai mostrata a video.
 # ============================================================
 menu_align() {
 
@@ -498,7 +623,8 @@ menu_align() {
     echo "--- Allinea al template ---"
     echo "Confronta config.yaml con config/config.yaml.template e"
     echo "aggiunge solo le chiavi mancanti, senza toccare nulla di già"
-    echo "presente (personalizzazioni incluse)."
+    echo "presente (personalizzazioni incluse). Unica eccezione: la chiave"
+    echo "del canale Sonar, copiata dal template se qui è vuota."
     echo
 
     output=$(engine align)
@@ -527,6 +653,7 @@ while true; do
     echo "  7) Logging"
     echo "  8) Telegram (notifiche al gestore del nodo)"
     echo "  9) Allinea al template (aggiungi parametri mancanti)"
+    echo " 10) Sonar (canale dedicato per l'acquisizione dei path)"
     echo "  0) Esci"
     read -p "Scelta: " main_choice || { echo; break; }
 
@@ -540,6 +667,7 @@ while true; do
         7) menu_logging ;;
         8) menu_telegram ;;
         9) menu_align ;;
+        10) menu_sonar ;;
         0) break ;;
         *) echo "Scelta non valida." ;;
     esac

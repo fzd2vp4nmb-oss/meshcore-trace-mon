@@ -235,6 +235,131 @@ CREATE TABLE IF NOT EXISTS telegram_settings (
     enabled     INTEGER NOT NULL DEFAULT 0,
     updated_at  INTEGER NOT NULL
 );
+
+-- ---------------------------------------------------------------
+-- Sonar (mesh_modules/sonar/, docs/ARCHITECTURE.md §87)
+--
+-- Due tabelle NUOVE, create da CREATE TABLE IF NOT EXISTS come ogni
+-- altra tabella di questo file (idempotente, nessuna riga esistente
+-- toccata, nessuna voce in MIGRATIONS: non sono colonne aggiunte a
+-- tabelle già in uso). Scritte SOLO dal servizio 'sonar' del daemon.
+-- ---------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS sonar_tx (
+    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+                   -- IL PROGRESSIVO del sonar di questo nodo. AUTOINCREMENT
+                   -- (non il semplice rowid) garantisce che un numero non
+                   -- venga MAI riusato, nemmeno dopo la cancellazione di
+                   -- righe (SQLite ne tiene l'high-water mark in
+                   -- sqlite_sequence): persiste ai riavvii del daemon e
+                   -- due richieste sovrapposte ottengono comunque numeri
+                   -- distinti, per costruzione e non per un lock
+                   -- applicativo. Non è un identificatore globale: due
+                   -- nodi hanno ciascuno la propria sequenza (si
+                   -- distinguono con src_prefix), e un database ricreato
+                   -- riparte da 1 (sender_timestamp/msg_hash dei
+                   -- ricevimenti li distinguono comunque).
+    created_at     INTEGER NOT NULL,
+                   -- istante (epoch, orologio locale) in cui il numero è
+                   -- stato RISERVATO, subito prima dell'invio
+    src_prefix     TEXT NOT NULL,
+                   -- primi 8 caratteri esadecimali della chiave pubblica
+                   -- del companion al momento dell'invio — lo stesso
+                   -- valore scritto nel testo del messaggio
+    channel        TEXT NOT NULL,
+                   -- nome del canale su cui è stato inviato
+    scope_tag      TEXT NOT NULL,
+                   -- come nel testo del messaggio: 'U' = unscoped forzato,
+                   -- 'D' = scope di default del device, altrimenti il
+                   -- nome della regione
+    status         TEXT NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending', 'sent', 'failed', 'unknown')),
+                   -- pending: numero riservato, esito non ancora noto
+                   -- sent:    il companion ha accettato il comando di invio
+                   --          (conferma locale, NON la prova che il pacchetto
+                   --          sia andato in aria né che qualcuno l'abbia
+                   --          ricevuto)
+                   -- failed:  NESSUN invio avvenuto (errore prima o al
+                   --          comando: scope non impostato, canale assente,
+                   --          comando rifiutato dal companion)
+                   -- unknown: esito incerto (timeout in attesa della
+                   --          risposta del companion, richiesta interrotta, o
+                   --          'pending' ritrovato dopo un riavvio del daemon)
+    sent_at        INTEGER,
+                   -- istante in cui il companion ha accettato l'invio
+                   -- (solo status 'sent')
+    msg_timestamp  INTEGER,
+                   -- timestamp passato a send_chan_msg(): è quello che i
+                   -- riceventi leggono come sender_timestamp, quindi il
+                   -- legame tra questa riga e le sonar_rx degli ALTRI nodi
+                   -- (le eco del nostro stesso messaggio non si registrano,
+                   -- ARCHITECTURE.md §87.13)
+    error          TEXT
+                   -- motivo sintetico se status è 'failed' o 'unknown'
+);
+
+CREATE INDEX IF NOT EXISTS idx_sonar_tx_created
+    ON sonar_tx(created_at);
+
+CREATE TABLE IF NOT EXISTS sonar_rx (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    observed_at      INTEGER NOT NULL,
+                     -- recv_time della libreria: epoch dell'orologio
+                     -- LOCALE alla ricezione del frame radio
+    src_prefix       TEXT NOT NULL,
+                     -- identificativo del mittente come scritto nel
+                     -- testo: 8 esadecimali minuscoli, prefisso di
+                     -- nodes.public_key (si collega per prefisso, come
+                     -- gli hash dei path). Non autenticato (§42), ma il
+                     -- canale lo è dal segreto condiviso (MAC).
+    seq              INTEGER NOT NULL,
+                     -- progressivo del mittente (sonar_tx.seq del SUO
+                     -- nodo). Non è un identificatore globale.
+    scope_tag        TEXT,
+                     -- scope DICHIARATO nel testo ('U', 'D' o regione):
+                     -- non verificato; lo scope effettivo del pacchetto
+                     -- sta in route_type/transport_code
+    channel          TEXT NOT NULL,
+                     -- nome del canale su cui è stato ricevuto
+    sender_timestamp INTEGER,
+                     -- timestamp del mittente, dal GRP_TXT decifrato
+    msg_hash         INTEGER,
+                     -- sha256(timestamp||testo)[:4], calcolato dalla
+                     -- libreria: identico per tutte le copie
+    pkt_hash         INTEGER,
+                     -- come in path_observations: identico per tutte le
+                     -- copie dello stesso pacchetto arrivate per percorsi
+                     -- diversi
+    route_type       TEXT,
+    transport_code   TEXT,
+    path_hex         TEXT,
+                     -- path ESATTAMENTE come esposto dalla libreria
+                     -- (concatenazione degli hash, ordine sorgente ->
+                     -- gateway, v. ARCHITECTURE.md §84); '' = ricezione
+                     -- diretta. Mai ricostruito.
+    hop_count        INTEGER NOT NULL,
+    hash_size        INTEGER,
+    rssi             REAL,
+    snr              REAL,
+    is_local         INTEGER
+                     -- 0 = messaggio di un altro nodo; NULL = chiave
+                     -- pubblica del companion mai nota alla ricezione
+                     -- (non si poteva dire se fosse un'eco). Dal
+                     -- 2026-10-20 (§87.13) l'eco del NOSTRO stesso
+                     -- messaggio, rilanciato da un repeater, NON viene
+                     -- più registrata: 1 compare solo in righe scritte
+                     -- dalla versione precedente (colonna mantenuta,
+                     -- nessun ALTER)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sonar_rx_src_seq
+    ON sonar_rx(src_prefix, seq);
+
+CREATE INDEX IF NOT EXISTS idx_sonar_rx_observed
+    ON sonar_rx(observed_at);
+
+CREATE INDEX IF NOT EXISTS idx_sonar_rx_pkt_hash
+    ON sonar_rx(pkt_hash);
 """
 
 #
@@ -376,6 +501,27 @@ MAX_CLI_TEXT_LEN = 128
 # accorciato.
 #
 MAX_DEVICE_TELEMETRY_JSON_LEN = 8192
+
+#
+# Limiti sui campi testuali delle tabelle sonar (stessa logica di
+# difesa in profondità dei limiti sopra): i valori di sonar_rx
+# provengono dalla rete mesh. Il servizio sonar li ha già validati con
+# formati stretti (mesh_modules/sonar/protocol.py), questi tetti sono
+# una seconda linea di difesa indipendente.
+#
+MAX_SONAR_TAG_LEN = 32
+MAX_SONAR_CHANNEL_LEN = 64
+MAX_SONAR_TRANSPORT_CODE_LEN = 16
+MAX_SONAR_ERROR_LEN = 256
+
+#
+# Stati ammessi di sonar_tx.status (v. SCHEMA, CHECK) — costanti qui
+# per non duplicare le stringhe nei chiamanti.
+#
+SONAR_TX_PENDING = "pending"
+SONAR_TX_SENT = "sent"
+SONAR_TX_FAILED = "failed"
+SONAR_TX_UNKNOWN = "unknown"
 
 
 def _serialize_device_telemetry(telemetry):
@@ -917,6 +1063,223 @@ class ContactDB:
                 enabled    = excluded.enabled
             """,
             (updated_at, chat_id or None, 1 if enabled else 0)
+        )
+
+        self._conn.commit()
+
+    # ---------------------------------------------------------------
+    # Sonar (mesh_modules/sonar/, docs/ARCHITECTURE.md §87)
+    # ---------------------------------------------------------------
+
+    def reserve_sonar_tx(
+        self,
+        created_at,
+        src_prefix,
+        channel,
+        scope_tag
+    ):
+        """
+        Riserva il prossimo progressivo del sonar inserendo una riga
+        'pending' e ritorna il numero (sonar_tx.seq, AUTOINCREMENT —
+        v. SCHEMA). La riserva avviene PRIMA dell'invio e non viene mai
+        annullata: un invio fallito o dall'esito incerto "consuma" il
+        numero, lasciando un buco visibile e spiegato dallo status
+        della riga, invece di rischiare di riusarlo per un messaggio
+        che in realtà era già partito (un timeout in attesa della
+        risposta del companion non prova che il comando non sia stato
+        eseguito).
+        """
+
+        cur = self._conn.execute(
+            """
+            INSERT INTO sonar_tx (
+                created_at, src_prefix, channel, scope_tag, status
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                created_at,
+                src_prefix,
+                _clamp_text(channel, MAX_SONAR_CHANNEL_LEN),
+                _clamp_text(scope_tag, MAX_SONAR_TAG_LEN),
+                SONAR_TX_PENDING
+            )
+        )
+
+        self._conn.commit()
+
+        return cur.lastrowid
+
+    def finish_sonar_tx(
+        self,
+        seq,
+        status,
+        sent_at=None,
+        msg_timestamp=None,
+        error=None
+    ):
+        """
+        Registra l'esito dell'invio per il progressivo 'seq' (riga
+        creata da reserve_sonar_tx()). status deve essere uno tra
+        'sent', 'failed', 'unknown' — il CHECK dello schema rifiuta
+        altro. Aggiorna solo righe ancora 'pending': un esito già
+        scritto non viene mai sovrascritto (idempotente).
+        """
+
+        self._conn.execute(
+            """
+            UPDATE sonar_tx
+               SET status        = ?,
+                   sent_at       = ?,
+                   msg_timestamp = ?,
+                   error         = ?
+             WHERE seq = ? AND status = ?
+            """,
+            (
+                status,
+                sent_at,
+                msg_timestamp,
+                _clamp_text(error, MAX_SONAR_ERROR_LEN),
+                seq,
+                SONAR_TX_PENDING
+            )
+        )
+
+        self._conn.commit()
+
+    def mark_stale_sonar_tx_unknown(self):
+        """
+        Porta da 'pending' a 'unknown' tutte le righe rimaste in
+        sospeso. Chiamata UNA volta all'avvio del servizio: a daemon
+        appena partito nessun invio può essere davvero in corso, quindi
+        un 'pending' è per forza il residuo di una richiesta interrotta
+        (riavvio, arresto, cancellazione dal watchdog IPC) di cui non
+        si conosce l'esito. Ritorna il numero di righe aggiornate.
+        """
+
+        cur = self._conn.execute(
+            """
+            UPDATE sonar_tx
+               SET status = ?,
+                   error  = COALESCE(error, 'interrotto prima dell''esito')
+             WHERE status = ?
+            """,
+            (SONAR_TX_UNKNOWN, SONAR_TX_PENDING)
+        )
+
+        self._conn.commit()
+
+        return cur.rowcount
+
+    def last_sonar_tx_attempt_at(self):
+        """
+        created_at dell'ultimo invio che NON è certamente fallito
+        (status 'sent', 'unknown' o 'pending'), o None se non ce n'è.
+        Base della guardia sonar.min_interval: un invio fallito per
+        certo non conta (non ha occupato l'aria), uno incerto sì, per
+        prudenza. Persistente: vale anche dopo un riavvio del daemon.
+        """
+
+        row = self._conn.execute(
+            """
+            SELECT MAX(created_at)
+              FROM sonar_tx
+             WHERE status != ?
+            """,
+            (SONAR_TX_FAILED,)
+        ).fetchone()
+
+        return row[0] if row else None
+
+    def last_sonar_tx(self):
+        """
+        Ultima riga di sonar_tx come dict (diagnostica del comando
+        'status'), o None se la tabella è vuota.
+        """
+
+        cur = self._conn.execute(
+            """
+            SELECT seq, created_at, scope_tag, status, sent_at, error
+              FROM sonar_tx
+             ORDER BY seq DESC
+             LIMIT 1
+            """
+        )
+
+        row = cur.fetchone()
+
+        if row is None:
+            return None
+
+        return dict(zip(
+            ("seq", "created_at", "scope_tag", "status", "sent_at", "error"),
+            row
+        ))
+
+    def insert_sonar_rx(
+        self,
+        observed_at,
+        src_prefix,
+        seq,
+        scope_tag,
+        channel,
+        sender_timestamp,
+        msg_hash,
+        pkt_hash,
+        route_type,
+        transport_code,
+        path_hex,
+        hop_count,
+        hash_size,
+        rssi,
+        snr,
+        is_local
+    ):
+        """
+        Una riga per RICEZIONE FISICA di un messaggio sonar: le copie
+        dello stesso messaggio arrivate per percorsi diversi sono dati
+        voluti (stessa scelta di path_observations, v.
+        docs/CONTACT_MANAGEMENT.md §8) e si riconoscono dal pkt_hash/
+        msg_hash/(src_prefix, seq) comuni. Nessun UNIQUE e nessun
+        OR IGNORE di proposito: ogni evento radio ricevuto è una
+        riga, mai scartata in silenzio.
+
+        is_local: True/False, oppure None se non determinabile.
+        """
+
+        path_hex = _clamp_text(path_hex, MAX_PATH_HEX_LEN)
+
+        if is_local is not None:
+            is_local = 1 if is_local else 0
+
+        self._conn.execute(
+            """
+            INSERT INTO sonar_rx (
+                observed_at, src_prefix, seq, scope_tag, channel,
+                sender_timestamp, msg_hash, pkt_hash, route_type,
+                transport_code, path_hex, hop_count, hash_size,
+                rssi, snr, is_local
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                observed_at,
+                src_prefix,
+                seq,
+                _clamp_text(scope_tag, MAX_SONAR_TAG_LEN),
+                _clamp_text(channel, MAX_SONAR_CHANNEL_LEN),
+                sender_timestamp,
+                msg_hash,
+                pkt_hash,
+                route_type,
+                _clamp_text(transport_code, MAX_SONAR_TRANSPORT_CODE_LEN),
+                path_hex,
+                hop_count,
+                hash_size,
+                rssi,
+                snr,
+                is_local
+            )
         )
 
         self._conn.commit()

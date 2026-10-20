@@ -953,6 +953,36 @@ if confirm_overwrite "config/config.yaml"; then
         exit 1
     fi
 
+    #
+    # Sonar (docs/ARCHITECTURE.md §87) — il segreto del canale pubblico
+    # dedicato è UGUALE su tutti i nodi e arriva dal TEMPLATE
+    # (config/config.yaml.template, riga sonar.channel_secret: lo scrive
+    # l'amministratore una volta sola): qui non si chiede nulla e la
+    # chiave non viene sostituita da setup.sh, ma copiata dal template
+    # così com'è insieme al resto del file.
+    #
+    # Con una chiave valida (32 caratteri esadecimali) il servizio
+    # 'sonar' parte ATTIVO (sola ricezione: la trasmissione resta
+    # sonar.tx.enabled=false finché non la si abilita) e il daemon crea
+    # il canale sul companion, se manca. Senza chiave (valore vuoto) o
+    # con una chiave non valida il servizio nasce DISATTIVATO. Il valore
+    # serve solo a decidere SONAR_ENABLED e non viene mai stampato.
+    #
+    SONAR_TPL_RAW=$(sed -n '/^sonar:/,/^services:/s/^  channel_secret:[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p' config/config.yaml.template | head -n 1)
+    SONAR_KEY_RE='^"[0-9a-fA-F]{32}"$'
+
+    if [[ "$SONAR_TPL_RAW" =~ $SONAR_KEY_RE ]]; then
+        SONAR_ENABLED="true"
+    else
+        SONAR_ENABLED="false"
+
+        if [ -n "$SONAR_TPL_RAW" ] && [ "$SONAR_TPL_RAW" != '""' ]; then
+            echo
+            echo "ATTENZIONE: sonar.channel_secret nel template non è valido (servono"
+            echo "32 caratteri esadecimali, tra virgolette): servizio sonar disattivato."
+        fi
+    fi
+
     mkdir -p config
 
     #
@@ -981,12 +1011,15 @@ if confirm_overwrite "config/config.yaml"; then
         -e "s#__BLE_ADDRESS__#$(sed_escape "$TPL_BLE_ADDRESS")#" \
         -e "s#__TRACE_PATH__#$(sed_escape "$TRACE_PATH")#" \
         -e "s#__REPEATER_NAME__#$(sed_escape "$REPEATER_NAME")#" \
+        -e "s#__SONAR_ENABLED__#$SONAR_ENABLED#" \
         config/config.yaml.template > config/config.yaml
 
     #
     # Permessi ristretti (code review 2026-08-20, §3.7) — config.yaml
-    # non contiene segreti veri, ma include hostname/indirizzi interni
-    # della rete (connection.tcp.host, ecc.). 0600: solo il
+    # include hostname/indirizzi interni della rete
+    # (connection.tcp.host, ecc.) e, dal sonar (§87), il segreto
+    # condiviso del canale dedicato (sonar.channel_secret): il primo
+    # dato davvero riservato che contiene. 0600: solo il
     # proprietario (utente 'meshcore') può leggerlo. tools/edit_config.py
     # applica lo stesso permesso ad ogni salvataggio successivo e ai
     # relativi backup in config/backup/.
@@ -1105,3 +1138,6 @@ echo "Per attivare i servizi:"
 echo "  sudo cp systemd/trace-mon.service systemd/trace-web.service /etc/systemd/system/"
 echo "  sudo systemctl daemon-reload"
 echo "  sudo systemctl enable --now trace-mon trace-web"
+echo
+echo "Sonar: la pianificazione degli invii è del crontab (sonar.sh), v. docs/ARCHITECTURE.md §87;"
+echo "trasmissione disabilitata di default (config.sh -> Sonar per abilitarla)."

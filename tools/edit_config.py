@@ -37,6 +37,7 @@ Sicurezza built-in, per ogni comando che scrive:
 
 import argparse
 import os
+import re
 import stat
 import sys
 import shutil
@@ -90,6 +91,49 @@ INSTANCE_SPECIFIC_PATHS = frozenset({
     "connection.serial.baudrate",
     "connection.ble.address",
 })
+
+#
+# Chiave del canale sonar (docs/ARCHITECTURE.md §87): UGUALE su tutti i
+# nodi, scritta in chiaro nel template dall'amministratore e propagata
+# da `align` ai nodi già installati (è l'unico modo, dopo setup.sh, in
+# cui un nodo esistente la riceve). Per questo NON è istanza-specifica,
+# ma a differenza di ogni altro scalare `align` la riempie anche quando
+# la chiave è presente ma VUOTA (o un segnaposto __X__): un config.yaml
+# generato mentre il template non aveva ancora la chiave ha
+# `channel_secret: ""` e, con la regola generale "mai toccare una chiave
+# presente", non la riceverebbe mai. Un valore NON vuoto già presente
+# non viene mai sovrascritto, nemmeno se diverso dal template: viene
+# solo segnalato (senza mostrare nessuno dei due valori). Il valore non
+# viene mai stampato da `align`.
+#
+FILL_WHEN_EMPTY_PATHS = frozenset({
+    "sonar.channel_secret",
+})
+
+_SHARED_SECRET_RE = re.compile(r"^[0-9a-fA-F]{32}$")
+_PLACEHOLDER_VALUE_RE = re.compile(r"^__[A-Z0-9_]+__$")
+
+
+def _is_blank_shared_secret(value):
+    """True se la chiave condivisa è assente, vuota o un segnaposto."""
+
+    if value is None:
+        return True
+
+    if isinstance(value, str):
+        text = value.strip()
+        return text == "" or bool(_PLACEHOLDER_VALUE_RE.match(text))
+
+    return False
+
+
+def _display_value(path, value):
+    """Valore da stampare: mai il contenuto di una chiave condivisa."""
+
+    if path in FILL_WHEN_EMPTY_PATHS:
+        return "<non mostrato>" if value not in (None, "") else value
+
+    return value
 
 #
 # Sezioni di primo livello DELIBERATAMENTE assenti dal template — il
@@ -180,7 +224,8 @@ def _prune_old_backups():
             )
 
 VALID_SERVICES = [
-    "system", "trace", "advert", "bot", "contact_sync", "neighbor_monitor"
+    "system", "trace", "advert", "bot", "contact_sync", "neighbor_monitor",
+    "sonar"
 ]
 
 #
@@ -191,7 +236,7 @@ VALID_SERVICES = [
 #
 NUMERIC_SUFFIXES = (
     ".port", ".baudrate", ".max_retries", ".sync_interval",
-    ".interval", ".timeout"
+    ".interval", ".timeout", ".min_interval"
 )
 
 #
@@ -208,6 +253,13 @@ MIN_VALUES = {
     "trace.interval": 10,
     "trace.timeout": 10,
     "contacts.sync_interval": 60,
+    #
+    # sonar.tx.min_interval: 0 = nessuna guardia tra due invii (valore
+    # legittimo); il minimo serve solo a rifiutare i negativi. Il tetto
+    # massimo (86400) è controllato da mesh_modules/sonar/settings.py,
+    # che disattiva la trasmissione con un errore leggibile in log.
+    #
+    "sonar.tx.min_interval": 0,
 }
 
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
@@ -267,6 +319,21 @@ HEADER_COMMENT = """\
 #   max_retries — tentativi totali per singola interrogazione radio
 #     (status/neighbours/telemetry/region/login/comandi CLI) prima di
 #     rinunciare e passare alla successiva. 1 = nessun retry.
+#
+# sonar:
+#   channel_name — canale pubblico dedicato (default TM-Sonar), non può
+#     iniziare con '#' né coincidere con bot.channel_name
+#   channel_secret — segreto condiviso del canale, 32 caratteri
+#     esadecimali tra virgolette, uguale su tutti i nodi (vuoto =
+#     nessun segreto: si adotta un canale già presente sul companion).
+#     Riservato: non condividerlo fuori dalla rete dei nodi
+#   tx.enabled — true per trasmettere il messaggio sonar (la ricezione
+#     dipende solo dal servizio 'sonar' qui sotto)
+#   tx.scope — scope dell'invio: "*" o U = unscoped, D = default del
+#     device, altrimenti il nome di una regione
+#   tx.min_interval — secondi minimi tra due invii (0 = nessuna guardia)
+#   La pianificazione degli invii è del crontab (sonar.sh), non di
+#   questo file.
 #
 # services:
 #   Ciascun servizio del daemon può essere disattivato singolarmente
@@ -827,17 +894,72 @@ def cmd_service_set_enabled(args):
 
     if not found:
 
-        print(
-            f"ERRORE: servizio '{args.name}' non presente in config.yaml "
-            f"— file probabilmente corrotto o modificato a mano in modo "
-            f"incompatibile.",
-            file=sys.stderr
-        )
+        #
+        # Servizio introdotto DOPO la generazione di questo config.yaml
+        # (es. 'sonar', docs/ARCHITECTURE.md §87): `align` non tocca
+        # mai le liste (v. walk_template_scalars()), quindi su
+        # un'installazione già in uso la voce non c'è e nessun altro
+        # comando potrebbe aggiungerla. Se il template la definisce, la
+        # si copia da lì — con 'enabled' impostato come richiesto — al
+        # posto del vecchio errore "file corrotto". Se il template non
+        # la definisce, resta l'errore di prima.
+        #
+        entry = _service_entry_from_template(args.name)
 
-        sys.exit(1)
+        if entry is None:
+
+            print(
+                f"ERRORE: servizio '{args.name}' non presente in "
+                f"config.yaml — file probabilmente corrotto o modificato "
+                f"a mano in modo incompatibile.",
+                file=sys.stderr
+            )
+
+            sys.exit(1)
+
+        entry["enabled"] = value
+        services.append(entry)
+        set_path(data, "services", services)
+
+        print(
+            f"Servizio '{args.name}' non presente in config.yaml "
+            f"(installazione precedente alla sua introduzione): voce "
+            f"aggiunta dal template."
+        )
 
     backup_path = backup_config()
     save_config(data, backup_path)
+
+
+def _service_entry_from_template(name):
+    """
+    La voce 'name' della lista services: di config/config.yaml.template
+    (copia indipendente), oppure None se il template manca, non è
+    leggibile o non la definisce. Mai un'eccezione: il chiamante
+    ricade sul messaggio d'errore standard.
+    """
+
+    if not TEMPLATE_PATH.exists():
+        return None
+
+    try:
+        with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
+            template = yaml.safe_load(f)
+
+    except (OSError, yaml.YAMLError):
+        return None
+
+    services = get_path(template, "services")
+
+    if not isinstance(services, list):
+        return None
+
+    for entry in services:
+
+        if isinstance(entry, dict) and entry.get("name") == name:
+            return dict(entry)
+
+    return None
 
 
 def walk_template_scalars(node, prefix=()):
@@ -952,7 +1074,10 @@ def cmd_align(args):
       entrambi, qualunque esso sia (anche se diverso dal default del
       template — è esattamente il caso di una personalizzazione fatta
       con config.sh, che va sempre preservata): align tocca solo la
-      PRESENZA/ASSENZA di una chiave, mai un valore già impostato;
+      PRESENZA/ASSENZA di una chiave, mai un valore già impostato
+      (unica eccezione, deliberata: FILL_WHEN_EMPTY_PATHS, la chiave
+      del canale sonar, che viene riempita anche se presente ma vuota
+      e mai mostrata a video);
     - non tocca MAI una lista, né in aggiunta né in rimozione
       (walk_template_scalars()/find_prunable_scalars() non vi
       entrano — restano sempre di competenza dei sottocomandi/menu
@@ -985,13 +1110,50 @@ def cmd_align(args):
     data = load_config()
 
     added = []
+    notes = []
 
     for path, template_value in walk_template_scalars(template):
 
         if path in INSTANCE_SPECIFIC_PATHS:
             continue
 
-        if get_path(data, path) is not None:
+        current = get_path(data, path)
+
+        if path in FILL_WHEN_EMPTY_PATHS:
+
+            if template_value in (None, ""):
+                #
+                # Il template non ha (ancora) la chiave: una chiave
+                # assente diventa "" come ogni altro scalare mancante,
+                # ma un valore già presente non si tocca.
+                #
+                if current is None:
+                    set_path(data, path, "")
+                    added.append((path, ""))
+
+                continue
+
+            if not isinstance(template_value, str) or not _SHARED_SECRET_RE.match(template_value):
+                notes.append(
+                    f"ATTENZIONE: {path} nel template non è valido (servono "
+                    f"32 caratteri esadecimali, tra virgolette): non propagato."
+                )
+                continue
+
+            if _is_blank_shared_secret(current):
+                set_path(data, path, template_value)
+                added.append((path, template_value))
+
+            elif str(current).strip().lower() != template_value.lower():
+                notes.append(
+                    f"NOTA: {path} in config.yaml è diverso da quello del "
+                    f"template: non modificato (la chiave deve essere uguale "
+                    f"su tutti i nodi; per cambiarla: config.sh, menu Sonar)."
+                )
+
+            continue
+
+        if current is not None:
             continue
 
         set_path(data, path, template_value)
@@ -1002,15 +1164,18 @@ def cmd_align(args):
     for path, _value in removed:
         remove_path(data, path)
 
+    for note in notes:
+        print(note)
+
     if not added and not removed:
         print("config.yaml già allineato al template — nessuna modifica necessaria.")
         return
 
     for path, value in added:
-        print(f"AGGIUNTA: {path} = {value!r}")
+        print(f"AGGIUNTA: {path} = {_display_value(path, value)!r}")
 
     for path, value in removed:
-        print(f"RIMOSSA (non più nel template): {path} (era: {value!r})")
+        print(f"RIMOSSA (non più nel template): {path} (era: {_display_value(path, value)!r})")
 
     backup_path = backup_config()
     save_config(data, backup_path)

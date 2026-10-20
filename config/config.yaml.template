@@ -24,6 +24,15 @@
 #    scritti da `align` in un config.yaml reale: quelle chiavi sono
 #    sempre già popolate da setup.sh al momento della generazione.
 #
+# Placeholder specifico del sonar: uno solo, SOLO nella riga di valore
+# della voce di servizio piu' sotto (mai nei commenti: setup.sh li
+# sostituisce ovunque nel file, commenti compresi). E' true/false e sta
+# in una LISTA: mai toccata da `align`. Il segreto del canale sonar
+# NON e' un placeholder: e' scritto in chiaro (tra virgolette) nella
+# riga sonar.channel_secret, UGUALE su tutti i nodi, ed e' l'unico
+# valore per cui `align` riempie anche una chiave presente ma vuota
+# (v. FILL_WHEN_EMPTY_PATHS in edit_config.py).
+#
 # Chiavi che il codice legge con un default a livello di codice (es.
 # daemon.socket_path, daemon.dispatch_timeout — v. §44/§45) NON
 # compaiono qui, per scelta deliberata: restano assenti dal file
@@ -106,6 +115,33 @@ neighbor_monitoring:
   repeaters:
     - name: "__REPEATER_NAME__"
 
+sonar:
+  # Canale pubblico DEDICATO al sonar (docs/ARCHITECTURE.md §87): i
+  # path dei messaggi ricevuti su questo canale finiscono in contacts.db
+  # (tabella sonar_rx). Indipendente dal bot: il bot legge solo bot.
+  # channel_name, il sonar solo questo canale.
+  #
+  # channel_secret: LA CHIAVE DELLA RETE SONAR, 32 caratteri
+  # esadecimali (16 byte), UGUALE su tutti i nodi. La genera una sola
+  # volta l'amministratore e la scrive QUI, tra virgolette (senza
+  # virgolette YAML leggerebbe un valore di sole cifre come numero):
+  # da qui arriva a tutti i nodi, ai nuovi con setup.sh e a quelli gia'
+  # installati con config.sh, voce "Allinea al template". Con la
+  # chiave presente il daemon crea il canale da solo, se manca sul
+  # companion, e setup.sh abilita il servizio 'sonar'. Vuoto = nessuna
+  # chiave: si adotta un canale gia' presente sul companion con questo
+  # nome e il servizio 'sonar' nasce disattivato. Mai nei log.
+  channel_name: "TM-Sonar"
+  channel_secret: "b7f39803ea8b9902d38ecb62c725c801"
+
+  # Trasmissione del messaggio periodico numerato (la ricezione
+  # dipende solo dal servizio 'sonar' in services:). La pianificazione
+  # è del crontab (sonar.sh), mai del daemon.
+  tx:
+    enabled: false      # true per trasmettere
+    scope: "*"          # "*" o U = unscoped; D = default del device; altrimenti una regione
+    min_interval: 600   # secondi minimi tra due invii (0 = nessuna guardia)
+
 services:
   - name: system
     enabled: true
@@ -136,3 +172,12 @@ services:
     enabled: true
     module: neighbor_monitor.service
     class: NeighborMonitorService
+
+  # Abilitato da setup.sh solo se sonar.channel_secret (sopra) contiene
+  # una chiave valida; altrimenti nasce disattivato. Sui nodi gia'
+  # installati si abilita a mano (config.sh, menu Servizi): `align` non
+  # tocca mai la lista dei servizi.
+  - name: sonar
+    enabled: __SONAR_ENABLED__
+    module: sonar.service
+    class: SonarService

@@ -1968,6 +1968,37 @@ app.get(
 );
 
 /* =========================
+   ANALYSIS API (scheda «Analysis», docs/ARCHITECTURE.md §88)
+
+   GET /api/analysis/:analysis/windows e /api/analysis/:analysis/data
+   — SOLA LETTURA dei JSON che analysis_job.js (cron, ogni due ore)
+   scrive in data/analysis/<analisi>/. Nessun calcolo qui dentro: la
+   logica degli endpoint sta in analysis_api.js, identica nel Nodo e
+   nel Collettore (che passa state/analysis); è un modulo a parte
+   perché questo file si mette in ascolto appena caricato e non si
+   può provare via HTTP.
+
+   Registrato PRIMA di express.static come tutte le altre /api/*.
+   server.js non scrive mai sul filesystem (trace-web.service ha
+   ProtectSystem=strict): data/analysis/ lo crea il job.
+========================= */
+
+require("./analysis_api").register(
+    app,
+    {
+        baseDir:
+            path.join(
+                __dirname,
+                "..",
+                "data",
+                "analysis"
+            ),
+        genericError:
+            GENERIC_ERROR_MESSAGE
+    }
+);
+
+/* =========================
    STATIC FRONTEND
 
    express.static serve già index.html di default per GET / (e per

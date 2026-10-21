@@ -25,13 +25,15 @@ fare una tantum in fase di setup del device.
 
 ### 1.1 Default region
 
-In **Experimental settings**, imposta la **default region** su `it`
+Nella parte principale del setup dell'app (nei firmware precedenti:
+in **Experimental settings**), imposta la **default region** su `it`
 — evita di trasmettere traffico di tipo *unscoped* sulla mesh.
 
 ### 1.2 Path hash size
 
-Sempre in **Experimental settings**, imposta l'**hash path size** ad
-almeno **2 byte**.
+Sempre nella parte principale del setup dell'app (nei firmware
+precedenti: in **Experimental settings**), imposta l'**hash path
+size** ad almeno **2 byte**.
 
 ### 1.3 Canale del bot
 
@@ -438,8 +440,8 @@ Lo script è diviso in tre parti, in quest'ordine:
    del server Collector su Telegram dopo che gli hai inviato la tua
    chiave pubblica (§14.2) — fai quel passo prima di arrivare a questo
    punto se non li hai già. Genera `backup.sh`,
-   `contact_sync.sh`, `rotate_contacts.sh`, `trace.sh`, tutti già
-   eseguibili.
+   `contact_sync.sh`, `rotate_contacts.sh`, `trace.sh` e
+   `cron_delay.sh`, tutti già eseguibili.
 2. **`config.yaml`** — ti chiede il tipo di connessione al companion
    MeshCore (TCP, Seriale o BLE) e i dettagli coerenti con la scelta
    (host+porta per TCP, device+baudrate per Seriale, indirizzo per
@@ -457,9 +459,10 @@ per non perdere informazioni importanti.
 
 ### Tutti i servizi sono abilitati di default
 
-Al primo setup la sezione `services:` attiva tutti i servizi di
-default; per poterli disattivare esiste un editor dedicato mostrato
-in seguito.
+Al primo setup la sezione `services:` attiva tutti i servizi:
+`system`, `trace`, `advert`, `bot`, `contact_sync`,
+`neighbor_monitor` e `sonar`. Per poterli disattivare esiste un
+editor dedicato mostrato in seguito (§13).
 
 ---
 
@@ -490,6 +493,19 @@ journalctl -u trace-mon -n 50
 journalctl -u trace-web -n 50
 ```
 
+Verifica anche che il canale del Sonar sia stato creato (o trovato)
+sul companion:
+
+```bash
+grep SonarModule ~/trace-mon/logs/trace-mon.log | tail -5
+```
+
+La riga attesa è `SonarModule: canale pronto`. Se invece compare
+`canale non utilizzabile`, il resto della riga ne spiega il motivo
+(per esempio nessuno slot di canale libero). Lo stato completo, con i
+contatori della ricezione, lo mostra `./tools/sonar_status.py`
+(da `~/trace-mon`).
+
 ---
 
 ## 12. Crontab
@@ -513,16 +529,21 @@ Esempio di configurazione, con cadenze di partenza ragionevoli:
 #
 */30 * * * * /home/meshcore/trace-mon/trace.sh > /dev/null 2>&1
 5 */2 * * * /home/meshcore/trace-mon/neighbor_monitor.sh > /dev/null 2>&1
-15 3 * * * /home/meshcore/trace-mon/floodadv.sh > /dev/null 2>&1
+5 3,9,15,21 * * * /home/meshcore/trace-mon/cron_delay.sh floodadv.sh > /dev/null 2>&1
+35 3,9,15,21 * * * /home/meshcore/trace-mon/cron_delay.sh sonar.sh > /dev/null 2>&1
+53 */2 * * * /usr/bin/node /home/meshcore/trace-mon/frontend/analysis_job.js > /dev/null 2>&1
 #
 # Maintenance
 #
-*/5 0-5 * * * /home/meshcore/trace-mon/contact_sync.sh > /dev/null 2>&1
-*/10 6-23 * * * /home/meshcore/trace-mon/contact_sync.sh > /dev/null 2>&1
+*/5 0-5 * * * /home/meshcore/trace-mon/cron_delay.sh --window 240 --quiet contact_sync.sh > /dev/null 2>&1
+*/10 6-23 * * * /home/meshcore/trace-mon/cron_delay.sh --window 240 --quiet contact_sync.sh > /dev/null 2>&1
 3 1 1 * * /home/meshcore/trace-mon/backup.sh > /dev/null 2>&1
-7 1 1 * * /home/meshcore/trace-mon/rotate_contacts.sh > /dev/null 2>&1
+7 1 1 * * /home/meshcore/trace-mon/cron_delay.sh --window 240 rotate_contacts.sh > /dev/null 2>&1
 10 3 * * 0 /usr/sbin/logrotate --state /home/meshcore/trace-mon/run/logrotate.status /home/meshcore/trace-mon/config/logrotate.conf
 ```
+
+Nella riga di `analysis_job.js` usa il percorso di Node.js verificato
+al §4 (`which node`; qui `/usr/bin/node`).
 
 Cosa fa ciascuna riga:
 - **`trace.sh`** (ogni 30 minuti) — traccia il path configurato e
@@ -532,23 +553,32 @@ Cosa fa ciascuna riga:
   configurazione — tab Repeaters). Il minuto 5, distanziato da quello
   di `trace.sh` (che gira a `:00`/`:30`), riduce il rischio che le due
   esecuzioni si sovrappongano nel caso peggiore di `neighbor_monitor.sh`.
-- **`floodadv.sh`** (una volta al giorno, alle 3:15) — invia un
-  advertisement flood.
-- **`contact_sync.sh`** (ogni 5 minuti) — sincronizza un'istantanea
-  di `contacts.db` verso il Collettore.
+- **`floodadv.sh`** (quattro volte al giorno: 3:05, 9:05, 15:05 e
+  21:05) — invia un advertisement flood.
+- **`sonar.sh`** (quattro volte al giorno: 3:35, 9:35, 15:35 e 21:35)
+  — trasmette il messaggio del Sonar.
+- **`analysis_job.js`** (ogni 2 ore, al minuto 53) — calcola i dati
+  della scheda Analysis.
+- **`contact_sync.sh`** (ogni 5 minuti dalle 0:00 alle 5:59, ogni 10
+  minuti dalle 6:00 alle 23:59) — sincronizza un'istantanea di
+  `contacts.db` verso il Collettore.
 - **`backup.sh`** / **`rotate_contacts.sh`** (il giorno 1 di ogni
   mese) — archiviano ed espellono dal database live i dati del mese
   appena concluso (trace, path osservati, neighbours dei repeater).
+- **`cron_delay.sh`** — anteposto ad alcuni job: li avvia dopo un
+  ritardo fisso, diverso per ogni nodo, così il crontab è identico
+  su tutti i nodi.
 - **logrotate** (ogni domenica alle 3:10) — ruota i log applicativi.
 
-**Le cadenze di `trace.sh`/`neighbor_monitor.sh`/`floodadv.sh` sono
-solo un punto di partenza**, non un valore prescritto: ogni
-interrogazione passa per lo stesso canale radio condiviso con il
-resto della mesh — cadenze più strette aumentano il traffico che
-generi sulla rete. Osserva il comportamento della tua rete e stringi
-o allarga questi intervalli di conseguenza; le voci di manutenzione
-(`contact_sync.sh`, backup/rotate, logrotate) invece non generano
-traffico radio, la cadenza qui data va bene praticamente sempre.
+**Le cadenze di `trace.sh`/`neighbor_monitor.sh`/`floodadv.sh`/
+`sonar.sh` sono solo un punto di partenza**, non un valore
+prescritto: ogni interrogazione e ogni flood passa per lo stesso
+canale radio condiviso con il resto della mesh — cadenze più strette
+aumentano il traffico che generi sulla rete. Osserva il comportamento
+della tua rete e stringi o allarga questi intervalli di conseguenza;
+le voci che non generano traffico radio (`analysis_job.js`,
+`contact_sync.sh`, backup/rotate, logrotate) hanno una cadenza che va
+bene praticamente sempre.
 
 **Dove finiscono i log**: nessuno di questi script scrive messaggi
 utili nell'output catturato da cron (per questo l'esempio sopra usa
@@ -677,7 +707,7 @@ cd ~/trace-mon
 
 Ti chiederà conferma prima di sovrascrivere gli script di
 manutenzione già generati (`backup.sh`, `contact_sync.sh`,
-`rotate_contacts.sh`, `trace.sh`) — rispondi di sì. Quando
+`rotate_contacts.sh`, `trace.sh`, `cron_delay.sh`) — rispondi di sì. Quando
 richiesto, inserisci esattamente il Node ID e l'IP del server
 comunicati dall'admin al passo 14.2.
 

@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8">
-    <title>MeshCore Path Explorer - Node - Info</title>
+    <title>MeshCore Path Explorer - Nodo - Info</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -12,14 +12,13 @@
 <div class="headerBar">
     <h2>trace-mon — Panoramica</h2>
     <div>
-        <a href="info_en.html" class="tabBarLink">English</a>
         <a href="index.html" class="tabBarLink">&larr; Torna alla Dashboard</a>
     </div>
 </div>
 
 <p>
 trace-mon è un sistema diagnostico per l'analisi delle tratte RF di
-una rete MeshCore. Osserva un insieme di percorsi predefiniti a
+una rete MeshCore. Osserva un insieme di path predefiniti a
 cadenza prestabilita, così da poter verificare la qualità del link
 RF nel tempo e, successivamente, metterla in relazione con gli
 eventi meteorologici verificatisi in un dato periodo.
@@ -70,17 +69,17 @@ suddivisi su alcune tabelle:
     e il path con cui l'advert è giunto fino a questo sistema. È
     un'informazione importante: mostra nel tempo come l'advert di un
     nodo raggiunge la stazione di rilevamento, con il path che cambia
-    in funzione di come performano le tratte RF lungo il percorso.</li>
+    in funzione di come performano le tratte RF lungo il path.</li>
 <li>Selezionando un nodo si vede la sua intera storia di ascolti. Un
     insieme di filtri permette di restringere l'elenco per tipo di
     nodo, per lunghezza del path, per un nodo contenuto nel path,
     oppure per nome/chiave pubblica.</li>
 <li>Nel dettaglio di un nodo, cliccando l'orario nella colonna
     <b>Received</b> di un ascolto, nella stessa pagina compare la
-    mappa del percorso seguito da quell'advert (nodo di origine,
-    ripetitori attraversati e stazione ricevente). I punti di cui non
+    mappa del path seguito da quell'advert (nodo di origine,
+    repeater attraversati e stazione ricevente). I punti di cui non
     si conosce la posizione, o il cui codice di path è ambiguo (più
-    ripetitori con lo stesso prefisso), non vengono disegnati: la
+    repeater con lo stesso prefisso), non vengono disegnati: la
     mappa indica quali mancano e il motivo.</li>
 </ul>
 
@@ -105,54 +104,54 @@ suddivisi su alcune tabelle:
 <h3>3. Repeaters</h3>
 
 <p>
-Repeaters effettua delle interrogazioni al ripetitore locale e
+Repeaters effettua delle interrogazioni al repeater locale e
 mostra i risultati su alcune tabelle:
 </p>
 
 <ul>
-<li><b>Status</b> mostra lo stato del ripetitore: dati relativi alle
+<li><b>Status</b> mostra lo stato del repeater: dati relativi alle
     sue trasmissioni, soglia di rumore rilevata, pacchetti
     trasmessi/ricevuti per tipologia di traffico (direct o
     flood). Alcuni valori derivati richiedono una spiegazione:
     <ul>
     <li><b>Airtime % (mesh, TX+RX/Uptime)</b>: percentuale di tempo,
-        rispetto all'uptime, in cui il canale radio del ripetitore è
+        rispetto all'uptime, in cui il canale radio del repeater è
         risultato occupato — sia in trasmissione che in ricezione.
         Indica quanto è "carico" il canale in quella zona, non un
         dato di conformità normativa.</li>
     <li><b>TX Duty Cycle (observed, TX/Uptime)</b>: la stessa
         percentuale calcolata sulla sola trasmissione, confrontabile
         direttamente con il "Duty Cycle" mostrato in Config, per
-        capire quanto il traffico reale si avvicina al tetto
-        impostato sul ripetitore.</li>
+        capire quanto il traffico reale si avvicina al limite
+        impostato sul repeater.</li>
     <li><b>Receive Errors (CRC Fail)</b>: numero di pacchetti che il
-        ripetitore ha rilevato fisicamente ma il cui contenuto è
+        repeater ha rilevato fisicamente ma il cui contenuto è
         arrivato corrotto (controllo CRC fallito) — causato da
         segnale debole, interferenze o sovrapposizione con altre
         trasmissioni.</li>
     <li><b>CRC Error Rate (RX)</b>: percentuale di pacchetti che
         hanno fallito il CRC rispetto al totale dei pacchetti
-        rilevati dal ripetitore (corretti più falliti) — un
+        rilevati dal repeater (corretti più falliti) — un
         indicatore sintetico della qualità di ricezione.</li>
     </ul>
     </li>
 <li><b>Telemetry</b> mostra alcuni dati rilevati dalla telemetria del
-    ripetitore.</li>
+    repeater.</li>
 <li><b>Config</b> mostra il valore di alcuni parametri impostati sul
-    ripetitore, tra cui il <b>Duty Cycle</b>: il limite di
-    trasmissione che il firmware del ripetitore si autoimpone
+    repeater, tra cui il <b>Duty Cycle</b>: il limite di
+    trasmissione che il firmware del repeater si autoimpone
     (silenzio forzato dopo ogni invio) per rispettare le normative
     locali — riguarda solo il tempo di trasmissione, mai la
     ricezione.</li>
-<li><b>Region</b> mostra i regional scope supportati dal ripetitore,
+<li><b>Region</b> mostra i regional scope supportati dal repeater,
     e quindi quali pacchetti è in grado di far transitare in base
     allo scope usato dal mittente.</li>
-<li><b>Neighbours</b> mostra la lista dei ripetitori che questo
-    ripetitore ha ricevuto tramite collegamento diretto — quali altri
-    ripetitori in zona vengono sentiti direttamente, con quale valore
+<li><b>Neighbours</b> mostra la lista dei repeater che questo
+    repeater ha ricevuto tramite collegamento diretto — quali altri
+    repeater in zona vengono sentiti direttamente, con quale valore
     di SNR e quando è stato ricevuto il loro ultimo advert. Questa
     informazione viene archiviata ogni mese, quindi resta consultabile
-    sulla piattaforma Web anche dopo un riavvio del ripetitore.</li>
+    sulla piattaforma Web anche dopo un riavvio del repeater.</li>
 </ul>
 
 <table>

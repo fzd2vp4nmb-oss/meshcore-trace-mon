@@ -56,6 +56,69 @@ h3 {
 }
 
 /* =========================
+   SELETTORE LINGUA (bandierine, v. i18n.js)
+========================= */
+
+.headerControls {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 14px;
+}
+
+.langSelector {
+
+    display: inline-flex;
+
+    align-items: center;
+
+    gap: 6px;
+}
+
+.lang-flag {
+
+    padding: 3px;
+
+    line-height: 0;
+
+    cursor: pointer;
+
+    border: 2px solid transparent;
+
+    border-radius: 4px;
+
+    background: transparent;
+
+    opacity: 0.55;
+
+    transition:
+        opacity 0.2s,
+        border-color 0.2s;
+}
+
+.lang-flag svg {
+
+    display: block;
+
+    border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.lang-flag:hover,
+.lang-flag:focus-visible {
+
+    opacity: 1;
+}
+
+.lang-flag.active {
+
+    opacity: 1;
+
+    border-color: #1e6fd9;
+}
+
+/* =========================
    FOOTER
 ========================= */
 
@@ -248,6 +311,16 @@ body.dark #themeButton {
     color: #e0e0e0;
 
     border-color: #555555;
+}
+
+body.dark .lang-flag svg {
+
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+body.dark .lang-flag.active {
+
+    border-color: #7aa7e8;
 }
 
 body.dark .footerBar {
@@ -1164,4 +1237,765 @@ body.dark .nodePathInfo {
     vertical-align: middle;
 
     border-top: 3px dashed #e69500;
+}
+
+/* =========================
+   SCHEDA ANALYSIS
+
+   Vedi docs/ARCHITECTURE.md §88 e §89. Tutte le regole sono sotto #analysisPage
+   o su classi con prefisso "analysis"/"am": nessuna regola esistente è
+   modificata. Le righe sticky e i riquadri a scorrimento seguono lo stesso
+   schema delle altre tabelle (#nodesTable, #pathTable): il ridisegno non
+   sposta il resto della pagina. Tema scuro in coda a ogni gruppo.
+========================= */
+
+/* il select globale ha min-width 700px: qui i selettori sono piccoli */
+#analysisPage select {
+
+    min-width: 0;
+
+    max-width: 100%;
+}
+
+#analysisTypeSelector {
+
+    min-width: 280px;
+}
+
+#analysisPage h4 {
+
+    margin-top: 28px;
+
+    margin-bottom: 8px;
+}
+
+#analysisPage h5 {
+
+    margin-top: 22px;
+
+    margin-bottom: 6px;
+
+    font-size: 17px;
+}
+
+.analysisInfoLine {
+
+    margin: 10px 0 6px 0;
+
+    max-width: 52em;
+
+    font-size: 17px;
+
+    line-height: 1.6;
+
+    color: #444444;
+}
+
+body.dark .analysisInfoLine {
+
+    color: #c8c8c8;
+}
+
+.analysisHelp {
+
+    margin: 10px 0;
+
+    max-width: 52em;
+
+    font-size: 17px;
+
+    line-height: 1.6;
+
+    color: #333333;
+}
+
+body.dark .analysisHelp {
+
+    color: #dcdcdc;
+}
+
+.analysisMuted {
+
+    color: #777777;
+
+    font-size: 0.92em;
+}
+
+body.dark .analysisMuted {
+
+    color: #a0a0a0;
+}
+
+/*
+   Nei blocchi di testo (aiuti, note, riepiloghi) lo span .analysisMuted ha la
+   stessa dimensione del testo che lo contiene e un grigio piu scuro (chiaro) /
+   piu chiaro (scuro) del grigio usato nelle celle delle tabelle, dove non cambia.
+*/
+.analysisHelp .analysisMuted,
+.analysisPairSummary .analysisMuted,
+.analysisInfoLine .analysisMuted,
+.analysisNotes .analysisMuted {
+
+    font-size: inherit;
+
+    color: #555555;
+}
+
+body.dark .analysisHelp .analysisMuted,
+body.dark .analysisPairSummary .analysisMuted,
+body.dark .analysisInfoLine .analysisMuted,
+body.dark .analysisNotes .analysisMuted {
+
+    color: #bdbdbd;
+}
+
+.analysisNoData {
+
+    font-style: italic;
+
+    color: #777777;
+}
+
+body.dark .analysisNoData {
+
+    color: #a0a0a0;
+}
+
+/* avviso (dati vecchi, job fallito, nessun dato): stessa palette ambra di .traceNotice */
+.analysisWarning {
+
+    margin: 10px 0;
+
+    padding: 10px 12px;
+
+    max-width: 52em;
+
+    border: 1px solid #d9a441;
+
+    border-radius: 4px;
+
+    background-color: #fff6e0;
+
+    color: #6b4c00;
+
+    font-size: 17px;
+
+    line-height: 1.55;
+}
+
+body.dark .analysisWarning {
+
+    background-color: #3a2f10;
+
+    color: #f0d090;
+
+    border-color: #8a6a20;
+}
+
+.analysisErrorText {
+
+    color: #b3261e;
+
+    font-weight: bold;
+}
+
+body.dark .analysisErrorText {
+
+    color: #ff8a80;
+}
+
+.analysisNotes {
+
+    margin: 10px 0;
+
+    padding-left: 24px;
+
+    max-width: 52em;
+
+    font-size: 17px;
+
+    line-height: 1.6;
+}
+
+/* controlli (selettori e filtri) sopra grafico, confronto e repeater */
+.analysisControls {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 14px 18px;
+
+    align-items: flex-end;
+
+    margin: 8px 0;
+}
+
+.analysisControls label {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 4px;
+
+    font-size: 13px;
+}
+
+#analysisPage input[type="text"] {
+
+    padding: 7px 8px;
+
+    min-width: 240px;
+
+    background-color: #ffffff;
+
+    color: black;
+
+    border: 1px solid #888888;
+
+    border-radius: 4px;
+}
+
+body.dark #analysisPage input[type="text"] {
+
+    background-color: #2a2a2a;
+
+    color: #e0e0e0;
+
+    border-color: #555555;
+}
+
+#analysisPairClearMap {
+
+    padding: 6px 10px;
+
+    cursor: pointer;
+
+    background: #f5f5f5;
+
+    color: black;
+
+    border: 1px solid #888888;
+
+    border-radius: 4px;
+}
+
+body.dark #analysisPairClearMap {
+
+    background: #2f2f2f;
+
+    color: #e0e0e0;
+
+    border-color: #555555;
+}
+
+/* tabelle: intestazione non sticky di default (le due a scorrimento la riattivano sotto) */
+.analysisTable th {
+
+    position: static;
+}
+
+.analysisKv {
+
+    width: auto;
+
+    min-width: 50%;
+}
+
+.analysisKv th,
+.analysisKv td {
+
+    text-align: left;
+}
+
+.analysisKv th {
+
+    white-space: nowrap;
+}
+
+tr.analysisRowError td {
+
+    background-color: rgba(179, 38, 30, 0.15);
+}
+
+/* matrice sorgente → osservatore */
+.analysisMatrix td,
+.analysisMatrix th {
+
+    vertical-align: top;
+}
+
+.analysisRowHead {
+
+    text-align: left;
+
+    min-width: 150px;
+}
+
+td.analysisMatrixCell {
+
+    text-align: left;
+
+    min-width: 190px;
+
+    cursor: pointer;
+}
+
+td.analysisMatrixCell:hover {
+
+    outline: 2px solid #4a90e2;
+
+    outline-offset: -2px;
+}
+
+td.analysisMatrixCell.selected {
+
+    outline: 3px solid #4a90e2;
+
+    outline-offset: -3px;
+}
+
+td.analysisSelfCell {
+
+    color: #777777;
+}
+
+.amLine {
+
+    margin-bottom: 2px;
+}
+
+.amSub {
+
+    font-size: 12px;
+
+    color: #444444;
+}
+
+body.dark .amSub {
+
+    color: #c0c0c0;
+}
+
+.amTag {
+
+    display: inline-block;
+
+    min-width: 48px;
+
+    padding: 0 6px;
+
+    border-radius: 9px;
+
+    font-size: 11px;
+
+    text-align: center;
+
+    color: #ffffff;
+}
+
+.amSonar {
+
+    background-color: #d9480f;
+}
+
+.amAdvert {
+
+    background-color: #1e6fd9;
+}
+
+/* istogramma: il canvas ha altezza 100% (regola globale), serve un contenitore alto */
+#analysisHistContainer {
+
+    width: 100%;
+
+    height: 380px;
+}
+
+/*
+   riquadri a scorrimento delle tre tabelle lunghe (due di coppia, repeater):
+   un <div> attorno alla tabella invece di display:block sulla tabella, così
+   la tabella resta larga come il riquadro (con display:block si restringe
+   al contenuto). Il ridisegno non sposta il resto della pagina (stesso
+   scopo di #nodesTable/#pathTable).
+*/
+.analysisScroll {
+
+    overflow: auto;
+}
+
+.analysisScrollPair {
+
+    max-height: 420px;
+}
+
+.analysisScrollRep {
+
+    max-height: 600px;
+}
+
+.analysisScroll table {
+
+    margin-top: 0;
+}
+
+/* confronto di coppia */
+.analysisPairTable th {
+
+    position: sticky;
+
+    top: 0;
+}
+
+td.analysisPathCell {
+
+    text-align: left;
+
+    line-height: 1.9;
+}
+
+.analysisPairToggle {
+
+    width: 16px;
+
+    height: 16px;
+
+    cursor: pointer;
+}
+
+tr.analysisPairSelectedRow td {
+
+    background-color: rgba(74, 144, 226, 0.22);
+}
+
+.analysisHop {
+
+    display: inline-block;
+
+    padding: 0 5px;
+
+    border: 1px solid #aaaaaa;
+
+    border-radius: 4px;
+
+    background-color: rgba(255, 255, 255, 0.55);
+
+    color: black;
+}
+
+body.dark .analysisHop {
+
+    background-color: rgba(0, 0, 0, 0.35);
+
+    color: #e0e0e0;
+
+    border-color: #777777;
+}
+
+/* posizioni «profonde» (≥ 9, ultimo hop escluso): la prova che conta */
+.analysisHopDeep {
+
+    border-color: #c77700;
+
+    background-color: rgba(255, 190, 70, 0.55);
+
+    font-weight: bold;
+}
+
+body.dark .analysisHopDeep {
+
+    border-color: #e0a030;
+
+    background-color: rgba(200, 130, 20, 0.45);
+}
+
+.analysisHopUnknown {
+
+    border-style: dashed;
+
+    font-style: italic;
+}
+
+.analysisEnd {
+
+    font-weight: bold;
+}
+
+.analysisBadge {
+
+    display: inline-block;
+
+    padding: 0 7px;
+
+    border-radius: 9px;
+
+    background-color: #6f42c1;
+
+    color: #ffffff;
+
+    font-size: 12px;
+
+    white-space: nowrap;
+}
+
+.analysisPairSummary {
+
+    margin: 10px 0;
+
+    max-width: 52em;
+
+    font-size: 17px;
+
+    line-height: 1.6;
+}
+
+.analysisMapBar {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 12px;
+
+    align-items: center;
+
+    margin: 14px 0 6px 0;
+}
+
+.analysisMapBar .nodePathCaption {
+
+    margin-bottom: 0;
+
+    font-size: 17px;
+
+    line-height: 1.5;
+}
+
+.analysisSwatch {
+
+    display: inline-block;
+
+    width: 12px;
+
+    height: 12px;
+
+    margin: 0 4px;
+
+    vertical-align: middle;
+
+    border-radius: 2px;
+}
+
+#analysisPairMap {
+
+    width: 100%;
+
+    height: 500px;
+
+    border: 1px solid #cccccc;
+
+    border-radius: 4px;
+
+    overflow: hidden;
+}
+
+body.dark #analysisPairMap {
+
+    border-color: #555555;
+}
+
+/* repeater visti in profondità: intestazione su due righe, entrambe sticky */
+.analysisRepeatersTable thead th {
+
+    position: sticky;
+
+    top: 0;
+
+    height: 28px;
+
+    box-sizing: border-box;
+}
+
+.analysisRepeatersTable thead tr:nth-child(2) th {
+
+    top: 28px;
+}
+
+td.analysisRepName {
+
+    text-align: left;
+}
+
+.analysisStatus {
+
+    display: inline-block;
+
+    padding: 1px 8px;
+
+    border-radius: 9px;
+
+    font-size: 12px;
+
+    white-space: nowrap;
+
+    color: #ffffff;
+}
+
+.analysisStatus_proven {
+
+    background-color: #1f7a3d;
+}
+
+.analysisStatus_indication {
+
+    background-color: #b36b00;
+}
+
+.analysisStatus_messages_only {
+
+    background-color: #5b6770;
+}
+
+/* =========================
+   §89: limiti operativi (pannello 6) e verdetto sugli hop
+========================= */
+
+/* hop che l'altro tipo di pacchetto NON avrebbe superato (tetto noto più basso della posizione) */
+.analysisHopStop {
+
+    border-color: #b3261e;
+
+    border-width: 2px;
+
+    background-color: rgba(220, 60, 50, 0.28);
+}
+
+body.dark .analysisHopStop {
+
+    border-color: #ff6b61;
+
+    background-color: rgba(220, 60, 50, 0.40);
+}
+
+/* tetto in fase di cambio: l'altro tipo potrebbe essere stato fermato qui */
+.analysisHopMaybe {
+
+    border-color: #9a5a00;
+
+    border-width: 2px;
+
+    border-style: dotted;
+}
+
+body.dark .analysisHopMaybe {
+
+    border-color: #e0a030;
+}
+
+.analysisHopCap {
+
+    margin-left: 3px;
+
+    font-size: 10px;
+
+    font-weight: bold;
+}
+
+/* verdetto «l'altro tipo poteva seguire?»: stessi colori nei badge, nel confronto e nel pannello 5 */
+.analysisBadgeStop {
+
+    background-color: #b3261e;
+}
+
+.analysisBadgeMaybe {
+
+    background-color: #9a5a00;
+}
+
+.analysisBadgeOpen {
+
+    background-color: #1f7a3d;
+}
+
+.analysisBadgeNone {
+
+    background-color: #5b6770;
+}
+
+/* repeater aggiunto durante il periodo (§90) */
+.analysisBadgeNew {
+
+    background-color: #0b7285;
+}
+
+.analysisBadgeRow {
+
+    margin-top: 3px;
+}
+
+/* impostazione o tetto: ultimo valore letto quando a fine periodo non è noto (attenuato) */
+.analysisCapLast {
+
+    border-bottom: 1px dotted currentColor;
+
+    cursor: help;
+}
+
+/* impostazione o tetto incerto: il cambio è avvenuto tra due letture */
+.analysisCapRange {
+
+    border-bottom: 1px dotted currentColor;
+
+    cursor: help;
+}
+
+.analysisScrollLimits {
+
+    max-height: 480px;
+}
+
+/* tabella dei limiti: intestazione su due righe, entrambe sticky (come i repeater del pannello 5) */
+.analysisLimitsTable thead th {
+
+    position: sticky;
+
+    top: 0;
+
+    height: 28px;
+
+    box-sizing: border-box;
+}
+
+.analysisLimitsTable thead tr:nth-child(2) th {
+
+    top: 28px;
+}
+
+.analysisGatewaysTable thead th {
+
+    position: sticky;
+
+    top: 0;
+}
+
+/* repeater con un cambio di tetti nel periodo */
+tr.analysisRowChanged td {
+
+    background-color: rgba(255, 190, 70, 0.20);
+}
+
+body.dark tr.analysisRowChanged td {
+
+    background-color: rgba(200, 130, 20, 0.25);
+}
+
+/* valore visto in una sola lettura: non confermato */
+.analysisCapSingle {
+
+    font-style: italic;
+
+    border-bottom: 1px dotted currentColor;
+
+    cursor: help;
 }

@@ -328,9 +328,10 @@ HEADER_COMMENT = """\
 #     nessun segreto: si adotta un canale già presente sul companion).
 #     Riservato: non condividerlo fuori dalla rete dei nodi
 #   tx.enabled — true per trasmettere il messaggio sonar (la ricezione
-#     dipende solo dal servizio 'sonar' qui sotto)
+#     dipende solo dal servizio 'sonar' qui sotto). Default del
+#     template: true (docs/ARCHITECTURE.md §91)
 #   tx.scope — scope dell'invio: "*" o U = unscoped, D = default del
-#     device, altrimenti il nome di una regione
+#     device, altrimenti il nome di una regione. Default del template: D
 #   tx.min_interval — secondi minimi tra due invii (0 = nessuna guardia)
 #   La pianificazione degli invii è del crontab (sonar.sh), non di
 #   questo file.

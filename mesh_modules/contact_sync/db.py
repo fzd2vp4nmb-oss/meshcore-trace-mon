@@ -243,6 +243,8 @@ CREATE TABLE IF NOT EXISTS telegram_settings (
 -- altra tabella di questo file (idempotente, nessuna riga esistente
 -- toccata, nessuna voce in MIGRATIONS: non sono colonne aggiunte a
 -- tabelle già in uso). Scritte SOLO dal servizio 'sonar' del daemon.
+-- Ruotate ogni mese da tools/rotate_sonar_advert.py (§87.17): il
+-- progressivo sonar_tx.seq NON riparte (v. AUTOINCREMENT sotto).
 -- ---------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS sonar_tx (
@@ -360,6 +362,61 @@ CREATE INDEX IF NOT EXISTS idx_sonar_rx_observed
 
 CREATE INDEX IF NOT EXISTS idx_sonar_rx_pkt_hash
     ON sonar_rx(pkt_hash);
+
+-- ---------------------------------------------------------------
+-- Registro degli advert TRASMESSI da questo nodo
+-- (mesh_modules/advert/advert.py, docs/ARCHITECTURE.md §87.17)
+--
+-- Tabella NUOVA, stesso criterio delle due sonar: CREATE TABLE IF NOT
+-- EXISTS, nessuna riga esistente toccata, nessuna voce in MIGRATIONS.
+-- Serve all'analisi della propagazione (advert contro messaggi
+-- sonar): la parte «ricevuta» degli advert sta in path_observations,
+-- questa è la parte «trasmessa», che prima non lasciava traccia nel
+-- database. Una riga per TENTATIVO di invio fatto dal daemon (comando
+-- IPC 'advert' o 'floodadv', cioè anche da advert.sh/floodadv.sh): gli
+-- advert mandati in altro modo (tasto o app sul companion) NON passano
+-- di qui e non compaiono. Ruotata ogni mese insieme alle due tabelle
+-- sonar (tools/rotate_sonar_advert.py).
+-- ---------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS advert_tx (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at     INTEGER NOT NULL,
+                   -- istante (epoch, orologio locale) subito PRIMA di
+                   -- chiedere l'invio al companion
+    src_prefix     TEXT,
+                   -- primi 8 esadecimali della chiave pubblica del
+                   -- companion al momento dell'invio (come
+                   -- sonar_tx.src_prefix: lega la riga alle
+                   -- path_observations degli altri nodi, dove la
+                   -- chiave è public_key). NULL se self_info non era
+                   -- disponibile.
+    kind           TEXT NOT NULL
+                   CHECK (kind IN ('flood', 'zero_hop')),
+                   -- flood:    comando 'floodadv' (inoltrato dai repeater)
+                   -- zero_hop: comando 'advert' (sentito solo dai vicini
+                   --           diretti)
+    status         TEXT NOT NULL
+                   CHECK (status IN ('sent', 'failed', 'unknown')),
+                   -- sent:    il companion ha accettato il comando (conferma
+                   --          locale, NON la prova che il pacchetto sia in
+                   --          aria né che qualcuno l'abbia ricevuto)
+                   -- failed:  rifiuto esplicito del firmware: NESSUN invio
+                   -- unknown: esito incerto (timeout in attesa della
+                   --          risposta, o errore di trasporto): il pacchetto
+                   --          potrebbe essere partito. Stessa distinzione di
+                   --          sonar_tx.status. Non c'è 'pending': la riga si
+                   --          scrive a invio concluso, il progressivo non
+                   --          serve (nessuna serie numerata come nel sonar).
+    sent_at        INTEGER,
+                   -- istante in cui il companion ha accettato l'invio
+                   -- (solo status 'sent')
+    error          TEXT
+                   -- motivo sintetico se status è 'failed' o 'unknown'
+);
+
+CREATE INDEX IF NOT EXISTS idx_advert_tx_created
+    ON advert_tx(created_at);
 """
 
 #
@@ -522,6 +579,22 @@ SONAR_TX_PENDING = "pending"
 SONAR_TX_SENT = "sent"
 SONAR_TX_FAILED = "failed"
 SONAR_TX_UNKNOWN = "unknown"
+
+#
+# Registro degli advert trasmessi (advert_tx, v. SCHEMA): tipo e stati
+# ammessi, più il tetto sul testo dell'errore (stessa logica di
+# difesa in profondità dei limiti sopra: il testo viene dal payload
+# dell'errore restituito dalla libreria). Costanti qui per non
+# duplicare le stringhe in mesh_modules/advert/advert.py.
+#
+MAX_ADVERT_ERROR_LEN = 256
+
+ADVERT_KIND_FLOOD = "flood"
+ADVERT_KIND_ZERO_HOP = "zero_hop"
+
+ADVERT_TX_SENT = "sent"
+ADVERT_TX_FAILED = "failed"
+ADVERT_TX_UNKNOWN = "unknown"
 
 
 def _serialize_device_telemetry(telemetry):
@@ -1283,6 +1356,50 @@ class ContactDB:
         )
 
         self._conn.commit()
+
+    # ---------------------------------------------------------------
+    # Registro degli advert trasmessi (docs/ARCHITECTURE.md §87.17)
+    # ---------------------------------------------------------------
+
+    def insert_advert_tx(
+        self,
+        created_at,
+        kind,
+        status,
+        src_prefix=None,
+        sent_at=None,
+        error=None
+    ):
+        """
+        Registra un TENTATIVO di invio di advert fatto dal daemon: una
+        riga per tentativo, scritta a invio concluso con il suo esito
+        (a differenza di sonar_tx non c'è una riserva 'pending' prima:
+        nessun progressivo da proteggere). 'kind' deve essere 'flood' o
+        'zero_hop' e 'status' uno tra 'sent', 'failed', 'unknown' — i
+        CHECK dello schema rifiutano altro (sqlite3.IntegrityError).
+        Ritorna l'id della riga.
+        """
+
+        cur = self._conn.execute(
+            """
+            INSERT INTO advert_tx (
+                created_at, src_prefix, kind, status, sent_at, error
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                created_at,
+                src_prefix,
+                kind,
+                status,
+                sent_at,
+                _clamp_text(error, MAX_ADVERT_ERROR_LEN)
+            )
+        )
+
+        self._conn.commit()
+
+        return cur.lastrowid
 
     def insert_repeater_neighbours(
         self,

@@ -263,6 +263,47 @@ const SNR_RED_LIMIT =
 const SNR_GREEN_LIMIT =
     4.6;
 
+//
+// Etichette dei selettori «archivio» (Data Source di Trace, Period di Nodes
+// e di Repeaters): il server manda {id, label} con la label in inglese
+// ("Live", "October 2026"), ma la selezione dipende solo dall'id (nome del
+// file di backup): la label è soltanto testo, quindi qui la si ricostruisce
+// nella lingua scelta (v. i18n.js). Se l'id non ha la forma attesa si usa la
+// label del server così com'è.
+//
+function localizeArchiveLabel(source) {
+
+    if (
+        source.id === "live"
+    ) {
+
+        return tl("common.live");
+    }
+
+    const m =
+        /-(\d{4})-(\d{2})\.json\.gz$/.exec(
+            String(source.id)
+        );
+
+    const months =
+        tl("common.monthNames").split(",");
+
+    const month =
+        m ? parseInt(m[2], 10) : 0;
+
+    if (
+        m &&
+        month >= 1 &&
+        month <= 12 &&
+        months.length === 12
+    ) {
+
+        return `${months[month - 1]} ${m[1]}`;
+    }
+
+    return source.label;
+}
+
 async function loadDataSources() {
 
     const selector =
@@ -314,7 +355,7 @@ async function loadDataSources() {
                     source.id;
 
                 opt.textContent =
-                    source.label;
+                    localizeArchiveLabel(source);
 
                 selector.appendChild(
                     opt
@@ -480,7 +521,7 @@ async function loadData() {
         ) {
 
             table.innerHTML =
-                "<tr><td>Error loading data.</td></tr>";
+                `<tr><td>${tle("common.errorLoadingData")}</td></tr>`;
         }
     }
 }
@@ -615,10 +656,10 @@ function resolveNodeName(
         matches.length > 1
     ) {
 
-        return "Ambiguous";
+        return tl("common.ambiguous");
     }
 
-    return "Unknown";
+    return tl("common.unknown");
 }
 
 function buildPathTooltip(
@@ -922,6 +963,31 @@ function updateView() {
    TABLE
 ========================= */
 
+//
+// Etichetta di una colonna della tabella Scheduled Trace-Path: le chiavi delle
+// righe (parser.js) sono dati, non testo ("timestamp", "status" e gli elementi
+// di path "X→Y"). Solo le prime due hanno un'etichetta tradotta; gli elementi
+// di path restano come sono.
+//
+function traceColumnLabel(column) {
+
+    if (
+        column === "timestamp"
+    ) {
+
+        return tle("trace.colTimestamp");
+    }
+
+    if (
+        column === "status"
+    ) {
+
+        return tle("trace.colStatus");
+    }
+
+    return column;
+}
+
 function renderTable(rows, pathKey) {
 
     const table =
@@ -944,7 +1010,7 @@ function renderTable(rows, pathKey) {
         // path selezionato e non sono note quando non ci sono righe.
         //
         table.innerHTML =
-            "<tr><td>No trace data available for this path.</td></tr>";
+            `<tr><td>${tle("trace.noData")}</td></tr>`;
         return;
     }
 
@@ -968,7 +1034,7 @@ function renderTable(rows, pathKey) {
             }
             else {
                 html +=
-                    `<th>${c}</th>`;
+                    `<th>${traceColumnLabel(c)}</th>`;
             }
         }
     );
@@ -1099,7 +1165,7 @@ function renderStats(
         );
 
     let html =
-        "<tr><th>Path Element</th><th>Avg</th><th>Min</th><th>Max</th></tr>";
+        `<tr><th>${tle("trace.statsPathElement")}</th><th>Avg</th><th>Min</th><th>Max</th></tr>`;
 
     //
     // Allineato allo stile Repeaters (renderNeighboursTable): header
@@ -1144,7 +1210,7 @@ function renderStats(
         entries.length === 0
     ) {
 
-        html += "<tr><td colspan=\"4\">No stats data available.</td></tr>";
+        html += `<tr><td colspan="4">${tle("trace.noStats")}</td></tr>`;
     }
 
     table.innerHTML =
@@ -1348,7 +1414,7 @@ function renderChart(
     document.getElementById(
         "rangeInfo"
     ).textContent =
-        `Showing ${observations} observations`;
+        tln("trace.showingObservations", observations);
 
     const ctx =
         document.getElementById(
@@ -2520,14 +2586,14 @@ async function loadTraceDetail(
                 } else {
 
                     notices.push(
-                        `Posizione del nodo locale (SRC) non disponibile: ${describeUnusableCoordinates(status.adv_lat, status.adv_lon)}.`
+                        tl("trace.srcPositionUnavailable", { reason: describeUnusableCoordinates(status.adv_lat, status.adv_lon) })
                     );
                 }
 
             } else {
 
                 notices.push(
-                    "Posizione del nodo locale (SRC) non disponibile: il Companion collegato non ha ancora fornito coordinate GPS."
+                    tl("common.srcPositionNoGps")
                 );
             }
 
@@ -2548,7 +2614,7 @@ async function loadTraceDetail(
             );
 
             notices.push(
-                "Impossibile leggere la posizione del nodo locale (SRC) da /api/device_status."
+                tl("trace.srcPositionReadError")
             );
         }
     }
@@ -2613,7 +2679,7 @@ async function loadTraceDetail(
                 } else {
 
                     notices.push(
-                        `Posizione di ${resolveNodeName(id)} (${id}) non disponibile: ${describeUnusableCoordinates(resolved.lat, resolved.lon)}.`
+                        tl("trace.nodePositionUnusable", { name: resolveNodeName(id), id: id, reason: describeUnusableCoordinates(resolved.lat, resolved.lon) })
                     );
                 }
 
@@ -2622,7 +2688,7 @@ async function loadTraceDetail(
             ) {
 
                 notices.push(
-                    `Posizione di ${resolveNodeName(id)} (${id}) non disponibile in contacts.db.`
+                    tl("trace.nodePositionMissing", { name: resolveNodeName(id), id: id })
                 );
 
             } else if (
@@ -2630,13 +2696,13 @@ async function loadTraceDetail(
             ) {
 
                 notices.push(
-                    `Prefisso "${id}" ambiguo: più nodi corrispondono, impossibile determinare quale mostrare.`
+                    tl("trace.prefixAmbiguous", { id: id })
                 );
 
             } else {
 
                 notices.push(
-                    `Nodo ${id} non trovato in contacts.db.`
+                    tl("trace.nodeNotFound", { id: id })
                 );
             }
         }
@@ -2647,7 +2713,7 @@ async function loadTraceDetail(
     ) {
 
         notices.push(
-            "Questa traccia è andata in TIMEOUT: il percorso disegnato è quello CONFIGURATO per il path, non necessariamente quello realmente seguito dai pacchetti (v. trace.sh)."
+            tl("trace.timeoutNotice")
         );
     }
 
@@ -2682,7 +2748,7 @@ async function loadTraceDetail(
 
             const label =
                 id === "SRC" ?
-                    "SRC (nodo locale)" :
+                    tl("common.srcLocalNode") :
                     `${resolveNodeName(id)} (${id})`;
 
             L.marker(
@@ -2855,7 +2921,7 @@ async function loadTraceDetail(
     } else {
 
         notices.push(
-            "Nessuna posizione risolvibile per questa traccia: impossibile mostrare la mappa."
+            tl("trace.noMapPositions")
         );
     }
 
@@ -3347,7 +3413,7 @@ const NODE_TYPE_NAMES = {
 
 function formatNodeType(t) {
 
-    return NODE_TYPE_NAMES[t] || `unknown (${t})`;
+    return NODE_TYPE_NAMES[t] || tl("nodes.typeUnknown", { t: t });
 }
 
 //
@@ -3381,7 +3447,7 @@ function formatDateFull(d) {
 
 function formatUnixTime(ts) {
 
-    if (!ts) return "never";
+    if (!ts) return tl("common.never");
 
     return formatDateFull(
         new Date(ts * 1000)
@@ -3441,7 +3507,7 @@ function splitAdvertPathHops(hopCount, pathHex) {
 function buildAdvertPathHtml(hopCount, pathHex) {
 
     if (hopCount === null || hopCount === undefined) {
-        return "not observed";
+        return tle("nodes.notObserved");
     }
 
     const hops = splitAdvertPathHops(hopCount, pathHex);
@@ -3575,7 +3641,7 @@ async function loadNodesTab() {
         );
 
         table.innerHTML =
-            "<tr><td>Error loading data.</td></tr>";
+            `<tr><td>${tle("common.errorLoadingData")}</td></tr>`;
     }
 }
 
@@ -3641,7 +3707,7 @@ async function populateNodesArchiveSelector() {
                     source.id;
 
                 opt.textContent =
-                    source.label;
+                    localizeArchiveLabel(source);
 
                 selector.appendChild(
                     opt
@@ -4004,7 +4070,7 @@ function updateNodeHopCountMaxHint() {
 
         hopCountLabel.setAttribute(
             "data-tooltip",
-            `Con "Path length" su ${lengthSelect.value} byte, il massimo hop count possibile è ${maxHops} (buffer path del firmware: ${OUT_PATH_BUFFER_BYTES} byte).`
+            tl("nodes.hopCountMaxHint", { length: lengthSelect.value, max: maxHops, buffer: OUT_PATH_BUFFER_BYTES })
         );
     }
 }
@@ -4338,7 +4404,7 @@ function updateNodeDistanceFilterAvailability() {
 
             distanceLabel.setAttribute(
                 "data-tooltip",
-                "Posizione del nodo locale (SRC) non disponibile: il Companion collegato non ha ancora fornito coordinate GPS."
+                tl("common.srcPositionNoGps")
             );
         }
     }
@@ -4365,16 +4431,12 @@ function updateNodesPeriodFilterAvailability() {
         {
             checkboxId: "nodeNotObservedFilter",
             tooltip:
-                "Disponibile solo per il periodo Live: un mese " +
-                "archiviato elenca solo i nodi effettivamente " +
-                "osservati in quel mese."
+                tl("nodes.liveOnlyNotObserved")
         },
         {
             checkboxId: "nodeFutureAdvertFilter",
             tooltip:
-                "Disponibile solo per il periodo Live: confronta " +
-                "l'Advert Time con l'orologio di adesso, non ha " +
-                "senso su un mese archiviato."
+                tl("nodes.liveOnlyFutureAdvert")
         }
     ].forEach(
         ({ checkboxId, tooltip }) => {
@@ -5118,7 +5180,7 @@ async function loadDeviceStatus() {
         );
 
         table.innerHTML =
-            "<tr><td>Error loading device status.</td></tr>";
+            `<tr><td>${tle("nodes.deviceStatusError")}</td></tr>`;
 
         //
         // Stesso motivo del ramo "!status" di renderDeviceStatusTable():
@@ -5186,7 +5248,7 @@ function renderNodesDeviceName(
             status.device_name !== ""
         )
             ? status.device_name
-            : "(unknown)";
+            : tl("common.unknownParen");
 }
 
 function renderDeviceStatusTable(
@@ -5207,7 +5269,7 @@ function renderDeviceStatusTable(
     ) {
 
         table.innerHTML =
-            "<tr><td>No device status data available.</td></tr>";
+            `<tr><td>${tle("nodes.deviceStatusNone")}</td></tr>`;
 
         return;
     }
@@ -5260,26 +5322,26 @@ function renderDeviceStatusTable(
     // §34).
     //
     table.innerHTML = `
-        <tr><th data-tooltip="Tempo trascorso dall'ultimo aggiornamento dei dati del companion locale mostrati in questa tabella (letti a intervalli da trace-mon, non in tempo reale).">Updated</th><td>${formatSecsAgo(secsAgo)}</td></tr>
-        <tr><th data-tooltip="Tensione della batteria, riportata dal device in millivolt e convertita qui in Volt.">Battery</th><td>${status.battery_mv != null ? (status.battery_mv / 1000).toFixed(2) + "V" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Tempo trascorso dall'ultimo avvio del device, nel formato giorni/ore/minuti.">Uptime</th><td>${formatDurationLong(status.uptime_secs)}</td></tr>
-        <tr><th data-tooltip="Rumore di fondo del canale radio misurato dal chip, in dBm. Valori più negativi indicano un canale più silenzioso; un innalzamento persistente segnala interferenze o canale affollato.">Noise Floor</th><td>${status.noise_floor != null ? status.noise_floor + " dBm" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Potenza del segnale (RSSI, in dBm) dell'ultimo pacchetto ricevuto. Più vicino a 0 = segnale più forte.">Last RSSI</th><td>${status.last_rssi != null ? status.last_rssi + " dBm" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Rapporto segnale/rumore (SNR, in dB) dell'ultimo pacchetto ricevuto: quanto il segnale utile emerge sul rumore di fondo. Valori più alti indicano una ricezione più pulita.">Last SNR</th><td>${status.last_snr != null ? status.last_snr + " dB" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Numero di pacchetti attualmente in coda in attesa di trasmissione, sul totale della coda disponibile. Una coda spesso piena indica che il canale radio non riesce a smaltire il traffico alla velocità con cui viene generato.">TX Queue</th><td>${status.queue_len != null ? status.queue_len + " / 16" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Bitmask di eventi del dispatcher radio a basso livello (es. coda piena, timeout CAD, timeout di avvio ricezione) — NON un conteggio di pacchetti, né lo stesso dato di &quot;Receive Errors (CRC Fail)&quot; qui sotto nonostante il nome simile.">Error Flags (bitmask)</th><td>${status.errors ?? "n/a"}</td></tr>
-        <tr><th data-tooltip="Totale dei pacchetti ricevuti dal boot che hanno superato il controllo CRC e sono arrivati al livello mesh (somma di flood + direct).">Packets Received</th><td>${status.recv != null ? status.recv + " pkts" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Totale dei pacchetti trasmessi dal boot (somma di flood + direct).">Packets Sent</th><td>${status.sent != null ? status.sent + " pkts" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Pacchetti trasmessi suddivisi per modalità di instradamento: in flood (rilanciati da tutti i nodi che li sentono) o diretti (instradati verso un percorso specifico).">Sent (Flood | Direct)</th><td>${status.flood_tx != null ? status.flood_tx + " pkts" : "n/a"} | ${status.direct_tx != null ? status.direct_tx + " pkts" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Pacchetti ricevuti suddivisi per la modalità di instradamento con cui sono arrivati: flood o diretti.">Received (Flood | Direct)</th><td>${status.flood_rx != null ? status.flood_rx + " pkts" : "n/a"} | ${status.direct_rx != null ? status.direct_rx + " pkts" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Pacchetti fisicamente ricevuti dal chip radio (preambolo/sync/header validi) il cui payload però ha fallito il controllo CRC in lettura. Non indica solo collisioni: anche segnale debole, interferenze o un pacchetto troncato producono lo stesso effetto.">Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : "n/a"}</td></tr>
-        <tr><th data-tooltip="Percentuale di pacchetti fisicamente ricevuti persi per errore CRC: Receive Errors / (Packets Received + Receive Errors) × 100. Mostra n/a se non è stato fisicamente ricevuto alcun pacchetto.">CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.recv)}</td></tr>
-        <tr><th data-tooltip="Tempo cumulativo, dall'avvio, passato rispettivamente a trasmettere e a ricevere pacchetti effettivi (non il tempo totale con la radio accesa).">Airtime (TX | RX)</th><td>${formatDurationLong(status.tx_air_secs)} | ${formatDurationLong(status.rx_air_secs)}</td></tr>
-        <tr><th data-tooltip="Percentuale di uptime in cui il canale è stato occupato da traffico, proprio in TX più altrui rilevato in RX: (Airtime TX + Airtime RX) / Uptime × 100. Indica quanto è congestionata la mesh nei dintorni, non il rispetto di un limite normativo.">Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.tx_air_secs, status.rx_air_secs, status.uptime_secs)}</td></tr>
-        <tr><th data-tooltip="Percentuale di uptime passata in trasmissione: Airtime TX / Uptime × 100. Solo TX: confrontabile direttamente con &quot;Duty Cycle&quot; nella tabella Config dei Repeaters (anch'esso solo TX) per vedere quanto ci si avvicina al limite impostato.">TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.tx_air_secs, status.uptime_secs)}</td></tr>
-        <tr><th data-tooltip="Versione e build del firmware in esecuzione sul device companion collegato localmente a trace-mon, riportata da una query diretta al device (non un comando CLI come per i Repeaters).">Firmware Version</th><td>${escapeHtml(status.fw_version ?? "n/a")}${status.fw_build ? ` (${escapeHtml(status.fw_build)})` : ""}</td></tr>
-        <tr><th data-tooltip="Modello hardware del device companion collegato localmente a trace-mon (es. la scheda su cui gira il firmware), riportato da una query diretta al device.">Hardware</th><td>${escapeHtml(status.model ?? "n/a")}</td></tr>
-        <tr><th data-tooltip="Parametri di configurazione radio LoRa: Freq = frequenza operativa (MHz), SF = Spreading Factor, BW = larghezza di banda (kHz), CR = Coding Rate. Insieme determinano il compromesso tra portata, velocità di trasmissione e resistenza al rumore. CR mostrato in convenzione RAW RadioLib (5-8): il valore effettivo della formula standard è raw-4 (es. CR=8 raw → 4/8).">Radio settings (Freq | SF | BW | CR)</th><td>${status.radio_freq != null ? status.radio_freq + " MHz" : "n/a"} | ${status.radio_sf ?? "n/a"} | ${status.radio_bw != null ? status.radio_bw + " kHz" : "n/a"} | ${status.radio_cr ?? "n/a"}</td></tr>
+        <tr><th data-tooltip="${tle("tip.updated")}">Updated</th><td>${formatSecsAgo(secsAgo)}</td></tr>
+        <tr><th data-tooltip="${tle("tip.battery")}">Battery</th><td>${status.battery_mv != null ? (status.battery_mv / 1000).toFixed(2) + "V" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.uptime")}">Uptime</th><td>${formatDurationLong(status.uptime_secs)}</td></tr>
+        <tr><th data-tooltip="${tle("tip.noiseFloor")}">Noise Floor</th><td>${status.noise_floor != null ? status.noise_floor + " dBm" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.lastRssi")}">Last RSSI</th><td>${status.last_rssi != null ? status.last_rssi + " dBm" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.lastSnr")}">Last SNR</th><td>${status.last_snr != null ? status.last_snr + " dB" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.txQueue")}">TX Queue</th><td>${status.queue_len != null ? status.queue_len + " / 16" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.errorFlags")}">Error Flags (bitmask)</th><td>${status.errors ?? tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.packetsReceived")}">Packets Received</th><td>${status.recv != null ? status.recv + " pkts" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.packetsSent")}">Packets Sent</th><td>${status.sent != null ? status.sent + " pkts" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.sent")}">Sent (Flood | Direct)</th><td>${status.flood_tx != null ? status.flood_tx + " pkts" : tl("common.na")} | ${status.direct_tx != null ? status.direct_tx + " pkts" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.received")}">Received (Flood | Direct)</th><td>${status.flood_rx != null ? status.flood_rx + " pkts" : tl("common.na")} | ${status.direct_rx != null ? status.direct_rx + " pkts" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.receiveErrors")}">Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : tl("common.na")}</td></tr>
+        <tr><th data-tooltip="${tle("tip.crcErrorRate")}">CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.recv)}</td></tr>
+        <tr><th data-tooltip="${tle("tip.airtime")}">Airtime (TX | RX)</th><td>${formatDurationLong(status.tx_air_secs)} | ${formatDurationLong(status.rx_air_secs)}</td></tr>
+        <tr><th data-tooltip="${tle("tip.airtimePercent")}">Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.tx_air_secs, status.rx_air_secs, status.uptime_secs)}</td></tr>
+        <tr><th data-tooltip="${tle("tip.txDutyCycle")}">TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.tx_air_secs, status.uptime_secs)}</td></tr>
+        <tr><th data-tooltip="${tle("tip.firmwareVersion")}">Firmware Version</th><td>${escapeHtml(status.fw_version ?? tl("common.na"))}${status.fw_build ? ` (${escapeHtml(status.fw_build)})` : ""}</td></tr>
+        <tr><th data-tooltip="${tle("tip.hardware")}">Hardware</th><td>${escapeHtml(status.model ?? tl("common.na"))}</td></tr>
+        <tr><th data-tooltip="${tle("tip.radioSettings")}">Radio settings (Freq | SF | BW | CR)</th><td>${status.radio_freq != null ? status.radio_freq + " MHz" : tl("common.na")} | ${status.radio_sf ?? tl("common.na")} | ${status.radio_bw != null ? status.radio_bw + " kHz" : tl("common.na")} | ${status.radio_cr ?? tl("common.na")}</td></tr>
         ${buildDeviceTelemetryRowsHtml(status.telemetry)}
     `;
 }
@@ -5317,7 +5379,7 @@ function updateNodesHeading(nodes) {
         ).length;
 
     heading.textContent =
-        `Known Nodes - ${total} (${chatCount} chat | ${repeaterCount} repeaters | ${roomServerCount} room server)`;
+        tl("nodes.heading", { total: total, chat: chatCount, repeaters: repeaterCount, rooms: roomServerCount });
 }
 
 function renderNodesTable(
@@ -5334,13 +5396,13 @@ function renderNodesTable(
         );
 
     let html =
-        "<tr><th>Name</th><th>Type</th><th>Advert Time</th><th>Path</th></tr>";
+        `<tr><th>${tle("nodes.colName")}</th><th>${tle("nodes.colType")}</th><th>${tle("nodes.colAdvertTime")}</th><th>Path</th></tr>`;
 
     nodes.forEach(
         n => {
 
             html += "<tr>";
-            html += `<td><a href="#" class="nodeLink" data-key="${escapeHtml(n.public_key)}">${escapeHtml(n.adv_name) || "(unknown)"}</a></td>`;
+            html += `<td><a href="#" class="nodeLink" data-key="${escapeHtml(n.public_key)}">${escapeHtml(n.adv_name) || tl("common.unknownParen")}</a></td>`;
             html += `<td>${formatNodeType(n.node_type)}</td>`;
             html += `<td>${formatUnixTime(n.last_advert)}</td>`;
             html += `<td>${buildAdvertPathHtml(n.hop_count, n.path_hex)}</td>`;
@@ -5362,8 +5424,8 @@ function renderNodesTable(
 
         const message =
             nodesDataCache.length === 0
-                ? "No nodes data available."
-                : "No nodes match the current filters.";
+                ? tle("nodes.noData")
+                : tle("nodes.noMatch");
 
         html += `<tr><td colspan="4">${message}</td></tr>`;
     }
@@ -5454,7 +5516,7 @@ async function loadNodeDetail(
     document.getElementById(
         "nodeDetailName"
     ).textContent =
-        "Loading...";
+        tl("common.loading");
 
     document.getElementById(
         "nodeDetailInfoTable"
@@ -5503,7 +5565,7 @@ async function loadNodeDetail(
             document.getElementById(
                 "nodeDetailName"
             ).textContent =
-                "Error loading node.";
+                tl("ndet.errorNode");
 
             return;
         }
@@ -5561,7 +5623,7 @@ async function loadNodeDetail(
         document.getElementById(
             "nodeDetailName"
         ).textContent =
-            "Error loading node.";
+            tl("ndet.errorNode");
     }
 }
 
@@ -5672,7 +5734,7 @@ async function switchNodeDetailPeriod(
             document.getElementById(
                 "nodeDetailObsTable"
             ).innerHTML =
-                "<tr><td>Error loading archive.</td></tr>";
+                `<tr><td>${tle("ndet.errorArchive")}</td></tr>`;
 
             return;
         }
@@ -5762,7 +5824,7 @@ function renderNodeDetail(
         "nodeDetailName"
     ).textContent =
         node.adv_name ||
-        "(unknown)";
+        tl("common.unknownParen");
 
     const infoTable =
         document.getElementById(
@@ -5770,12 +5832,12 @@ function renderNodeDetail(
         );
 
     infoTable.innerHTML = `
-        <tr><th>Type</th><td>${formatNodeType(node.node_type)}</td></tr>
-        <tr><th>Public Key</th><td>${node.public_key}</td></tr>
-        <tr><th>Position</th><td>${formatNodePosition(node.adv_lat, node.adv_lon)}</td></tr>
-        <tr><th>Advert Time</th><td>${formatUnixTime(node.last_advert)}</td></tr>
-        <tr><th>Last Activity</th><td>${formatUnixTime(node.last_seen)}</td></tr>
-        <tr><th>Total Observations</th><td id="nodeDetailObsCount">${observations.length}</td></tr>
+        <tr><th>${tle("ndet.infoType")}</th><td>${formatNodeType(node.node_type)}</td></tr>
+        <tr><th>${tle("ndet.infoPublicKey")}</th><td>${node.public_key}</td></tr>
+        <tr><th>${tle("ndet.infoPosition")}</th><td>${formatNodePosition(node.adv_lat, node.adv_lon)}</td></tr>
+        <tr><th>${tle("nodes.colAdvertTime")}</th><td>${formatUnixTime(node.last_advert)}</td></tr>
+        <tr><th>${tle("ndet.infoLastActivity")}</th><td>${formatUnixTime(node.last_seen)}</td></tr>
+        <tr><th>${tle("ndet.infoTotalObservations")}</th><td id="nodeDetailObsCount">${observations.length}</td></tr>
     `;
 
     //
@@ -5822,13 +5884,13 @@ function renderNodeDetailObsTable(
     ) {
 
         table.innerHTML =
-            "<tr><td>No observations recorded.</td></tr>";
+            `<tr><td>${tle("ndet.noObservations")}</td></tr>`;
 
         return;
     }
 
     let html =
-        "<tr><th>Received</th><th>Hops</th><th>Path</th><th>RSSI</th><th>SNR</th></tr>";
+        `<tr><th>${tle("ndet.colReceived")}</th><th>${tle("ndet.colHops")}</th><th>Path</th><th>RSSI</th><th>SNR</th></tr>`;
 
     //
     // Più recente in cima — stesso principio già usato in
@@ -6050,10 +6112,10 @@ function describeUnusableCoordinates(
         lon === 0
     ) {
 
-        return "coordinate 0,0 (nodo senza GPS)";
+        return tl("common.coordNoGps");
     }
 
-    return `coordinate non valide (${lat}, ${lon})`;
+    return tl("common.coordInvalid", { lat: lat, lon: lon });
 }
 
 //
@@ -6101,7 +6163,7 @@ function formatNodePosition(
     }
 
     return escapeHtml(
-        `Non disponibile: ${describeUnusableCoordinates(lat, lon)}`
+        tl("pmap.positionUnavailable", { reason: describeUnusableCoordinates(lat, lon) })
     );
 }
 
@@ -6190,13 +6252,13 @@ function buildAdvertPathModel(
         buildPathPoint(
             {
                 role: "origin",
-                step: "Origine",
-                name: node.adv_name || "(unknown)",
+                step: tl("pmap.stepOrigin"),
+                name: node.adv_name || tl("common.unknownParen"),
                 nodeType: node.node_type,
                 lat: node.adv_lat,
                 lon: node.adv_lon,
                 noPositionText:
-                    "posizione non nota in contacts.db"
+                    tl("pmap.noPositionOrigin")
             }
         )
     );
@@ -6225,7 +6287,7 @@ function buildAdvertPathModel(
         points.push(
             {
                 role: "hop",
-                step: `Hop intermedi (${hopCount})`,
+                step: tl("pmap.stepIntermediateHops", { n: hopCount }),
                 name: null,
                 hash: null,
                 nodeType: null,
@@ -6235,7 +6297,7 @@ function buildAdvertPathModel(
                 reason: {
                     kind: "missing",
                     text:
-                        "path_hex non registrato: gli hop intermedi non sono noti"
+                        tl("pmap.reasonPathHexMissing")
                 }
             }
         );
@@ -6247,7 +6309,7 @@ function buildAdvertPathModel(
         ) {
 
             notes.push(
-                `hop_count (${hopCount}) non coerente con path_hex (${hops.length} elementi): il percorso potrebbe essere incompleto.`
+                tl("pmap.noteInconsistent", { hopCount: hopCount, elements: hops.length })
             );
         }
 
@@ -6284,7 +6346,7 @@ function buildAdvertPathModel(
                                 lat: resolved.lat,
                                 lon: resolved.lon,
                                 noPositionText:
-                                    "nessuna posizione GPS nota in contacts.db"
+                                    tl("pmap.noPositionHop")
                             }
                         )
                     );
@@ -6307,12 +6369,12 @@ function buildAdvertPathModel(
                                 {
                                     kind: "duplicate",
                                     text:
-                                        "hash ambiguo: più repeater iniziano con questo prefisso"
+                                        tl("pmap.reasonAmbiguousHash")
                                 } :
                                 {
                                     kind: "missing",
                                     text:
-                                        "nessun repeater noto con questo hash in contacts.db"
+                                        tl("pmap.reasonUnknownHash")
                                 }
                     }
                 );
@@ -6329,7 +6391,7 @@ function buildAdvertPathModel(
             {
                 role: "src",
                 step: "SRC",
-                name: "SRC (nodo locale)",
+                name: tl("common.srcLocalNode"),
                 hash: null,
                 nodeType: null,
                 shown: false,
@@ -6338,7 +6400,7 @@ function buildAdvertPathModel(
                 reason: {
                     kind: "missing",
                     text:
-                        "posizione non leggibile da /api/device_status"
+                        tl("pmap.reasonSrcUnreadable")
                 }
             }
         );
@@ -6350,11 +6412,11 @@ function buildAdvertPathModel(
                 {
                     role: "src",
                     step: "SRC",
-                    name: "SRC (nodo locale)",
+                    name: tl("common.srcLocalNode"),
                     lat: srcInfo ? srcInfo.lat : null,
                     lon: srcInfo ? srcInfo.lon : null,
                     noPositionText:
-                        "il Companion non ha ancora fornito coordinate GPS"
+                        tl("pmap.noPositionSrc")
                 }
             )
         );
@@ -6421,11 +6483,11 @@ function buildNodePathInfoHtml(
     ) {
 
         parts.push(
-            `<div class="nodePathInfoTitle">Punti del percorso non mostrati: ${model.missing.length} su ${model.points.length}</div>`
+            `<div class="nodePathInfoTitle">${tle("pmap.missingTitle", { n: model.missing.length, total: model.points.length })}</div>`
         );
 
         parts.push(
-            '<div class="nodePathInfoSub">per mancanza di dati o dati duplicati</div>'
+            `<div class="nodePathInfoSub">${tle("pmap.missingSub")}</div>`
         );
 
         parts.push(
@@ -6449,8 +6511,8 @@ function buildNodePathInfoHtml(
 
                         const kindLabel =
                             p.reason.kind === "duplicate" ?
-                                "dato duplicato" :
-                                "dato mancante";
+                                tl("pmap.kindDuplicate") :
+                                tl("pmap.kindMissing");
 
                         return (
                             "<li>" +
@@ -6473,7 +6535,7 @@ function buildNodePathInfoHtml(
     ) {
 
         parts.push(
-            '<div class="nodePathInfoLegend"><span class="nodePathInfoSwatch"></span>tratteggio ambra: collegamento che salta uno o più punti non mostrati</div>'
+            `<div class="nodePathInfoLegend"><span class="nodePathInfoSwatch"></span>${tle("pmap.legendBridged")}</div>`
         );
     }
 
@@ -6941,7 +7003,7 @@ function renderNodeDetailAdvertPath(
 
             const label =
                 p.role === "origin" ?
-                    `${p.name} (origine)` :
+                    tl("pmap.markerOrigin", { name: p.name }) :
                     p.role === "src" ?
                         p.name :
                         `${p.name} (${p.hash})`;
@@ -7027,13 +7089,15 @@ function renderNodeDetailAdvertPath(
             observation.hop_count;
 
         caption.textContent =
-            `Advert ricevuto il ${formatUnixTime(observation.observed_at)} — ` +
-            (
-                hopCount === 0 ?
-                    "DIRECT (0 hop)" :
-                    `${hopCount} hop`
-            ) +
-            ` — punti sulla mappa: ${bounds.length} su ${model.points.length}`;
+            tl("pmap.caption", {
+                time: formatUnixTime(observation.observed_at),
+                hops:
+                    hopCount === 0 ?
+                        "DIRECT (0 hop)" :
+                        `${hopCount} hop`,
+                shown: bounds.length,
+                total: model.points.length
+            });
     }
 
     //
@@ -7127,7 +7191,7 @@ function renderNodeDetailPathSegmentsAtCurrentZoom() {
             ) {
 
                 line.bindTooltip(
-                    "Collegamento che salta uno o più punti non mostrati (dati mancanti o duplicati)",
+                    tle("pmap.bridgedTooltip"),
                     { sticky: true }
                 );
             }
@@ -7266,7 +7330,7 @@ async function loadNeighborsRepeaterList() {
                     r.public_key;
 
                 opt.textContent =
-                    r.adv_name || "(unknown)";
+                    r.adv_name || tl("common.unknownParen");
 
                 selector.appendChild(
                     opt
@@ -7438,7 +7502,7 @@ async function loadNeighborsTab() {
     ) {
 
         clearNeighborsView(
-            "Error loading repeater list."
+            tl("rep.errorList")
         );
 
         return;
@@ -7455,7 +7519,7 @@ async function loadNeighborsTab() {
     ) {
 
         clearNeighborsView(
-            "No repeater data available yet."
+            tl("rep.noData")
         );
 
         return;
@@ -7534,7 +7598,7 @@ async function loadNeighborData(
         document.getElementById(
             "neighborRepeaterName"
         ).textContent =
-            "Error loading data.";
+            tl("common.errorLoadingData");
     }
 }
 
@@ -7547,31 +7611,31 @@ function formatSecsAgo(
         secs === undefined
     ) {
 
-        return "n/a";
+        return tl("common.na");
     }
 
     if (
         secs < 60
     ) {
 
-        return `${secs}s ago`;
+        return tl("common.agoSeconds", { n: secs });
     }
 
     if (
         secs < 3600
     ) {
 
-        return `${Math.floor(secs / 60)}m ago`;
+        return tl("common.agoMinutes", { n: Math.floor(secs / 60) });
     }
 
     if (
         secs < 86400
     ) {
 
-        return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m ago`;
+        return tl("common.agoHours", { h: Math.floor(secs / 3600), m: Math.floor((secs % 3600) / 60) });
     }
 
-    return `${Math.floor(secs / 86400)}d ago`;
+    return tl("common.agoDays", { n: Math.floor(secs / 86400) });
 }
 
 //
@@ -7590,14 +7654,14 @@ function formatClockSkew(
         skewSeconds === undefined
     ) {
 
-        return "n/a";
+        return tl("common.na");
     }
 
     if (
         Math.abs(skewSeconds) < CLOCK_SKEW_SYNC_THRESHOLD_SECS
     ) {
 
-        return "in sync";
+        return tl("common.inSync");
     }
 
     //
@@ -7620,7 +7684,7 @@ function formatDurationLong(
         secs === undefined
     ) {
 
-        return "n/a";
+        return tl("common.na");
     }
 
     const days =
@@ -7660,7 +7724,7 @@ function formatAirtimePercent(
         !uptime_secs
     ) {
 
-        return "n/a";
+        return tl("common.na");
     }
 
     const pct =
@@ -7692,7 +7756,7 @@ function formatTxDutyCyclePercent(
         !uptime_secs
     ) {
 
-        return "n/a";
+        return tl("common.na");
     }
 
     const pct =
@@ -7725,7 +7789,7 @@ function formatCrcErrorRate(
         nb_recv === null || nb_recv === undefined
     ) {
 
-        return "n/a";
+        return tl("common.na");
     }
 
     const total =
@@ -7735,7 +7799,7 @@ function formatCrcErrorRate(
         !total
     ) {
 
-        return "n/a";
+        return tl("common.na");
     }
 
     const pct =
@@ -7752,7 +7816,7 @@ function formatTelemetryType(
         !type
     ) {
 
-        return "Unknown";
+        return tl("common.unknown");
     }
 
     //
@@ -7845,7 +7909,7 @@ function formatDeviceTelemetryValue(
         value == null
     ) {
 
-        return "n/a";
+        return tl("common.na");
     }
 
     const flatten =
@@ -7855,7 +7919,7 @@ function formatDeviceTelemetryValue(
                 v == null
             ) {
 
-                return "n/a";
+                return tl("common.na");
             }
 
             if (
@@ -7868,7 +7932,7 @@ function formatDeviceTelemetryValue(
 
                 } catch (e) {
 
-                    return "n/a";
+                    return tl("common.na");
                 }
             }
 
@@ -7899,7 +7963,7 @@ function formatDeviceTelemetryValue(
             formatTelemetryValue(type, value);
     }
 
-    return text === "" ? "n/a" : text;
+    return text === "" ? tl("common.na") : text;
 }
 
 function buildDeviceTelemetryRowsHtml(
@@ -7933,7 +7997,7 @@ function buildDeviceTelemetryRowsHtml(
         measures.length === 0
     ) {
 
-        return `<tr><th data-tooltip="Misure di telemetria (tensione, temperatura, ecc.) del device companion locale, una riga per misura. n/a se il device non ne ha riportate.">Telemetry</th><td>n/a</td></tr>`;
+        return `<tr><th data-tooltip="${tle("tip.telemetry")}">Telemetry</th><td>${tle("common.na")}</td></tr>`;
     }
 
     return measures.map(
@@ -7950,25 +8014,25 @@ function buildDeviceTelemetryRowsHtml(
                     : "";
 
             let tooltip =
-                "Misura di telemetria del device companion locale sul canale indicato. Il valore è mostrato come riportato dal device, senza unità di misura se non nota.";
+                tle("tip.telDefault");
 
             if (
                 type === "voltage"
             ) {
 
                 tooltip =
-                    "Tensione misurata sul canale di telemetria indicato, in Volt. Può coincidere con la tensione di batteria mostrata sopra.";
+                    tle("tip.telVoltage");
 
             } else if (
                 type === "temperature"
             ) {
 
                 tooltip =
-                    "Temperatura misurata sul canale di telemetria indicato, in °C.";
+                    tle("tip.telTemperature");
             }
 
             const label =
-                `Telemetry - ${formatTelemetryType(type)}${channel}`;
+                `Telemetry - ${type ? formatTelemetryType(type) : "Unknown"}${channel}`;
 
             return `<tr><th data-tooltip="${tooltip}">${escapeHtml(label)}</th><td>${escapeHtml(formatDeviceTelemetryValue(type, t.value))}</td></tr>`;
         }
@@ -7987,7 +8051,7 @@ function renderNeighborData(
     document.getElementById(
         "neighborRepeaterName"
     ).textContent =
-        data.adv_name || "(unknown)";
+        data.adv_name || tl("common.unknownParen");
 
     const statusTable =
         document.getElementById(
@@ -8005,32 +8069,32 @@ function renderNeighborData(
     ) {
 
         statusTable.innerHTML =
-            "<tr><td>No status data available.</td></tr>" +
-            `<tr><th data-tooltip="Differenza tra l'orologio dichiarato dal repeater e quello di questo host, in secondi. Positivo = orologio del repeater avanti. Uno scarto di giorni segnala tipicamente un repeater senza RTC esterno mai risincronizzato.">Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>`;
+            `<tr><td>${tle("rep.noStatus")}</td></tr>` +
+            `<tr><th data-tooltip="${tle("tip.clockSkew")}">Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>`;
     }
 
     else {
 
         statusTable.innerHTML = `
-            <tr><th data-tooltip="Data e ora dell'ultima interrogazione riuscita a questo repeater. Le richieste con esito negativo (timeout, permesso ACL mancante o rimosso) non producono una nuova riga: qui resta sempre visibile l'ultimo dato disponibile, con la sua età.">Queried At</th><td>${formatUnixTime(status.queried_at)}</td></tr>
-            <tr><th data-tooltip="Tensione della batteria, riportata dal device in millivolt e convertita qui in Volt.">Battery</th><td>${(status.bat / 1000).toFixed(2)}V</td></tr>
-            <tr><th data-tooltip="Tempo trascorso dall'ultimo avvio del device, nel formato giorni/ore/minuti.">Uptime</th><td>${formatDurationLong(status.uptime)}</td></tr>
-            <tr><th data-tooltip="Rumore di fondo del canale radio misurato dal chip, in dBm. Valori più negativi indicano un canale più silenzioso; un innalzamento persistente segnala interferenze o canale affollato.">Noise Floor</th><td>${status.noise_floor} dBm</td></tr>
-            <tr><th data-tooltip="Potenza del segnale (RSSI, in dBm) dell'ultimo pacchetto ricevuto. Più vicino a 0 = segnale più forte.">Last RSSI</th><td>${status.last_rssi} dBm</td></tr>
-            <tr><th data-tooltip="Rapporto segnale/rumore (SNR, in dB) dell'ultimo pacchetto ricevuto: quanto il segnale utile emerge sul rumore di fondo. Valori più alti indicano una ricezione più pulita.">Last SNR</th><td>${status.last_snr} dB</td></tr>
-            <tr><th data-tooltip="Numero di pacchetti attualmente in coda sul repeater in attesa di trasmissione. Una coda spesso piena indica che il canale radio non riesce a smaltire il traffico alla velocità con cui viene generato.">TX Queue Length</th><td>${status.tx_queue_len}</td></tr>
-            <tr><th data-tooltip="Totale dei pacchetti ricevuti dal boot che hanno superato il controllo CRC e sono arrivati al livello mesh (somma di flood + direct).">Packets Received</th><td>${status.nb_recv} pkts</td></tr>
-            <tr><th data-tooltip="Totale dei pacchetti trasmessi dal boot (somma di flood + direct).">Packets Sent</th><td>${status.nb_sent} pkts</td></tr>
-            <tr><th data-tooltip="Pacchetti trasmessi suddivisi per modalità di instradamento: in flood (rilanciati da tutti i nodi che li sentono) o diretti (instradati verso un percorso specifico).">Sent (Flood | Direct)</th><td>${status.sent_flood} pkts | ${status.sent_direct} pkts</td></tr>
-            <tr><th data-tooltip="Pacchetti ricevuti suddivisi per la modalità di instradamento con cui sono arrivati: flood o diretti.">Received (Flood | Direct)</th><td>${status.recv_flood} pkts | ${status.recv_direct} pkts</td></tr>
-            <tr><th data-tooltip="Pacchetti ricevuti CORRETTAMENTE (CRC valido) ma già visti in precedenza — deduplica a livello mesh, non un errore radio. Mutuamente esclusivo da &quot;Receive Errors (CRC Fail)&quot;: un pacchetto o fallisce il CRC (non può mai risultare duplicato) o lo supera (dove può risultare nuovo o duplicato).">Duplicates (Direct | Flood)</th><td>${status.direct_dups} pkts | ${status.flood_dups} pkts</td></tr>
-            <tr><th data-tooltip="Pacchetti fisicamente ricevuti dal chip radio (preambolo/sync/header validi) il cui payload però ha fallito il controllo CRC in lettura. Non indica solo collisioni: anche segnale debole, interferenze o un pacchetto troncato producono lo stesso effetto.">Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : "n/a"}</td></tr>
-            <tr><th data-tooltip="Percentuale di pacchetti fisicamente ricevuti persi per errore CRC: Receive Errors / (Packets Received + Receive Errors) × 100. Mostra n/a se non è stato fisicamente ricevuto alcun pacchetto.">CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.nb_recv)}</td></tr>
-            <tr><th data-tooltip="Numero di volte in cui la coda di trasmissione del repeater era piena e un pacchetto non ha potuto essere accodato — indicatore di saturazione sotto carico.">Full Events</th><td>${status.full_evts}</td></tr>
-            <tr><th data-tooltip="Tempo cumulativo, dall'avvio, passato rispettivamente a trasmettere e a ricevere pacchetti effettivi (non il tempo totale con la radio accesa).">Airtime (TX | RX)</th><td>${formatDurationLong(status.airtime)} | ${formatDurationLong(status.rx_airtime)}</td></tr>
-            <tr><th data-tooltip="Percentuale di uptime in cui il canale è stato occupato da traffico, proprio in TX più altrui rilevato in RX: (Airtime TX + Airtime RX) / Uptime × 100. Indica quanto è congestionata la mesh nei dintorni, non il rispetto di un limite normativo.">Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.airtime, status.rx_airtime, status.uptime)}</td></tr>
-            <tr><th data-tooltip="Percentuale di uptime passata in trasmissione: Airtime TX / Uptime × 100. Solo TX: confrontabile direttamente con &quot;Duty Cycle&quot; nella tabella Config dei Repeaters (anch'esso solo TX) per vedere quanto ci si avvicina al limite impostato.">TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.airtime, status.uptime)}</td></tr>
-            <tr><th data-tooltip="Differenza tra l'orologio dichiarato dal repeater e quello di questo host, in secondi. Positivo = orologio del repeater avanti. Uno scarto di giorni segnala tipicamente un repeater senza RTC esterno mai risincronizzato.">Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>
+            <tr><th data-tooltip="${tle("tip.queriedAt")}">Queried At</th><td>${formatUnixTime(status.queried_at)}</td></tr>
+            <tr><th data-tooltip="${tle("tip.battery")}">Battery</th><td>${(status.bat / 1000).toFixed(2)}V</td></tr>
+            <tr><th data-tooltip="${tle("tip.uptime")}">Uptime</th><td>${formatDurationLong(status.uptime)}</td></tr>
+            <tr><th data-tooltip="${tle("tip.noiseFloor")}">Noise Floor</th><td>${status.noise_floor} dBm</td></tr>
+            <tr><th data-tooltip="${tle("tip.lastRssi")}">Last RSSI</th><td>${status.last_rssi} dBm</td></tr>
+            <tr><th data-tooltip="${tle("tip.lastSnr")}">Last SNR</th><td>${status.last_snr} dB</td></tr>
+            <tr><th data-tooltip="${tle("tip.txQueueLength")}">TX Queue Length</th><td>${status.tx_queue_len}</td></tr>
+            <tr><th data-tooltip="${tle("tip.packetsReceived")}">Packets Received</th><td>${status.nb_recv} pkts</td></tr>
+            <tr><th data-tooltip="${tle("tip.packetsSent")}">Packets Sent</th><td>${status.nb_sent} pkts</td></tr>
+            <tr><th data-tooltip="${tle("tip.sent")}">Sent (Flood | Direct)</th><td>${status.sent_flood} pkts | ${status.sent_direct} pkts</td></tr>
+            <tr><th data-tooltip="${tle("tip.received")}">Received (Flood | Direct)</th><td>${status.recv_flood} pkts | ${status.recv_direct} pkts</td></tr>
+            <tr><th data-tooltip="${tle("tip.duplicates")}">Duplicates (Direct | Flood)</th><td>${status.direct_dups} pkts | ${status.flood_dups} pkts</td></tr>
+            <tr><th data-tooltip="${tle("tip.receiveErrors")}">Receive Errors (CRC Fail)</th><td>${status.recv_errors != null ? status.recv_errors + " pkts" : tl("common.na")}</td></tr>
+            <tr><th data-tooltip="${tle("tip.crcErrorRate")}">CRC Error Rate (RX)</th><td>${formatCrcErrorRate(status.recv_errors, status.nb_recv)}</td></tr>
+            <tr><th data-tooltip="${tle("tip.fullEvents")}">Full Events</th><td>${status.full_evts}</td></tr>
+            <tr><th data-tooltip="${tle("tip.airtime")}">Airtime (TX | RX)</th><td>${formatDurationLong(status.airtime)} | ${formatDurationLong(status.rx_airtime)}</td></tr>
+            <tr><th data-tooltip="${tle("tip.airtimePercent")}">Airtime % (mesh, TX+RX/Uptime)</th><td>${formatAirtimePercent(status.airtime, status.rx_airtime, status.uptime)}</td></tr>
+            <tr><th data-tooltip="${tle("tip.txDutyCycle")}">TX Duty Cycle (observed, TX/Uptime)</th><td>${formatTxDutyCyclePercent(status.airtime, status.uptime)}</td></tr>
+            <tr><th data-tooltip="${tle("tip.clockSkew")}">Clock Skew</th><td>${formatClockSkew(clock ? clock.skew_seconds : null)}</td></tr>
         `;
     }
 
@@ -8043,7 +8107,7 @@ function renderNeighborData(
         data.telemetry || [];
 
     let telemetryHtml =
-        "<tr><th>Channel</th><th>Type</th><th>Value</th></tr>";
+        `<tr><th>${tle("rep.telColChannel")}</th><th>${tle("rep.telColType")}</th><th>${tle("rep.telColValue")}</th></tr>`;
 
     telemetry.forEach(
         t => {
@@ -8061,7 +8125,7 @@ function renderNeighborData(
     ) {
 
         telemetryHtml +=
-            "<tr><td colspan=\"3\">No telemetry data available.</td></tr>";
+            `<tr><td colspan="3">${tle("rep.noTelemetry")}</td></tr>`;
     }
 
     telemetryTable.innerHTML =
@@ -8080,7 +8144,7 @@ function renderNeighborData(
     ) {
 
         configTable.innerHTML =
-            "<tr><td>No config data available.</td></tr>";
+            `<tr><td>${tle("rep.noConfig")}</td></tr>`;
     }
 
     else {
@@ -8104,24 +8168,24 @@ function renderNeighborData(
         // CLI_QUERIES) — nessun rischio di injection, non toccati.
         //
         configTable.innerHTML = `
-            <tr><th data-tooltip="Versione e build del firmware in esecuzione sul repeater, riportata dal comando CLI &quot;ver&quot; (richiede login con permesso admin nell'ACL).">Firmware Version</th><td>${escapeHtml(config.firmware_version ?? "n/a")}</td></tr>
-            <tr><th data-tooltip="Nome/modello dell'hardware del repeater (es. la scheda o il modulo su cui gira il firmware), riportato dal comando CLI &quot;board&quot; (richiede login con permesso admin nell'ACL).">Hardware</th><td>${escapeHtml(config.hardware ?? "n/a")}</td></tr>
-            <tr><th data-tooltip="Dimensione in byte dell'hash usato per identificare i pacchetti in flood (0 = 1 byte/256 ID unici, 1 = 2 byte/65.536 ID, 2 = 3 byte). Un hash più corto pesa meno nel pacchetto ma satura prima lo spazio di ID unici su reti con molto traffico flood.">Path Hash Mode</th><td>${config.path_hash_mode ?? "n/a"}</td></tr>
-            <tr><th data-tooltip="Fattore che scala il ritardo casuale prima di ritrasmettere un pacchetto flood: quando più repeater vicini sentono lo stesso pacchetto, ciascuno attende un tempo casuale prima di rilanciarlo, per evitare che ritrasmettano tutti insieme collidendo. 0 disabilita il ritardo.">TX Delay (Flood)</th><td>${config.txdelay ?? "n/a"}</td></tr>
-            <tr><th data-tooltip="Come &quot;TX Delay (Flood)&quot; ma per i pacchetti instradati direttamente verso un hop specifico: valore tipicamente più basso perché meno nodi competono per ritrasmettere lo stesso pacchetto.">TX Delay (Direct)</th><td>${config.direct_txdelay ?? "n/a"}</td></tr>
-            <tr><th data-tooltip="Funzione sperimentale: i pacchetti flood ricevuti con segnale debole vengono trattenuti brevemente in una coda di ritardo, dando la precedenza ai repeater che li hanno ricevuti con segnale forte, per ridurre ritrasmissioni ridondanti.">RX Delay</th><td>${config.rxdelay ?? "n/a"}</td></tr>
-            <tr><th data-tooltip="Numero massimo di salti (hop) che un pacchetto instradato in flood può percorrere prima di essere scartato.">Flood Max Hops</th><td>${config.flood_max ?? "n/a"}</td></tr>
-            <tr><th data-tooltip="Come &quot;Flood Max Hops&quot;, ma applicato ai pacchetti flood privi di un ambito/regione (transport code) specifico.">Flood Max Hops (Unscoped)</th><td>${config.flood_max_unscoped ?? "n/a"}</td></tr>
-            <tr><th data-tooltip="Numero massimo di salti per i soli pacchetti di advert (annuncio di presenza del nodo) in flood — di norma un limite più basso rispetto al traffico flood generico.">Flood Max Hops (Advert)</th><td>${config.flood_max_advert ?? "n/a"}</td></tr>
-            <tr><th data-tooltip="Regione radio predefinita usata dal repeater quando un pacchetto non ne specifica una esplicitamente.">Default Region</th><td>${escapeHtml(config.region_default ?? "n/a")}</td></tr>
-            <tr><th data-tooltip="Autolimitazione imposta dal firmware stesso: dopo ogni trasmissione, il repeater si impone un silenzio proporzionale al tempo appena trasmesso, per rispettare i limiti normativi di banda (es. 10% sotto 868MHz in Europa). Riguarda solo il TX, mai la ricezione — non è una media misurata: confrontalo con &quot;TX Duty Cycle (observed)&quot; in Status, non con &quot;Airtime % (mesh)&quot; che include anche l'RX.">Duty Cycle</th><td>${config.dutycycle != null ? `${config.dutycycle}%` : "n/a"}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgFirmwareVersion")}">Firmware Version</th><td>${escapeHtml(config.firmware_version ?? tl("common.na"))}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgHardware")}">Hardware</th><td>${escapeHtml(config.hardware ?? tl("common.na"))}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgPathHashMode")}">Path Hash Mode</th><td>${config.path_hash_mode ?? tl("common.na")}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgTxDelayFlood")}">TX Delay (Flood)</th><td>${config.txdelay ?? tl("common.na")}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgTxDelayDirect")}">TX Delay (Direct)</th><td>${config.direct_txdelay ?? tl("common.na")}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgRxDelay")}">RX Delay</th><td>${config.rxdelay ?? tl("common.na")}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgFloodMaxHops")}">Flood Max Hops</th><td>${config.flood_max ?? tl("common.na")}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgFloodMaxHopsUnscoped")}">Flood Max Hops (Unscoped)</th><td>${config.flood_max_unscoped ?? tl("common.na")}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgFloodMaxHopsAdvert")}">Flood Max Hops (Advert)</th><td>${config.flood_max_advert ?? tl("common.na")}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgDefaultRegion")}">Default Region</th><td>${escapeHtml(config.region_default ?? tl("common.na"))}</td></tr>
+            <tr><th data-tooltip="${tle("tip.cfgDutyCycle")}">Duty Cycle</th><td>${config.dutycycle != null ? `${config.dutycycle}%` : tl("common.na")}</td></tr>
         `;
     }
 
     document.getElementById(
         "neighborRegionDump"
     ).textContent =
-        data.region || "No region data available.";
+        data.region || tl("rep.noRegion");
 
     renderNeighboursTable(
         data.neighbours || []
@@ -8142,7 +8206,7 @@ function renderNeighboursTable(
     ) {
 
         heading.textContent =
-            `Neighbours - ${neighbours.length}`;
+            tl("rep.heading", { n: neighbours.length });
     }
 
     const neighborsTable =
@@ -8151,7 +8215,7 @@ function renderNeighboursTable(
         );
 
     let html =
-        "<tr><th>Name</th><th>Prefix</th><th>SNR</th><th>Last Seen</th></tr>";
+        `<tr><th>${tle("rep.colName")}</th><th>${tle("rep.colPrefix")}</th><th>SNR</th><th>${tle("rep.colLastSeen")}</th></tr>`;
 
     neighbours.forEach(
         n => {
@@ -8163,7 +8227,7 @@ function renderNeighboursTable(
             ) {
 
                 nameCell =
-                    "(unknown)";
+                    tl("common.unknownParen");
             }
 
             else if (
@@ -8177,7 +8241,7 @@ function renderNeighboursTable(
             else {
 
                 nameCell =
-                    `${escapeHtml(n.matched_names)} (ambiguous)`;
+                    `${escapeHtml(n.matched_names)} ${tle("rep.nameAmbiguous")}`;
             }
 
             html += "<tr>";
@@ -8193,7 +8257,7 @@ function renderNeighboursTable(
         neighbours.length === 0
     ) {
 
-        html += "<tr><td colspan=\"4\">No neighbours data available.</td></tr>";
+        html += `<tr><td colspan="4">${tle("rep.noNeighbours")}</td></tr>`;
     }
 
     neighborsTable.innerHTML =
@@ -8275,7 +8339,7 @@ async function loadNeighboursArchiveList() {
                     );
 
                 opt.value = m.id;
-                opt.textContent = m.label;
+                opt.textContent = localizeArchiveLabel(m);
 
                 selector.appendChild(
                     opt

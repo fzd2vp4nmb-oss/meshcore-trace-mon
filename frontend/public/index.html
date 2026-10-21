@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8">
-    <title>MeshCore Path Explorer - Node v1.0.0</title>
+    <title data-i18n="idx.titleNode">MeshCore Path Explorer - Node v2.0.0</title>
     <link rel="stylesheet" href="style.css">
     <!--
         Chart.js auto-ospitato (analisi sicurezza 2026-08-24, Finding
@@ -42,21 +42,30 @@
 
 <body>
 <div class="headerBar">
-    <h2>MeshCore Path Explorer - Node v1.0.0</h2>
-    <button id="themeButton">
-        🌙 Dark Mode
-    </button>
+    <h2 data-i18n="idx.titleNode">MeshCore Path Explorer - Node v2.0.0</h2>
+    <div class="headerControls">
+        <span class="langSelector" role="group" aria-label="Lingua / Language">
+            <button type="button" class="lang-flag" data-lang="it" title="Italiano" aria-label="Italiano" aria-pressed="false"><svg width="27" height="18" viewBox="0 0 3 2" aria-hidden="true"><rect x="0" width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#ffffff"/><rect x="2" width="1" height="2" fill="#ce2b37"/></svg></button>
+            <button type="button" class="lang-flag" data-lang="en" title="English" aria-label="English" aria-pressed="false"><svg width="36" height="18" viewBox="0 0 60 30" aria-hidden="true"><clipPath id="langUkClipS"><path d="M0,0 v30 h60 v-30 z"/></clipPath><clipPath id="langUkClipT"><path d="M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z"/></clipPath><g clip-path="url(#langUkClipS)"><path d="M0,0 v30 h60 v-30 z" fill="#012169"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#ffffff" stroke-width="6"/><path d="M0,0 L60,30 M60,0 L0,30" clip-path="url(#langUkClipT)" stroke="#c8102e" stroke-width="4"/><path d="M30,0 v30 M0,15 h60" stroke="#ffffff" stroke-width="10"/><path d="M30,0 v30 M0,15 h60" stroke="#c8102e" stroke-width="6"/></g></svg></button>
+        </span>
+        <button id="themeButton" data-i18n="idx.themeDark">
+            🌙 Dark Mode
+        </button>
+    </div>
 </div>
 
 <div class="tabBar">
-    <button class="tabButton active" data-tab="tracePage">
+    <button class="tabButton active" data-tab="tracePage" data-i18n="idx.tabTrace">
         Trace
     </button>
-    <button class="tabButton" data-tab="nodesPage">
+    <button class="tabButton" data-tab="nodesPage" data-i18n="idx.tabNodes">
         Nodes
     </button>
-    <button class="tabButton" data-tab="neighborsPage">
+    <button class="tabButton" data-tab="neighborsPage" data-i18n="idx.tabRepeaters">
         Repeaters
+    </button>
+    <button class="tabButton" data-tab="analysisPage" data-i18n="idx.tabAnalysis">
+        Analysis
     </button>
     <a
         href="info.html"
@@ -68,9 +77,9 @@
 
 <div id="tracePage" class="tabPage">
 
-<span><b>Data Source:</b></span>
+<span><b data-i18n="idx.dataSource">Data Source:</b></span>
 <select id="dataSourceSelector">
-    <option value="live">
+    <option value="live" data-i18n="common.live">
         Live
     </option>
 </select>
@@ -81,23 +90,23 @@
 <br><br>
 
 <div class="rangeBar">
-    <span><b>Time Range:</b></span>
+    <span><b data-i18n="idx.timeRange">Time Range:</b></span>
     <button class="rangeButton" data-range="24h">
         24h
     </button>
-    <button class="rangeButton" data-range="3d">
+    <button class="rangeButton" data-range="3d" data-i18n="idx.range3d">
         3 Days
     </button>
-    <button class="rangeButton" data-range="7d">
+    <button class="rangeButton" data-range="7d" data-i18n="idx.range7d">
         7 Days
     </button>
-    <button class="rangeButton" data-range="all">
+    <button class="rangeButton" data-range="all" data-i18n="idx.rangeAll">
         Last Month
     </button>
 
     &nbsp;&nbsp;&nbsp;
 
-    <span><b>Auto Refresh:</b></span>
+    <span><b data-i18n="idx.autoRefresh">Auto Refresh:</b></span>
     <select id="autoRefreshSelect">
         <option value="off">
             OFF
@@ -110,23 +119,23 @@
     <span id="rangeInfo"></span>
 </div>
 
-<h3>Trace-Path Chart</h3>
+<h3 data-i18n="idx.traceChart">Trace-Path Chart</h3>
 
 <div id="chartContainer">
     <canvas id="snrChart"></canvas>
 </div>
 
-<h3>Stats</h3>
+<h3 data-i18n="idx.stats">Stats</h3>
 <table id="statsTable"></table>
 
-<h3>Scheduled Trace-Path</h3>
+<h3 data-i18n="idx.traceScheduled">Scheduled Trace-Path</h3>
 <table id="pathTable"></table>
 
 </div>
 
 <div id="traceDetailPage" class="tabPage" style="display:none">
 
-<p><a href="#" id="backToTraceLink">&larr; Back to Trace</a></p>
+<p><a href="#" id="backToTraceLink" data-i18n-html="idx.backToTrace">&larr; Back to Trace</a></p>
 
 <h3 id="traceDetailHeading"></h3>
 
@@ -147,10 +156,10 @@
 -->
 <h3 id="nodesDeviceName"></h3>
 
-<h4>Device Status</h4>
+<h4 data-i18n="idx.deviceStatus">Device Status</h4>
 <table id="deviceStatusTable"></table>
 
-<h4 id="nodesTabHeading">Known Nodes</h4>
+<h4 id="nodesTabHeading" data-i18n="idx.knownNodes">Known Nodes</h4>
 
 <!--
     Period selector spostato qui dal dettaglio nodo (2026-09-10, v.
@@ -161,7 +170,7 @@
     selettore: eredita sempre il Period scelto qui (v.
     goToNodeDetail()/loadNodeDetail() in app.js).
 -->
-<span><b>Period:</b></span>
+<span><b data-i18n="idx.period">Period:</b></span>
 <select id="nodesArchiveSelector"></select>
 <br><br>
 
@@ -170,25 +179,25 @@
     <div class="nodesFilterRow">
 
         <div class="filterGroup">
-            <label for="nodeNameFilterInput">Name / Public Key</label>
+            <label for="nodeNameFilterInput" data-i18n="idx.fName">Name / Public Key</label>
             <div class="filterControl">
-                <input type="text" id="nodeNameFilterInput" placeholder="e.g. repeater-1 or a1b2">
-                <button id="nodeNameFilterClearBtn">Clear</button>
+                <input type="text" id="nodeNameFilterInput" placeholder="e.g. repeater-1 or a1b2" data-i18n-attr="placeholder:idx.phName">
+                <button id="nodeNameFilterClearBtn" data-i18n="idx.clear">Clear</button>
             </div>
         </div>
 
         <div class="filterGroup">
-            <label for="nodePathFilterInput">Path contains</label>
+            <label for="nodePathFilterInput" data-i18n="idx.fPathContains">Path contains</label>
             <div class="filterControl">
-                <input type="text" id="nodePathFilterInput" placeholder="e.g. 0d28">
-                <button id="nodePathFilterClearBtn">Clear</button>
+                <input type="text" id="nodePathFilterInput" placeholder="e.g. 0d28" data-i18n-attr="placeholder:idx.phPath">
+                <button id="nodePathFilterClearBtn" data-i18n="idx.clear">Clear</button>
             </div>
         </div>
 
         <div class="filterGroup">
-            <label for="nodeTypeFilter">Type</label>
+            <label for="nodeTypeFilter" data-i18n="idx.fType">Type</label>
             <select id="nodeTypeFilter">
-                <option value="all">All</option>
+                <option value="all" data-i18n="idx.optAll">All</option>
                 <option value="1">chat</option>
                 <option value="2">repeater</option>
                 <option value="3">room server</option>
@@ -196,20 +205,20 @@
         </div>
 
         <div class="filterGroup">
-            <label for="nodePathLengthFilter">Path length</label>
+            <label for="nodePathLengthFilter" data-i18n="idx.fPathLength">Path length</label>
             <select id="nodePathLengthFilter">
-                <option value="all">All</option>
-                <option value="1">1 byte (2 hex chars)</option>
-                <option value="2">2 byte (4 hex chars)</option>
-                <option value="3">3 byte (6 hex chars)</option>
+                <option value="all" data-i18n="idx.optAll">All</option>
+                <option value="1" data-i18n="idx.optPathLen1">1 byte (2 hex chars)</option>
+                <option value="2" data-i18n="idx.optPathLen2">2 byte (4 hex chars)</option>
+                <option value="3" data-i18n="idx.optPathLen3">3 byte (6 hex chars)</option>
             </select>
         </div>
 
         <div class="filterGroup">
-            <label for="nodeHopCountFilterInput">Max hop count</label>
+            <label for="nodeHopCountFilterInput" data-i18n="idx.fMaxHop">Max hop count</label>
             <div class="filterControl">
-                <input type="number" id="nodeHopCountFilterInput" min="0" step="1" placeholder="e.g. 5">
-                <button id="nodeHopCountFilterClearBtn">Clear</button>
+                <input type="number" id="nodeHopCountFilterInput" min="0" step="1" placeholder="e.g. 5" data-i18n-attr="placeholder:idx.phMaxHop">
+                <button id="nodeHopCountFilterClearBtn" data-i18n="idx.clear">Clear</button>
             </div>
         </div>
 
@@ -218,16 +227,16 @@
     <div class="nodesFilterRow nodesFilterRowRefine">
 
         <div class="filterGroup">
-            <label for="nodeDistanceFilter">Distance from SRC</label>
+            <label for="nodeDistanceFilter" data-i18n="idx.fDistance">Distance from SRC</label>
             <div class="filterControl">
                 <select id="nodeDistanceFilter">
-                    <option value="all">All</option>
+                    <option value="all" data-i18n="idx.optAll">All</option>
                     <option value="1">1 km</option>
                     <option value="5">5 km</option>
                     <option value="10">10 km</option>
                     <option value="50">50 km</option>
                     <option value="100">100 km</option>
-                    <option value="custom">Custom</option>
+                    <option value="custom" data-i18n="idx.optCustom">Custom</option>
                 </select>
                 <input type="number" id="nodeDistanceCustomInput" min="0" step="0.1" placeholder="km" style="display:none">
             </div>
@@ -236,14 +245,14 @@
         <div class="filterGroup filterCheckboxGroup">
             <label for="nodeNotObservedFilter">
                 <input type="checkbox" id="nodeNotObservedFilter">
-                Not observed only
+                <span data-i18n="idx.fNotObserved">Not observed only</span>
             </label>
         </div>
 
         <div class="filterGroup filterCheckboxGroup">
             <label for="nodeFutureAdvertFilter">
                 <input type="checkbox" id="nodeFutureAdvertFilter">
-                Future advert only
+                <span data-i18n="idx.fFutureAdvert">Future advert only</span>
             </label>
         </div>
 
@@ -258,7 +267,7 @@
 
 <div id="nodeDetailPage" class="tabPage" style="display:none">
 
-<p><a href="#" id="backToNodesLink">&larr; Back to list</a></p>
+<p><a href="#" id="backToNodesLink" data-i18n-html="idx.backToList">&larr; Back to list</a></p>
 
 <h3 id="nodeDetailName"></h3>
 <table id="nodeDetailInfoTable"></table>
@@ -266,13 +275,13 @@
 <br>
 
 <div id="nodeDetailPathSection">
-    <h4>Advert Path</h4>
-    <p id="nodeDetailPathGuide" class="nodePathGuide">Seleziona un valore nella colonna "Received" della tabella Observations per vedere sulla mappa il percorso seguito da quell'advert.</p>
+    <h4 data-i18n="idx.advertPath">Advert Path</h4>
+    <p id="nodeDetailPathGuide" class="nodePathGuide" data-i18n="idx.nodeDetailPathGuide">Select a value in the "Received" column of the Observations table to see on the map the path followed by that advert.</p>
     <div id="nodeDetailPathCaption" class="nodePathCaption"></div>
     <div id="nodeDetailPathMap" style="display:none"></div>
 </div>
 
-<h4>Observations</h4>
+<h4 data-i18n="idx.observations">Observations</h4>
 <table id="nodeDetailObsTable"></table>
 
 </div>
@@ -284,23 +293,230 @@
 
 <h3 id="neighborRepeaterName"></h3>
 
-<h4>Status</h4>
+<h4 data-i18n="idx.statusH">Status</h4>
 <table id="neighborStatusTable"></table>
 
-<h4>Telemetry</h4>
+<h4 data-i18n="idx.telemetryH">Telemetry</h4>
 <table id="neighborTelemetryTable"></table>
 
-<h4>Config</h4>
+<h4 data-i18n="idx.configH">Config</h4>
 <table id="neighborConfigTable"></table>
 
-<h4>Region</h4>
+<h4 data-i18n="idx.regionH">Region</h4>
 <pre id="neighborRegionDump"></pre>
 
-<h4 id="neighborsTabHeading">Neighbours</h4>
-<span><b>Period:</b></span>
+<h4 id="neighborsTabHeading" data-i18n="idx.neighboursH">Neighbours</h4>
+<span><b data-i18n="idx.period">Period:</b></span>
 <select id="neighborsArchiveSelector"></select>
 <select id="neighborsSnapshotSelector" style="display:none"></select>
 <table id="neighborsTable"></table>
+
+</div>
+
+<!--
+    Scheda «Analysis» (2026-10-21, v. docs/ARCHITECTURE.md §88): un
+    CONTENITORE di analisi, oggi una sola — «propagation», path degli
+    advert contro path dei messaggi Sonar. I dati sono calcolati ogni due
+    ore da analysis_job.js (cron) e serviti in sola lettura da
+    /api/analysis/*; tutto il disegno sta in analysis.js (nessuna modifica
+    ad app.js). Gli id qui sotto sono il contratto con analysis.js: il
+    test sandbox_tests/test_analysis_frontend_2026_10_21.js verifica che ci
+    siano tutti. Niente auto-refresh in questa scheda.
+-->
+<div id="analysisPage" class="tabPage" style="display:none">
+
+<span><b data-i18n="an.selectorLabel">Analysis:</b></span>
+<select id="analysisTypeSelector"></select>
+&nbsp;&nbsp;&nbsp;
+<span><b data-i18n="idx.period">Period:</b></span>
+<select id="analysisWindowSelector"></select>
+
+<p id="analysisInfo" class="analysisInfoLine"></p>
+
+<div id="analysisNotice"></div>
+
+<div id="analysisContent" style="display:none">
+
+<div id="analysisPropagation">
+
+<p class="analysisHelp" data-i18n-html="an.intro">
+    Compares the path taken by <b>adverts</b> (repeater flood, all nodes)
+    with the path taken by <b>Sonar messages</b> (a message sent on purpose
+    from a known node, so its source and send time are known). Both are read
+    from the paths recorded by the tracers. The aim is to see how far
+    each kind of packet really travels, and which repeaters are seen
+    forwarding at depth. It is an inference from recorded paths, not a
+    measurement of any repeater's settings. The only settings known are the
+    flood limits of the repeaters managed by trace-mon (panel 6).
+</p>
+
+<h4 data-i18n="an.h1">1. Data status</h4>
+<div id="analysisStatus"></div>
+
+<h4 data-i18n-html="an.h2">2. Source &rarr; tracer matrix</h4>
+<p class="analysisHelp" data-i18n="an.help2">
+    One cell per pair: how many Sonar messages sent by the source reached the
+    tracer, and how many adverts of the same source it saw. Click a cell
+    to compare that pair in panel 4.
+</p>
+<div id="analysisMatrix"></div>
+
+<h4 data-i18n="an.h3">3. Hops histogram</h4>
+<div class="analysisControls">
+    <label><span data-i18n="an.lblTracer">Tracer</span>
+        <select id="analysisHistObserver"></select>
+    </label>
+    <label><span data-i18n="an.lblScope">Scope</span>
+        <select id="analysisHistScope">
+            <option value="both" data-i18n="an.optBoth">Both</option>
+            <option value="FLOOD" data-i18n="an.optNoRegion">No region (FLOOD)</option>
+            <option value="TC" data-i18n="an.optRegion">Region (TC_FLOOD)</option>
+        </select>
+    </label>
+    <label><span data-i18n="an.lblCount">Count</span>
+        <select id="analysisHistMetric">
+            <option value="copies" data-i18n="an.optCopies">All copies received</option>
+            <option value="best" data-i18n="an.optBest">Best copy of each transmission</option>
+        </select>
+    </label>
+    <label><span data-i18n="an.lblYAxis">Y axis</span>
+        <select id="analysisHistYMode">
+            <option value="share" data-i18n="an.optShare">Share of each series</option>
+            <option value="count" data-i18n="an.optNumber">Number</option>
+        </select>
+    </label>
+</div>
+<div id="analysisHistContainer">
+    <canvas id="analysisHistChart"></canvas>
+</div>
+<p id="analysisHistNote" class="analysisHelp"></p>
+<p id="analysisHistGateway" class="analysisHelp"></p>
+
+<h4 id="analysisPairHeading" data-i18n="an.h4">4. Pair comparison</h4>
+<div id="analysisPairEmpty"></div>
+<div id="analysisPairBody" style="display:none">
+
+    <div class="analysisControls">
+        <label><span data-i18n="an.lblSource">Source</span>
+            <select id="analysisPairSource"></select>
+        </label>
+        <label><span data-i18n="an.lblTracer">Tracer</span>
+            <select id="analysisPairObserver"></select>
+        </label>
+    </div>
+
+    <div id="analysisPairSummary"></div>
+
+    <h5><span data-i18n="an.hAdvertPaths">Advert paths</span> <span class="analysisSwatch" style="background:#1e6fd9"></span></h5>
+    <div class="analysisScroll analysisScrollPair">
+        <table id="analysisPairAdvertTable" class="analysisTable analysisPairTable"></table>
+    </div>
+    <div id="analysisPairAdvertMore"></div>
+
+    <h5><span data-i18n="an.hSonarPaths">Sonar paths</span> <span class="analysisSwatch" style="background:#d9480f"></span></h5>
+    <div class="analysisScroll analysisScrollPair">
+        <table id="analysisPairSonarTable" class="analysisTable analysisPairTable"></table>
+    </div>
+    <div id="analysisPairSonarMore"></div>
+
+    <div class="analysisMapBar">
+        <span id="analysisPairCaption" class="nodePathCaption"></span>
+        <button id="analysisPairClearMap" type="button" data-i18n="an.btnClearMap">Clear map</button>
+    </div>
+    <div id="analysisPairMap"></div>
+
+</div>
+
+<h4 data-i18n="an.h5">5. Repeaters seen at depth</h4>
+<p class="analysisHelp" data-i18n="an.help5">
+    Repeaters seen forwarding at position 9 or beyond in the recorded paths.
+    The last hop, next to the tracer, is not counted. The list is
+    descriptive: it does not classify any repeater's limit. The last two
+    columns add what is known about the advert limit (panel 6).
+</p>
+<div class="analysisControls">
+    <label><span data-i18n="an.lblStatus">Status</span>
+        <select id="analysisRepStatus">
+            <option value="all" data-i18n="idx.optAll">All</option>
+            <option value="proven" data-i18n="an.optProven">Proven ≥ 9 hops</option>
+            <option value="indication" data-i18n="an.optIndication">Indication</option>
+            <option value="messages_only" data-i18n="an.optSonarOnly">Sonar only</option>
+        </select>
+    </label>
+    <label><span data-i18n="an.lblNameKey">Name / key</span>
+        <input type="text" id="analysisRepFilter" placeholder="e.g. repeater-1 or a1b2" data-i18n-attr="placeholder:idx.phName">
+    </label>
+</div>
+<div id="analysisRepSummary"></div>
+<div class="analysisScroll analysisScrollRep">
+    <table id="analysisRepeatersTable" class="analysisTable analysisRepeatersTable"></table>
+</div>
+
+<h4 data-i18n="an.h6">6. Operating limits</h4>
+<p class="analysisHelp" data-i18n-html="an.help6">
+    A repeater forwards a flooded packet only up to a number of hops, set by
+    three settings: <b>Flood Max Hops (Unscoped)</b>,
+    <b>Flood Max Hops (Advert)</b> and <b>Flood Max Hops</b>. trace-mon reads
+    them only from the repeaters it manages; for every other repeater on a
+    path they are not known, and only the highest position at which it was
+    seen forwarding is. The effective cap used here is a working hypothesis:
+    advert without region = min(Unscoped, Advert), advert with region =
+    Advert, message without region = min(Unscoped, Flood Max Hops), message
+    with region = Flood Max Hops. A repeater at position <i>k</i> of a path
+    can appear only if <i>k</i> is within its cap. In panels 3, 4 and 5,
+    &ldquo;would stop&rdquo; and &ldquo;not stopped&rdquo; say whether the
+    other kind of packet, with the same scope, could have followed the same
+    path, judged only on the settings known: it describes a path, it does not
+    classify a repeater.
+</p>
+<div id="analysisLimitsNotice"></div>
+<div id="analysisLimitsBody" style="display:none">
+
+    <h5 data-i18n="an.hSettings">Settings of the repeaters managed by trace-mon</h5>
+    <p class="analysisHelp" data-i18n-html="an.helpSettings">
+        The list of repeaters is not fixed: each manager of trace-mon can add
+        or remove repeaters, and a node may start without any and get one
+        later. The table follows the period selected above: it shows the
+        settings in force at the <b>end</b> of the period, only for the
+        repeaters whose settings are known in it. A repeater added during the
+        period is marked <i>added in this period</i>; one that stopped being
+        read, <i>no longer read</i>. The readings are kept even after a
+        repeater is removed from the configuration, so it still counts for
+        the periods in which it was read.
+    </p>
+    <div class="analysisScroll analysisScrollLimits">
+        <table id="analysisLimitsTable" class="analysisTable analysisLimitsTable"></table>
+    </div>
+    <div id="analysisLimitsOutside"></div>
+
+    <h5 data-i18n="an.hSources">Where the settings come from</h5>
+    <p class="analysisHelp" data-i18n="an.helpSources">
+        Each node reads the settings of its own repeaters, but a repeater of
+        one node also affects the packets seen at every other node, so the
+        readings of all nodes are combined. A node with no managed repeater
+        adds nothing: it is normal until one is added.
+    </p>
+    <div class="analysisScroll">
+        <table id="analysisSourcesTable" class="analysisTable analysisSourcesTable"></table>
+    </div>
+
+    <h5 data-i18n="an.hGateways">Gateway ceiling at each tracer</h5>
+    <p class="analysisHelp" data-i18n="an.helpGateways">
+        The gateway is the last repeater before the tracer. A copy cannot
+        have more hops than its gateway's cap, so where the gateways are
+        capped low the tracer cannot see deep paths of that kind, whatever
+        the repeaters in the middle do. Counted over all copies of the
+        period, from any source.
+    </p>
+    <div class="analysisScroll analysisScrollLimits">
+        <table id="analysisGatewaysTable" class="analysisTable analysisGatewaysTable"></table>
+    </div>
+
+</div>
+
+</div>
+
+</div>
 
 </div>
 
@@ -308,7 +524,21 @@
     trace-mon - 2026 - by Armando Accardo, IK2XYP
 </footer>
 
+<!--
+    i18n.js (testi in Italiano/English e selettore della lingua) DEVE stare
+    prima di app.js e di analysis.js: tl()/tlh()/tln() servono a entrambi.
+-->
+<script src="i18n.js"></script>
+
 <script src="app.js"></script>
+
+<!--
+    analysis.js DEVE stare dopo app.js (usa le sue funzioni e costanti di
+    primo livello) e PRIMA dello script inline qui sotto: il click di
+    ripristino della tab attiva (RESTORE ACTIVE TAB) gira al caricamento e,
+    se la tab salvata è «Analysis», chiama loadAnalysisTab() subito.
+-->
+<script src="analysis.js"></script>
 
 <script>
 const btn =
@@ -346,7 +576,7 @@ if (
     );
 
     btn.textContent =
-        "☀️ Light Mode";
+        tl("idx.themeLight");
 }
 
 /* =========================
@@ -377,12 +607,12 @@ btn.addEventListener(
         ) {
 
             btn.textContent =
-                "☀️ Light Mode";
+                tl("idx.themeLight");
         }
         else {
 
             btn.textContent =
-                "🌙 Dark Mode";
+                tl("idx.themeDark");
         }
 
         setTimeout(
@@ -488,6 +718,33 @@ document.querySelectorAll(
                                 }
                             }
                         );
+                    }
+                }
+
+                else if (
+                    tabBtn.dataset.tab === "analysisPage"
+                ) {
+
+                    //
+                    // Analysis (§88): nessun auto-refresh — i dati sono
+                    // precalcolati ogni due ore da analysis_job.js. Si
+                    // ferma però il timer condiviso lasciato acceso da
+                    // Trace/Nodes/Repeaters (è uno solo, v.
+                    // startAutoRefresh() in app.js), altrimenti
+                    // continuerebbe a ricaricare una tab nascosta.
+                    //
+                    if (
+                        typeof stopAutoRefresh === "function"
+                    ) {
+
+                        stopAutoRefresh();
+                    }
+
+                    if (
+                        typeof loadAnalysisTab === "function"
+                    ) {
+
+                        loadAnalysisTab();
                     }
                 }
 

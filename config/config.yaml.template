@@ -136,10 +136,14 @@ sonar:
 
   # Trasmissione del messaggio periodico numerato (la ricezione
   # dipende solo dal servizio 'sonar' in services:). La pianificazione
-  # è del crontab (sonar.sh), mai del daemon.
+  # è del crontab (sonar.sh), mai del daemon. Il sonar è un servizio
+  # come gli altri: una prima installazione nasce con ricezione E
+  # trasmissione già attive, senza parametri da toccare (docs/
+  # ARCHITECTURE.md §91). Gli invii veri partono comunque solo dalla
+  # riga sonar.sh del crontab.
   tx:
-    enabled: false      # true per trasmettere
-    scope: "*"          # "*" o U = unscoped; D = default del device; altrimenti una regione
+    enabled: true       # false per non trasmettere
+    scope: "D"          # D = default del device (come floodadv.sh); "*" o U = unscoped; altrimenti una regione
     min_interval: 600   # secondi minimi tra due invii (0 = nessuna guardia)
 
 services:

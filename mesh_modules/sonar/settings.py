@@ -29,12 +29,19 @@ Chiavi lette (tutte sotto 'sonar.'; v. config/config.yaml.template):
                      setup.sh non sostituito = "non configurato" (non è
                      un errore: il canale può già esistere sul device,
                      che ne conosce il segreto).
-    tx.enabled       abilita la trasmissione (default False). La
-                     ricezione dipende solo da services.sonar.enabled.
+    tx.enabled       abilita la trasmissione. Valore di ripiego del
+                     codice: False se la chiave manca. Il default di
+                     un'installazione NON è questo ma quello del
+                     template (config/config.yaml.template): true
+                     (docs/ARCHITECTURE.md §91). La ricezione dipende
+                     solo da services.sonar.enabled.
     tx.scope         scope predefinito delle trasmissioni: '*' (o 'U')
                      unscoped, '' (o 'D') default del device, oppure un
-                     nome di regione. Sovrascrivibile per singola
-                     richiesta (sonar.sh / tools/send_sonar.py).
+                     nome di regione. Valore di ripiego del codice: '*'
+                     se la chiave manca; il default di un'installazione
+                     è quello del template: "D" (§91). Sovrascrivibile
+                     per singola richiesta (sonar.sh /
+                     tools/send_sonar.py).
     tx.min_interval  secondi minimi tra due trasmissioni (default 600,
                      0 = nessuna guardia).
 

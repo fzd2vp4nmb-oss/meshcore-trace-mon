@@ -4,29 +4,26 @@
 <head>
     <meta charset="utf-8">
     <title>MeshCore Path Explorer - Node - Info</title>
-    <link rel="stylesheet" href="style.css">
+    <noscript>
+        <meta http-equiv="refresh" content="0; url=info_it.html">
+    </noscript>
+    <script>
+    // Apre la pagina nella lingua scelta nella dashboard (chiave "lang" di
+    // localStorage); se manca, non è valida o localStorage non è leggibile,
+    // italiano come nella dashboard.
+    (function () {
+        var lang = "it";
+        try {
+            if (localStorage.getItem("lang") === "en") {
+                lang = "en";
+            }
+        } catch (e) {
+        }
+        location.replace("info_" + lang + ".html");
+    })();
+    </script>
 </head>
 
 <body>
-
-<div class="headerBar">
-    <h2>trace-mon — Info</h2>
-    <a href="index.html" class="tabBarLink">&larr; Back to Dashboard</a>
-</div>
-
-<p>Choose a language / Scegli una lingua:</p>
-
-<p>
-    <a href="info_it.html" class="tabBarLink">Italiano</a>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    <a href="info_en.html" class="tabBarLink">English</a>
-</p>
-
-<script>
-if (localStorage.getItem("theme") === "dark") {
-    document.body.classList.add("dark");
-}
-</script>
-
 </body>
 </html>

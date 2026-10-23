@@ -1,0 +1,666 @@
+/*
+   guide.css - aspetto della guida (guide_it.html; la futura guide_en.html lo riusa).
+
+   Il file e' identico nei repository Nodo e Collettore (un test lo verifica) e NON dipende da style.css:
+   la guida non usa le classi della dashboard. Segue il tema chiaro/scuro della dashboard
+   (localStorage "theme"): lo script guide.js mette la classe "dark" sull'elemento <html>.
+
+   Struttura prodotta da build_guide.py (v. docs/ARCHITECTURE.md):
+     <main class="guide">
+       <details class="guideSec"> <summary><h3 id> ... </h3></summary> <div class="guideBody"> ...
+         <details class="guideSub"> <summary><h4 id> ... </h4></summary> <div class="guideBody"> ... </div> </details>
+       </div> </details>
+     </main>
+   Tutti i pannelli sono chiusi in partenza: l'elenco delle sezioni chiuse e' l'indice della guida.
+*/
+
+:root {
+    --bar-h: 56px;
+    --page-w: 980px;
+    --bg: #f2f5fa;
+    --surface: #ffffff;
+    --surface-2: #eef3fb;
+    --surface-hover: #e6eefa;
+    --text: #19212e;
+    --muted: #566377;
+    --line: #d8e0ec;
+    --accent: #1f5fbf;
+    --accent-strong: #174a96;
+    --accent-soft: #e1ebfa;
+    --accent-line: #b4c9ea;
+    --th-bg: #e4ecf9;
+    --zebra: #f5f8fd;
+    --code-bg: #edf1f8;
+    --term-bg: #111821;
+    --term-fg: #d6e0eb;
+    --shadow: 0 1px 2px rgba(20, 35, 60, 0.06), 0 6px 18px rgba(20, 35, 60, 0.06);
+    --bar-bg: #ffffff;
+    color-scheme: light;
+}
+
+:root.dark {
+    --bg: #0e1218;
+    --surface: #171c24;
+    --surface-2: #1e2530;
+    --surface-hover: #263041;
+    --text: #e3e8ef;
+    --muted: #9aa5b6;
+    --line: #2b3441;
+    --accent: #7fc8ff;
+    --accent-strong: #b0e0ff;
+    --accent-soft: #1c3654;
+    --accent-line: #33557f;
+    --th-bg: #1c3654;
+    --zebra: #1b212b;
+    --code-bg: #232b37;
+    --term-bg: #0a0e13;
+    --term-fg: #d6e0eb;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.3);
+    --bar-bg: #171c24;
+    color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16.5px;
+    line-height: 1.65;
+    background: var(--bg);
+    color: var(--text);
+}
+
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* ===== barra in alto ===== */
+
+.guideBar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: var(--bar-h);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 max(16px, calc((100% - var(--page-w)) / 2 + 16px));
+    background: var(--bar-bg);
+    border-bottom: 1px solid var(--line);
+}
+
+.guideBar h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.guideBar h2::before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 0.6rem;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+.backLink {
+    flex: none;
+    padding: 6px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--accent);
+    text-decoration: none;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+.backLink:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+}
+
+/* ===== pagina ===== */
+
+main.guide {
+    max-width: var(--page-w);
+    margin: 0 auto;
+    padding: 20px 16px 72px;
+}
+
+.guideTools {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 0 0 14px;
+}
+
+.guideTools[hidden] {
+    display: none;
+}
+
+.guideTools button {
+    font: inherit;
+    font-size: 0.875rem;
+    padding: 7px 16px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.guideTools button:hover {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+}
+
+/* ===== pannelli ===== */
+
+details.guideSec {
+    margin: 0 0 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    transition: border-color 0.2s;
+}
+
+details.guideSec[open] {
+    border-color: var(--accent-line);
+}
+
+.guide summary {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.guide summary::-webkit-details-marker {
+    display: none;
+}
+
+.guide summary::marker {
+    content: "";
+}
+
+.guide summary::after {
+    content: "";
+    flex: none;
+    width: 9px;
+    height: 9px;
+    margin: -4px 4px 0 0;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(45deg);
+    transition: transform 0.2s, margin 0.2s, border-color 0.2s;
+}
+
+.guide details[open] > summary::after {
+    margin-top: 4px;
+    border-color: var(--accent);
+    transform: rotate(-135deg);
+}
+
+.guide summary:hover::after {
+    border-color: var(--accent);
+}
+
+.guide summary h3,
+.guide summary h4 {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    line-height: 1.3;
+}
+
+/* sezioni (livello 1) */
+
+details.guideSec > summary {
+    padding: 16px 20px;
+    border-radius: 14px;
+    transition: background-color 0.15s;
+}
+
+details.guideSec > summary:hover {
+    background: var(--surface-hover);
+}
+
+details.guideSec > summary h3 {
+    font-size: 1.2rem;
+    font-weight: 650;
+}
+
+details.guideSec > summary .secNum {
+    flex: none;
+    min-width: 2.2em;
+    padding: 0.15em 0.5em;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.85em;
+    font-weight: 700;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* la sezione aperta resta agganciata sotto la barra: si puo' richiuderla da qualunque punto */
+details.guideSec[open] > summary {
+    position: sticky;
+    top: var(--bar-h);
+    z-index: 20;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    border-radius: 14px 14px 0 0;
+}
+
+details.guideSec[open] > summary:hover {
+    background: var(--surface-hover);
+}
+
+details.guideSec > .guideBody {
+    padding: 8px 24px 24px;
+}
+
+/* sottosezioni (livello 2) */
+
+details.guideSub {
+    margin: 10px 0;
+    background: var(--surface-2);
+    border: 1px solid transparent;
+    border-radius: 10px;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+details.guideSub[open] {
+    background: var(--surface);
+    border-color: var(--accent-line);
+}
+
+details.guideSub > summary {
+    padding: 11px 16px;
+    border-radius: 10px;
+    transition: background-color 0.15s;
+}
+
+details.guideSub:not([open]) > summary:hover {
+    background: var(--surface-hover);
+}
+
+details.guideSub > summary h4 {
+    font-size: 1.02rem;
+    font-weight: 600;
+}
+
+details.guideSub > summary .secNum {
+    flex: none;
+    min-width: 2.4em;
+    color: var(--accent);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+details.guideSub[open] > summary {
+    border-bottom: 1px solid var(--line);
+    border-radius: 10px 10px 0 0;
+}
+
+details.guideSub > .guideBody {
+    padding: 4px 18px 18px;
+}
+
+/* ogni corpo si apre con una breve dissolvenza */
+
+.guide details[open] > .guideBody {
+    animation: guideFade 0.22s ease-out;
+}
+
+@keyframes guideFade {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* ===== testo ===== */
+
+.guide h3[id],
+.guide h4[id],
+.guide h5[id] {
+    scroll-margin-top: calc(var(--bar-h) + 76px);
+}
+
+.guideBody > p,
+.guideBody > ul,
+.guideBody > ol {
+    max-width: 72ch;
+}
+
+.guideBody p {
+    margin: 0.85em 0;
+}
+
+.guideBody ul,
+.guideBody ol {
+    margin: 0.85em 0;
+    padding-left: 1.5em;
+}
+
+.guideBody li {
+    margin: 0.4em 0;
+}
+
+.guideBody li > ul,
+.guideBody li > ol {
+    margin: 0.3em 0;
+}
+
+.guide h5 {
+    margin: 1.7em 0 0.5em;
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--line);
+    font-size: 1rem;
+    font-weight: 650;
+    color: var(--accent-strong);
+}
+
+.guideBody a,
+.guideBody a:visited {
+    color: var(--accent);
+    text-underline-offset: 2px;
+}
+
+.guideBody a:hover {
+    color: var(--accent-strong);
+}
+
+.guideBody a.xref {
+    text-decoration-style: dotted;
+}
+
+code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.88em;
+    padding: 0.1em 0.4em;
+    border-radius: 5px;
+    background: var(--code-bg);
+    overflow-wrap: anywhere;
+}
+
+pre {
+    margin: 14px 0;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: var(--term-bg);
+    color: var(--term-fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    overflow-x: auto;
+}
+
+pre code {
+    padding: 0;
+    background: none;
+}
+
+/* ===== tabelle, immagini, schemi ===== */
+
+.scrollBox {
+    margin: 14px 0;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    -webkit-overflow-scrolling: touch;
+}
+
+.scrollBox > pre {
+    margin: 0;
+    border-radius: 0;
+}
+
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+th,
+td {
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--line);
+}
+
+th {
+    background: var(--th-bg);
+    font-weight: 650;
+}
+
+th[scope="colgroup"] {
+    text-align: center;
+}
+
+th[scope="row"] {
+    background: transparent;
+}
+
+tr:nth-child(even) > td {
+    background: var(--zebra);
+}
+
+tr:last-child > td,
+tr:last-child > th[scope="row"] {
+    border-bottom: 0;
+}
+
+.kvTable {
+    width: auto;
+    min-width: 50%;
+}
+
+.kvTable th {
+    white-space: nowrap;
+}
+
+.guide img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 16px auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+}
+
+:root.dark .guide img {
+    filter: brightness(0.92);
+}
+
+.guide svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 6px auto;
+}
+
+/* ===== telefono ===== */
+
+@media (max-width: 640px) {
+    body {
+        font-size: 16px;
+    }
+
+    .guideBar h2 {
+        font-size: 0.98rem;
+    }
+
+    .backLink {
+        padding: 5px 10px;
+        font-size: 0.82rem;
+    }
+
+    main.guide {
+        padding: 14px 10px 56px;
+    }
+
+    details.guideSec > summary {
+        padding: 14px 14px;
+    }
+
+    details.guideSec > summary h3 {
+        font-size: 1.08rem;
+    }
+
+    details.guideSec > .guideBody {
+        padding: 4px 14px 18px;
+    }
+
+    details.guideSub > summary {
+        padding: 10px 12px;
+    }
+
+    details.guideSub > .guideBody {
+        padding: 2px 12px 14px;
+    }
+}
+
+/* ===== movimento ridotto ===== */
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* ===== stampa: tutto aperto (guide.js apre i pannelli prima di stampare), niente barra ===== */
+
+@media print {
+
+    :root,
+    :root.dark {
+        --bg: #fff;
+        --surface: #fff;
+        --surface-2: #fff;
+        --text: #000;
+        --muted: #333;
+        --line: #bbb;
+        --accent: #000;
+        --accent-strong: #000;
+        --accent-soft: #eee;
+        --accent-line: #bbb;
+        --th-bg: #eee;
+        --zebra: #fff;
+        --code-bg: #eee;
+        --term-bg: #fff;
+        --term-fg: #000;
+        --shadow: none;
+    }
+
+    body {
+        font-size: 11pt;
+    }
+
+    .guideBar,
+    .guideTools {
+        display: none;
+    }
+
+    main.guide {
+        max-width: none;
+        padding: 0;
+    }
+
+    details.guideSec,
+    details.guideSub {
+        border: 0;
+        box-shadow: none;
+        background: none;
+    }
+
+    .guide summary {
+        position: static !important;
+        padding: 6pt 0 !important;
+        border: 0 !important;
+        background: none !important;
+    }
+
+    .guide summary::after {
+        display: none;
+    }
+
+    details.guideSec > .guideBody,
+    details.guideSub > .guideBody {
+        padding: 0 0 6pt;
+    }
+
+    pre {
+        border: 1px solid #999;
+        white-space: pre-wrap;
+    }
+
+    .scrollBox {
+        overflow: visible;
+    }
+
+    .guide img {
+        filter: none;
+    }
+
+    .guide h3,
+    .guide h4,
+    .guide h5 {
+        break-after: avoid;
+    }
+
+    .guide img,
+    .guide svg,
+    tr {
+        break-inside: avoid;
+    }
+}

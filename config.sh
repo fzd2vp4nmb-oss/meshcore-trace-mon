@@ -501,9 +501,9 @@ menu_sonar() {
         current_min_interval=$(engine get sonar.tx.min_interval)
 
         if [ -n "$current_secret" ] && [[ "$current_secret" != __*__ ]]; then
-            secret_label="impostato"
+            secret_label="impostata"
         else
-            secret_label="NON impostato"
+            secret_label="NON impostata"
         fi
 
         if [ "$current_tx" = "True" ]; then
@@ -515,9 +515,9 @@ menu_sonar() {
         echo
         echo "--- Sonar (canale dedicato per l'acquisizione dei path) ---"
         echo "(per attivare/disattivare l'intero modulo: menu 6 'Servizi')"
-        echo "Canale: ${current_channel:-TM-Sonar} — segreto: $secret_label"
+        echo "Canale: ${current_channel:-TM-Sonar} — chiave: $secret_label"
         echo "Trasmissione: $tx_label — scope: ${current_scope:-non impostato} — intervallo minimo: ${current_min_interval:-600}s"
-        echo "  1) Imposta il segreto del canale (32 caratteri esadecimali)"
+        echo "  1) Imposta la chiave del canale (32 caratteri esadecimali)"
         echo "  2) Abilita la trasmissione"
         echo "  3) Disabilita la trasmissione"
         echo "  4) Imposta lo scope di trasmissione"
@@ -530,17 +530,17 @@ menu_sonar() {
 
             1)
                 echo
-                echo "Il segreto è UGUALE su tutti i nodi della rete sonar e di norma"
+                echo "La chiave è UGUALE su tutti i nodi della rete sonar e di norma"
                 echo "arriva dal template (setup.sh, oppure la voce 9 'Allinea al template'):"
-                echo "questa voce serve solo per impostarlo o sostituirlo a mano su questo"
-                echo "nodo. Non viene mostrato mentre lo digiti."
-                read -r -s -p "Segreto (32 caratteri esadecimali): " secret
+                echo "questa voce serve solo per impostarla o sostituirla a mano su questo"
+                echo "nodo. Non viene mostrata mentre la digiti."
+                read -r -s -p "Chiave (32 caratteri esadecimali): " secret
                 echo
                 if [[ "$secret" =~ ^[0-9a-fA-F]{32}$ ]]; then
                     engine set sonar.channel_secret "$secret"
                     CHANGES_MADE=1
                 else
-                    echo "Segreto non valido: servono esattamente 32 caratteri esadecimali (0-9, a-f). Nessuna modifica."
+                    echo "Chiave non valida: servono esattamente 32 caratteri esadecimali (0-9, a-f). Nessuna modifica."
                 fi
                 ;;
 
@@ -582,9 +582,9 @@ menu_sonar() {
                 args=()
                 read -p "Creare il canale se manca? [y/N]: " yn
                 [[ "$yn" =~ ^[Yy]$ ]] && args+=(--create)
-                read -p "Mostrare il segreto del canale a video? [y/N]: " yn
+                read -p "Mostrare la chiave del canale a video? [y/N]: " yn
                 [[ "$yn" =~ ^[Yy]$ ]] && args+=(--show-secret)
-                read -p "Salvare il segreto in config.yaml se non ancora impostato? [y/N]: " yn
+                read -p "Salvare la chiave in config.yaml se non ancora impostata? [y/N]: " yn
                 [[ "$yn" =~ ^[Yy]$ ]] && args+=(--save-config)
                 "$PY" tools/sonar_channel.py "${args[@]}"
                 rc=$?

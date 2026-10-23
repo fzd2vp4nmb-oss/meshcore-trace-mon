@@ -85,6 +85,10 @@
             en: "Analysis",
             it: "Analisi"
         },
+        "idx.tabGuide": {
+            en: "Guide",
+            it: "Guida"
+        },
         "idx.tabTelegram": {
             en: "Telegram Notification",
             it: "Notifiche Telegram"
@@ -235,6 +239,26 @@
             en: "Observations",
             it: "Osservazioni"
         },
+        "idx.sonarMessages": {
+            en: "Sonar Messages",
+            it: "Messaggi Sonar"
+        },
+        "idx.fSonarTraceMonOnly": {
+            en: "Only trace-mon senders",
+            it: "Solo mittenti nodi trace-mon"
+        },
+        "idx.sonarPath": {
+            en: "Message Path",
+            it: "Path del messaggio"
+        },
+        "idx.sonarPathGuide": {
+            en: "Select a value in the \"Received\" column of the Messages table to see on the map the path followed by that message.",
+            it: "Seleziona un valore nella colonna \"Ricevuto\" della tabella Messaggi per vedere sulla mappa il path seguito da quel messaggio."
+        },
+        "idx.sonarDetailMessages": {
+            en: "Messages",
+            it: "Messaggi"
+        },
 
         // ---- index.html: pagina Repeaters ----
         "idx.statusH": {
@@ -268,8 +292,8 @@
             it: "<b>Tutti i nodi configurati su questo collettore.</b> Questa analisi combina i dati di ogni nodo e non dipende da uno solo, quindi il selettore <b>Nodo</b> non è mostrato in questa scheda."
         },
         "an.intro": {
-            en: "Compares the path taken by <b>adverts</b> (repeater flood, all nodes) with the path taken by <b>Sonar messages</b> (a message sent on purpose from a known node, so its source and send time are known). Both are read from the paths recorded by the tracers. The aim is to see how far each kind of packet really travels, and which repeaters are seen forwarding at depth. It is an inference from recorded paths, not a measurement of any repeater's settings. The only settings known are the flood limits of the repeaters managed by trace-mon (panel 6).",
-            it: "Confronta il path seguito dagli <b>advert</b> (flood dei repeater, tutti i nodi) con il path seguito dai <b>messaggi Sonar</b> (un messaggio inviato di proposito da un nodo noto, quindi con origine e ora di invio conosciute). Entrambi sono letti dai path registrati dai tracciatori. Lo scopo è vedere fin dove arriva davvero ogni tipo di pacchetto e quali repeater risultano ritrasmettere lontano dalla sorgente. È un'inferenza dai path registrati, non una misura delle impostazioni di un repeater. Le uniche impostazioni note sono i limiti di flood dei repeater gestiti da trace-mon (pannello 6)."
+            en: "Compares the path taken by <b>adverts</b> (repeater flood, all nodes) with the path taken by <b>Sonar messages</b> (a message sent on purpose from a known node, so its source and send time are known). Both are read from the paths recorded by the tracers. Source and tracer are two roles, not two kinds of node: the source is the node that transmits a packet, the tracer is another trace-mon node that receives it and records its path. The same trace-mon node is the source of the packets it transmits and the tracer of those it receives. The aim is to see how far each kind of packet really travels, and which repeaters are seen forwarding at depth. It is an inference from recorded paths, not a measurement of any repeater's settings. The only settings known are the flood limits of the repeaters managed by trace-mon (panel 6).",
+            it: "Confronta il path seguito dagli <b>advert</b> (flood dei repeater, tutti i nodi) con il path seguito dai <b>messaggi Sonar</b> (un messaggio inviato di proposito da un nodo noto, quindi con origine e ora di invio conosciute). Entrambi sono letti dai path registrati dai tracciatori. Sorgente e tracciatore sono due ruoli, non due tipi di nodo: la sorgente è il nodo che trasmette un pacchetto, il tracciatore è un altro nodo trace-mon che lo riceve e ne registra il path. Lo stesso nodo trace-mon è sorgente dei pacchetti che trasmette e tracciatore di quelli che riceve. Lo scopo è vedere fin dove arriva davvero ogni tipo di pacchetto e quali repeater risultano ritrasmettere lontano dalla sorgente. È un'inferenza dai path registrati, non una misura delle impostazioni di un repeater. Le uniche impostazioni note sono i limiti di flood dei repeater gestiti da trace-mon (pannello 6)."
         },
         "an.h1": {
             en: "1. Data status",
@@ -563,6 +587,30 @@
             en: "No device status data available.",
             it: "Nessun dato sullo stato del device disponibile."
         },
+        "nodes.connConnected": {
+            en: "Connected",
+            it: "Connesso"
+        },
+        "nodes.connDisconnected": {
+            en: "Disconnected",
+            it: "Disconnesso"
+        },
+        "nodes.connUnknown": {
+            en: "Unknown",
+            it: "Sconosciuto"
+        },
+        "nodes.connTipConnected": {
+            en: "The Companion is connected to trace-mon. Last check: {checked}.",
+            it: "Il Companion è connesso a trace-mon. Ultimo controllo: {checked}."
+        },
+        "nodes.connTipDisconnected": {
+            en: "The Companion is not connected to trace-mon (since {since}). Last check: {checked}.",
+            it: "Il Companion non è connesso a trace-mon (dal {since}). Ultimo controllo: {checked}."
+        },
+        "nodes.connTipUnknown": {
+            en: "Status not up to date: the last check was on {checked}. The daemon may be stopped, or recent data may be missing.",
+            it: "Stato non aggiornato: l'ultimo controllo risale al {checked}. Il daemon potrebbe essere fermo, oppure potrebbero mancare dati recenti."
+        },
         "nodes.heading": {
             en: "Known Nodes - {total} ({chat} chat | {repeaters} repeaters | {rooms} room server)",
             it: "Nodi conosciuti - {total} ({chat} chat | {repeaters} repeater | {rooms} room server)"
@@ -738,6 +786,80 @@
         "pmap.bridgedTooltip": {
             en: "Link that skips one or more points not shown (missing or duplicate data)",
             it: "Collegamento che salta uno o più punti non mostrati (dati mancanti o duplicati)"
+        },
+
+        // ---- app.js: elenco dei messaggi Sonar per mittente (pagina Nodes), dettaglio del mittente e mappa del path ----
+        "sonar.heading.one": {
+            en: "Sonar Messages - {n} sender",
+            it: "Messaggi Sonar - {n} mittente"
+        },
+        "sonar.heading.other": {
+            en: "Sonar Messages - {n} senders",
+            it: "Messaggi Sonar - {n} mittenti"
+        },
+        "sonar.headingFiltered.one": {
+            en: "Sonar Messages - {shown} of {n} sender",
+            it: "Messaggi Sonar - {shown} su {n} mittente"
+        },
+        "sonar.headingFiltered.other": {
+            en: "Sonar Messages - {shown} of {n} senders",
+            it: "Messaggi Sonar - {shown} su {n} mittenti"
+        },
+        "sonar.colSender": {
+            en: "Sender",
+            it: "Mittente"
+        },
+        "sonar.colMsg": {
+            en: "Msg",
+            it: "Msg"
+        },
+        "sonar.infoLastMessage": {
+            en: "Last Message",
+            it: "Ultimo messaggio"
+        },
+        "sonar.infoReceptions": {
+            en: "Total Receptions",
+            it: "Ricezioni totali"
+        },
+        "sonar.senderAmbiguous": {
+            en: "(ambiguous)",
+            it: "(ambiguo)"
+        },
+        "sonar.pathUnknown": {
+            en: "{n} hop (path not recorded)",
+            it: "{n} hop (path non registrato)"
+        },
+        "sonar.noMessages": {
+            en: "No Sonar messages received.",
+            it: "Nessun messaggio Sonar ricevuto."
+        },
+        "sonar.noArchive": {
+            en: "No Sonar messages archived for the selected period.",
+            it: "Nessun messaggio Sonar archiviato per il periodo selezionato."
+        },
+        "sonar.noMatch": {
+            en: "No messages from trace-mon nodes.",
+            it: "Nessun messaggio da nodi trace-mon."
+        },
+        "smap.stepSender": {
+            en: "Sender",
+            it: "Mittente"
+        },
+        "smap.reasonSenderUnknown": {
+            en: "unknown sender: no known node starts with prefix {prefix}",
+            it: "mittente sconosciuto: nessun nodo conosciuto inizia con il prefisso {prefix}"
+        },
+        "smap.reasonSenderAmbiguous": {
+            en: "ambiguous sender: {n} known nodes start with prefix {prefix}",
+            it: "mittente ambiguo: {n} nodi conosciuti iniziano con il prefisso {prefix}"
+        },
+        "smap.markerSender": {
+            en: "{name} (sender)",
+            it: "{name} (mittente)"
+        },
+        "smap.caption": {
+            en: "Sonar message received on {time} — {hops} — points on the map: {shown} of {total}",
+            it: "Messaggio Sonar ricevuto il {time} — {hops} — punti sulla mappa: {shown} su {total}"
         },
 
         // ---- tooltip delle righe di Device Status, Telemetry, Status e Config (header non tradotti) ----
@@ -1148,6 +1270,10 @@
         "an.missing": {
             en: "missing:",
             it: "mancanti:"
+        },
+        "an.stateOk": {
+            en: "ok",
+            it: "ok"
         },
         "an.hSonarSources": {
             en: "Sonar sources",

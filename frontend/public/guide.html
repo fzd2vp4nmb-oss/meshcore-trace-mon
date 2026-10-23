@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>trace-mon - Guida</title>
+    <noscript>
+        <meta http-equiv="refresh" content="0; url=guide_it.html">
+    </noscript>
+    <script>
+    // Apre la guida nella lingua scelta nella dashboard (chiave "lang" di
+    // localStorage), se la guida esiste in quella lingua; altrimenti, o se
+    // la scelta manca, non è valida o localStorage non è leggibile,
+    // italiano come nella dashboard. Oggi la guida esiste solo in italiano:
+    // quando ci sarà guide_en.html basta aggiungere "en" a GUIDE_LANGS.
+    (function () {
+        var GUIDE_LANGS = ["it"];
+        var lang = "it";
+        try {
+            var saved = localStorage.getItem("lang");
+            if (GUIDE_LANGS.indexOf(saved) !== -1) {
+                lang = saved;
+            }
+        } catch (e) {
+        }
+        location.replace("guide_" + lang + ".html");
+    })();
+    </script>
+</head>
+
+<body>
+</body>
+</html>

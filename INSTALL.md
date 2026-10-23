@@ -748,12 +748,13 @@ le notifiche, che sono facoltative. Partono dal Collector, quindi
 funzionano solo con il nodo già collegato (§14).
 
 `trace-mon` può inviarti notifiche via Telegram su eventi relativi al
-tuo ripetitore — oggi: temperatura sopra 49°C o sotto 0°C, TX Duty
-Cycle osservato dal 9% in su, tensione di batteria sotto 3.1V, Duty
+tuo ripetitore — oggi: temperatura da 37°C in su o da 0°C in giù, TX
+Duty Cycle osservato dal 9% in su, tensione di batteria da 3.1V in giù, Duty
 Cycle configurato sopra il 10% e Default Region non impostata (un solo
 avviso quando la soglia viene superata, poi silenzio finché il valore
-non rientra e la risupera, niente avvisi ripetuti) — un servizio
-distinto dal modulo **Bot** già
+non rientra e la risupera, niente avvisi ripetuti), più il device
+scollegato dal nodo (un avviso alla disconnessione e uno quando torna
+connesso) — un servizio distinto dal modulo **Bot** già
 visto al §1.3: quello risponde a comandi ricevuti via radio sul
 canale `#bot` della mesh, questo qui invia messaggi in uscita al
 **tuo account Telegram personale**, tramite il bot Telegram del

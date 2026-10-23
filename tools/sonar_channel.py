@@ -90,26 +90,26 @@ def build_parser():
 
     parser = argparse.ArgumentParser(
         description="Verifica/crea il canale dedicato del sonar sul "
-                    "companion e ne ricava il segreto."
+                    "companion e ne ricava la chiave."
     )
 
     parser.add_argument(
         "--create",
         action="store_true",
-        help="crea il canale se manca (segreto configurato, o generato)",
+        help="crea il canale se manca (chiave configurata, o generata)",
     )
 
     parser.add_argument(
         "--show-secret",
         action="store_true",
-        help="stampa il segreto del canale (esadecimale, RISERVATO)",
+        help="stampa la chiave del canale (esadecimale, RISERVATA)",
     )
 
     parser.add_argument(
         "--save-config",
         action="store_true",
-        help="scrive il segreto in config/config.yaml "
-             "(sonar.channel_secret) se non ancora impostato",
+        help="scrive la chiave in config/config.yaml "
+             "(sonar.channel_secret) se non ancora impostata",
     )
 
     return parser
@@ -151,9 +151,9 @@ def save_secret_to_config(secret_hex):
             return True, f"{CONFIG_KEY} già impostato allo stesso valore"
 
         return False, (
-            f"{CONFIG_KEY} contiene già un segreto DIVERSO da quello del "
-            f"canale: non viene sovrascritto (correggerlo a mano con "
-            f"config.sh se è quello sbagliato)"
+            f"{CONFIG_KEY} contiene già una chiave DIVERSA da quella del "
+            f"canale: non viene sovrascritta (correggerla a mano con "
+            f"config.sh se è quella sbagliata)"
         )
 
     backup_path = edit_config.backup_config()
@@ -201,7 +201,7 @@ async def main(argv=None):
     if args.show_secret and secret:
 
         print()
-        print(f"Segreto del canale (esadecimale, RISERVATO): {secret}")
+        print(f"Chiave del canale (esadecimale, RISERVATA): {secret}")
         print(
             "Da scrivere (una volta) in config/config.yaml.template, riga "
             "sonar.channel_secret: arriva da lì a tutti i nodi."
@@ -212,7 +212,7 @@ async def main(argv=None):
         if not secret:
 
             print(
-                "ERRORE: il daemon non ha restituito il segreto.",
+                "ERRORE: il daemon non ha restituito la chiave.",
                 file=sys.stderr
             )
 

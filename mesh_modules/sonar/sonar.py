@@ -440,10 +440,10 @@ class SonarModule:
             return
 
         log.info(
-            "SonarModule: avvio (canale=%s, segreto %s, trasmissione "
+            "SonarModule: avvio (canale=%s, chiave %s, trasmissione "
             "%s, scope=%r, min_interval=%ss).",
             settings.channel_name,
-            "configurato" if settings.channel_secret else "non configurato",
+            "configurata" if settings.channel_secret else "non configurata",
             "abilitata" if settings.tx_ok and settings.tx_enabled
             else "disabilitata",
             settings.tx_scope,
@@ -803,8 +803,8 @@ class SonarModule:
             "con quello del canale '%s': il filtro del bot (che confronta "
             "solo quel byte) può accodare i pacchetti del sonar. Nessun "
             "dato viene perso né il bot smette di funzionare; per evitarlo "
-            "usare un altro segreto (tools/sonar_channel.py genera sempre "
-            "un segreto senza questa omonimia).",
+            "usare un'altra chiave (tools/sonar_channel.py genera sempre "
+            "una chiave senza questa omonimia).",
             self.settings.channel_name,
             channel_hash,
             other
@@ -846,8 +846,8 @@ class SonarModule:
             self._set_channel_state(
                 STATUS_CONFLICT,
                 f"il canale '{self.settings.channel_name}' esiste già sul "
-                f"device (slot {info.get('channel_idx')}) con un segreto "
-                f"DIVERSO da sonar.channel_secret: non viene modificato"
+                f"device (slot {info.get('channel_idx')}) con una chiave "
+                f"DIVERSA da sonar.channel_secret: non viene modificato"
             )
 
             return
@@ -911,11 +911,11 @@ class SonarModule:
             return False
 
         log.info(
-            "SonarModule: canale '%s' creato nello slot %d (segreto %s).",
+            "SonarModule: canale '%s' creato nello slot %d (chiave %s).",
             name,
             idx,
             "da configurazione" if self.settings.channel_secret == secret
-            else "generato"
+            else "generata"
         )
 
         self.channel = info

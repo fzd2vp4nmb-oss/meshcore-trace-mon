@@ -26,6 +26,27 @@ from mesh_modules.contact_sync.db import ContactDB
 #
 MIN_PATH_OBSERVATION_INTERVAL = 2
 
+#
+# Stato di connessione del device (tabella device_connection, v.
+# docs/ARCHITECTURE.md §94). Il ciclo _connection_loop() legge ogni
+# CONNECTION_POLL_SECS il flag in memoria Engine.connected (nessuna I/O:
+# è già tenuto aggiornato dall'heartbeat get_bat di 15 s e dagli eventi
+# CONNECTED/DISCONNECTED della libreria) e scrive in contacts.db:
+#   - SUBITO a ogni cambio di valore;
+#   - come RICONFERMA ogni CONNECTION_RECONFIRM_SECS anche senza cambi
+#     (aggiorna solo checked_at): è ciò che permette al frontend di
+#     distinguere "connesso da ore" da "daemon fermo, dato vecchio"
+#     (oltre 30 minuti senza riconferma lo stato mostrato è
+#     "sconosciuto"). 300 s = la cadenza di contact_sync.sh: il DB
+#     cambia comunque quasi a ogni giro (v. §94), la riconferma non
+#     aggiunge scritture "extra" rilevanti.
+# CONNECTION_RETRY_SECS: pausa dopo una scrittura fallita (disco pieno,
+# lock prolungato), per non ripetere l'errore e il log ogni 5 s.
+#
+CONNECTION_POLL_SECS = 5
+CONNECTION_RECONFIRM_SECS = 300
+CONNECTION_RETRY_SECS = 60
+
 
 class ContactSyncModule:
     """
@@ -79,6 +100,7 @@ class ContactSyncModule:
         self.db = ContactDB(self.db_path)
 
         self._sync_task = None
+        self._connection_task = None
 
         #
         # Riferimenti ai task di rebind creati da _on_rebind() (code
@@ -184,6 +206,15 @@ class ContactSyncModule:
                 "ContactSyncModule: scrittura telegram_settings fallita "
                 "(non fatale, avvio del modulo prosegue)."
             )
+
+        #
+        # Stato di connessione del device (§94): avviato PRIMA del sync
+        # iniziale, così una caduta durante l'avvio viene registrata. Il
+        # primo giro del ciclo scrive subito lo stato corrente.
+        #
+        self._connection_task = asyncio.create_task(
+            self._connection_loop()
+        )
 
         self._subscribe()
 
@@ -385,6 +416,71 @@ class ContactSyncModule:
                     "prossimo giro (tra %ss) verrà comunque tentato.",
                     self.sync_interval
                 )
+
+    async def _connection_loop(self):
+        """
+        Registra in contacts.db (device_connection) lo stato di
+        connessione daemon <-> companion: scrittura a ogni cambio di
+        valore di Engine.connected e riconferma ogni
+        CONNECTION_RECONFIRM_SECS (v. commento sulle costanti, e
+        docs/ARCHITECTURE.md §94).
+
+        Come _periodic_sync_loop() è un task standalone il cui esito non
+        lo attende nessuno: ogni eccezione è catturata e loggata, il
+        ciclo continua. La scrittura passa da _run_db() come tutte le
+        altre di questo modulo (nessun secondo scrittore, §55).
+
+        Limite noto: un cambio di stato più breve di
+        CONNECTION_POLL_SECS (o più breve del ciclo dell'heartbeat che
+        aggiorna Engine.connected) non viene registrato.
+        """
+
+        #
+        # Le cadenze (riconferma, pausa dopo un errore) sono misurate con
+        # l'orologio MONOTONICO: l'ora di sistema del Raspberry può fare
+        # salti (NTP appena sincronizzato dopo l'avvio) e un salto
+        # all'indietro bloccherebbe la riconferma finché l'ora non
+        # raggiunge di nuovo il valore precedente. L'ora "vera"
+        # (time.time()) serve solo per il valore scritto in tabella.
+        #
+        last_value = None
+        last_write = 0.0
+        retry_not_before = 0.0
+
+        while True:
+
+            tick = time.monotonic()
+
+            if tick >= retry_not_before:
+
+                try:
+                    connected = bool(self.engine.connected)
+
+                    if (
+                        connected != last_value or
+                        tick - last_write >= CONNECTION_RECONFIRM_SECS
+                    ):
+
+                        await self._run_db(
+                            self.db.record_device_connection,
+                            int(time.time()),
+                            connected
+                        )
+
+                        last_value = connected
+                        last_write = tick
+
+                except Exception:
+
+                    retry_not_before = tick + CONNECTION_RETRY_SECS
+
+                    log.exception(
+                        "ContactSyncModule: scrittura device_connection "
+                        "fallita (non fatale, nuovo tentativo tra %ss).",
+                        CONNECTION_RETRY_SECS
+                    )
+
+            await asyncio.sleep(CONNECTION_POLL_SECS)
 
     async def _full_sync(self):
 

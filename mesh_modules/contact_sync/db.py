@@ -236,6 +236,37 @@ CREATE TABLE IF NOT EXISTS telegram_settings (
     updated_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS device_connection (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+                  -- riga singola forzata dal CHECK (stesso pattern di
+                  -- device_status e telegram_settings): lo stato
+                  -- ATTUALE della connessione tra il daemon e il
+                  -- companion, non uno storico. Scritta solo da
+                  -- ContactSyncModule (tramite record_device_connection()),
+                  -- mai da un secondo scrittore (§55). Tabella
+                  -- DEDICATA e non colonne di device_status: quella
+                  -- tabella viene scritta solo quando il giro di sync
+                  -- riesce a interrogare il device (e ha updated_at
+                  -- NOT NULL come "ultima lettura riuscita"), mentre
+                  -- qui il dato più utile è proprio quello che si ha
+                  -- quando il device NON risponde — v.
+                  -- docs/ARCHITECTURE.md §94.
+    connected   INTEGER NOT NULL,
+                  -- 1 = il daemon vede il companion collegato
+                  -- (Engine.connected), 0 = no.
+    changed_at  INTEGER NOT NULL,
+                  -- epoch (s): ultimo CAMBIO di stato (da 1 a 0 o da
+                  -- 0 a 1). Non si muove alle riconferme.
+    checked_at  INTEGER NOT NULL
+                  -- epoch (s): ultima volta che il daemon ha
+                  -- (ri)scritto lo stato, anche senza cambiamenti
+                  -- (riconferma periodica). Il frontend lo confronta
+                  -- con l'ora del server: se è troppo vecchio il
+                  -- valore di "connected" non è più affidabile (daemon
+                  -- fermo, Collettore senza dati freschi) e lo stato
+                  -- mostrato è "sconosciuto".
+);
+
 -- ---------------------------------------------------------------
 -- Sonar (mesh_modules/sonar/, docs/ARCHITECTURE.md §87)
 --
@@ -1136,6 +1167,48 @@ class ContactDB:
                 enabled    = excluded.enabled
             """,
             (updated_at, chat_id or None, 1 if enabled else 0)
+        )
+
+        self._conn.commit()
+
+    def record_device_connection(
+        self,
+        now,
+        connected
+    ):
+        """
+        Stato corrente della connessione daemon <-> companion
+        (docs/ARCHITECTURE.md §94). Riga singola (id=1 fisso, stesso
+        pattern di upsert_device_status()/upsert_telegram_settings()).
+
+        Una sola istruzione, usata sia per un cambio di stato sia per
+        la riconferma periodica: checked_at è sempre aggiornato,
+        changed_at solo se il valore di 'connected' è diverso da quello
+        già in tabella (in un UPSERT i riferimenti alle colonne della
+        tabella nel SET leggono la riga PRIMA dell'aggiornamento, quindi
+        l'ordine delle assegnazioni non conta). Al primo inserimento
+        changed_at = checked_at = now.
+
+        Non c'è COALESCE né altra logica: il chiamante passa sempre lo
+        stato completo (un booleano), non dati parziali.
+        """
+
+        value = 1 if connected else 0
+
+        self._conn.execute(
+            """
+            INSERT INTO device_connection (id, connected, changed_at, checked_at)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                changed_at = CASE
+                    WHEN device_connection.connected = excluded.connected
+                        THEN device_connection.changed_at
+                    ELSE excluded.changed_at
+                END,
+                connected  = excluded.connected,
+                checked_at = excluded.checked_at
+            """,
+            (value, now, now)
         )
 
         self._conn.commit()

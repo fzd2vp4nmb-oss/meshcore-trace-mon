@@ -231,6 +231,34 @@ let traceDetailRequestId = 0;
 //
 let nodePathRequestId = 0;
 
+//
+// Messaggi Sonar nella pagina Nodes: elenco per mittente, pagina di dettaglio
+// del mittente e mappa del path (v. sezione "NODES — MESSAGGI SONAR" più
+// sotto, docs/ARCHITECTURE.md §96 e §97). Mappa e strati sono SEPARATI da
+// quelli del path advert (nodePath*): stesse ragioni dell'ultimo blocco sopra.
+//
+// sonarMessagesState: ultima risposta di /api/sonar/messages (le ricezioni
+// fisiche; l'elenco ne ricava una riga per mittente).
+// Dettaglio del mittente aperto — copia presa al momento del click, come
+// nodeDetailObservations: sonarDetailPrefix (prefisso del mittente),
+// sonarDetailSender (la sua voce di `senders`), sonarDetailRows (le SUE
+// ricezioni in ordine cronologico; l'indice data-sonar-index dei link punta a
+// questo array). sonarSelectedKey: chiave (sonarMessageKey()) della ricezione
+// la cui mappa è aperta, o null.
+//
+let sonarMessagesState = { available: true, reason: null, messages: [], senders: {} };
+let sonarDetailPrefix = null;
+let sonarDetailSender = null;
+let sonarDetailRows = [];
+let sonarSelectedKey = null;
+let sonarMessagesRequestId = 0;
+let sonarPathRequestId = 0;
+let sonarPathMap = null;
+let sonarPathMarkerLayerGroup = null;
+let sonarPathSegmentLayerGroup = null;
+let sonarPathSegmentDefs = [];
+let sonarPathInfoControl = null;
+
 /* ==========================================
    AUTO REFRESH INTERVAL
 
@@ -3559,6 +3587,12 @@ async function loadNodesTab() {
 
     loadDeviceStatus();
 
+    //
+    // Tabella Sonar Messages (§96): richiesta e token propri, indipendente
+    // da Known Nodes — un errore o un ritardo dell'una non tocca l'altra.
+    //
+    loadSonarMessages();
+
     const table =
         document.getElementById(
             "nodesTable"
@@ -5196,6 +5230,109 @@ async function loadDeviceStatus() {
 }
 
 //
+// Indicatore di connessione del device (§94), accanto al nome nel tab
+// Nodes: «<nome>: ✓ Connesso» / «✗ Disconnesso» / «? Sconosciuto».
+//
+// Il dato arriva da /api/device_status (campo `connection`, calcolato dal
+// server: {state, changed_at, checked_at}); lo stato «unknown» è quello a
+// cui il server riduce un valore non più fresco (daemon fermo, copia del
+// database vecchia sul Collettore) — v. device_connection.js. Senza campo
+// (`connection` null: nodo con il daemon non ancora aggiornato) nessun
+// indicatore.
+//
+// Il modello è separato dal rendering per poterlo provare senza DOM. Solo
+// i tre stati noti producono un modello; qualunque altro valore → null.
+// Il testo viene dal dizionario, i tempi da formatUnixTime(): nessun dato
+// del database finisce nell'HTML come testo libero (e il tooltip passa
+// comunque da escapeHtml()).
+//
+function deviceConnectionBadgeModel(
+    connection
+) {
+
+    if (
+        !connection ||
+        typeof connection !== "object"
+    ) {
+
+        return null;
+    }
+
+    const params = {
+        checked: formatUnixTime(connection.checked_at),
+        since: formatUnixTime(connection.changed_at)
+    };
+
+    if (
+        connection.state === "connected"
+    ) {
+
+        return {
+            cls: "deviceConnOn",
+            icon: "\u2713",
+            label: tl("nodes.connConnected"),
+            tip: tl("nodes.connTipConnected", params)
+        };
+    }
+
+    if (
+        connection.state === "disconnected"
+    ) {
+
+        return {
+            cls: "deviceConnOff",
+            icon: "\u2717",
+            label: tl("nodes.connDisconnected"),
+            tip: tl("nodes.connTipDisconnected", params)
+        };
+    }
+
+    if (
+        connection.state === "unknown"
+    ) {
+
+        return {
+            cls: "deviceConnUnknown",
+            icon: "?",
+            label: tl("nodes.connUnknown"),
+            tip: tl("nodes.connTipUnknown", params)
+        };
+    }
+
+    return null;
+}
+
+function renderNodesDeviceConnection(
+    connection
+) {
+
+    const box =
+        document.getElementById(
+            "nodesDeviceConnection"
+        );
+
+    if (
+        !box
+    ) {
+
+        return;
+    }
+
+    const model =
+        deviceConnectionBadgeModel(
+            connection
+        );
+
+    box.innerHTML =
+        model
+            ? `<span class="deviceConnColon">:</span>` +
+              `<span class="deviceConnBadge ${model.cls}" data-tooltip="${escapeHtml(model.tip)}">` +
+              `<span class="deviceConnIcon" aria-hidden="true">${model.icon}</span>` +
+              `${escapeHtml(model.label)}</span>`
+            : "";
+}
+
+//
 // Intestazione del tab Nodes con il nome del device companion a cui si
 // riferiscono Device Status e Known Nodes — docs/ARCHITECTURE.md §77.
 // Stesso ruolo e stesso stile di #neighborRepeaterName nel tab
@@ -5219,6 +5356,18 @@ async function loadDeviceStatus() {
 function renderNodesDeviceName(
     status
 ) {
+
+    //
+    // Indicatore di connessione accanto al nome (§94): segue lo stesso
+    // ciclo del nome — senza dati (status null: nessuna risposta, errore
+    // di caricamento, sul Collettore cambio di nodo) sparisce, mai un
+    // «Connesso» rimasto da un giro o da un nodo precedente.
+    //
+    renderNodesDeviceConnection(
+        status
+            ? status.connection
+            : null
+    );
 
     const heading =
         document.getElementById(
@@ -7260,6 +7409,1679 @@ function renderNodeDetailPathSegmentsAtCurrentZoom() {
                 arrowColor,
                 ARROW_END_T,
                 nodePathSegmentLayerGroup
+            );
+        }
+    );
+}
+
+/* =========================
+   NODES — MESSAGGI SONAR (elenco per mittente, dettaglio del mittente e mappa del path)
+
+   Vedi docs/ARCHITECTURE.md §96 e §97 e CHANGES_sonar_sender_detail.md.
+   Richiesta dell'utente (2026-10-22): vedere dalla dashboard i messaggi
+   del canale Sonar che il nodo ha ricevuto — chi li ha mandati, quando e
+   con quale path — con lo STESSO meccanismo dei Nodi conosciuti:
+
+     pagina Nodes  l'elenco ha una riga per MITTENTE, il cui nome è il link,
+                   con il suo ultimo messaggio: data di ricezione e path
+                   della PRIMA copia arrivata. Sta sotto Known Nodes; sul
+                   Collettore dipende dal selettore Node come il resto.
+     dettaglio     il link apre una pagina dedicata (#sonarDetailPage, come
+                   #nodeDetailPage) che nasconde l'elenco: «Back to list»,
+                   tabella info del mittente, mappa del path e tabella di
+                   TUTTE le sue ricezioni (Msg, Received, Hops, Path, RSSI,
+                   SNR), le più recenti in cima. Le copie dello stesso
+                   messaggio arrivate per path diversi sono righe vicine,
+                   come le osservazioni di uno stesso advert.
+
+   Dati: /api/sonar/messages (sonar_messages.js), una riga per ricezione
+   fisica. Il Period della pagina (nodesArchivePeriod, §75) vale anche qui:
+   Live = tabella sonar_rx; un mese = archivio sonar_rx dello stesso mese.
+   Un «messaggio» è l'insieme delle ricezioni con lo stesso mittente,
+   pkt_hash e seq (lo stesso pacchetto sentito per percorsi diversi, D2/D43
+   del §87); senza pkt_hash ogni ricezione è un messaggio a sé.
+
+   Il dettaglio non fa richieste: lavora su una COPIA delle righe del
+   mittente prese dall'ultimo elenco caricato, così un ricaricamento
+   dell'elenco non sposta gli indici dei link. Con il dettaglio aperto
+   l'aggiornamento automatico di Nodes è fermo (come in goToNodeDetail()):
+   il dettaglio è un'istantanea dell'elenco da cui si è partiti.
+
+   Ogni «Received» del dettaglio è un link: seleziona la ricezione e mostra,
+   nella stessa pagina, la mappa del suo path, come per un advert (§84):
+       MITTENTE -> hop 1 -> ... -> hop N -> SRC (il Companion locale)
+   Il modello del path è quello degli advert, buildAdvertPathModel(), usato
+   senza modificarlo: qui cambia solo l'origine, che è il mittente del
+   messaggio e non un nodo aperto in dettaglio. Il mittente si risolve dal
+   suo prefisso di 8 caratteri (non è una chiave intera) in /api/sonar/
+   messages, che lo cerca in `nodes`: se il prefisso non corrisponde a
+   nessun nodo (sconosciuto) o a più di uno (ambiguo) il mittente NON viene
+   disegnato e il riquadro sulla mappa dichiara il motivo — gli stessi
+   criteri di hop sconosciuti/ambigui e di punti senza posizione (§84).
+   Gli hop sono repeater, risolti come sempre da meshNodes.
+
+   Le funzioni della mappa (ensure/reset/render/segmenti) sono PARALLELE a
+   quelle di NODE DETAIL — MAPPA PATH ADVERT, con stato proprio (mappa,
+   strati, segmenti, token di richiesta): le due mappe stanno su schermate
+   diverse e non devono poter sporcare l'una il disegno dell'altra, e le
+   funzioni dell'advert non sono state toccate. Condivise, invariate:
+   buildAdvertPathModel(), buildNodePathInfoHtml(), nodePathIconForPoint(),
+   createOsmTileLayer(), offsetSegmentPixels(), bearingDegrees(),
+   addTraceArrowMarker() e le costanti NODE_PATH_*.
+========================= */
+
+// ==== DIFFERENZA STRUTTURALE Nodo/Collettore: INIZIO ====
+// Tutto il resto di questa sezione è identico nei due repository (verificato
+// da sandbox_tests/test_sonar_messages_table_2026_10_22.js).
+
+// Parametro ?node= delle fetch: il Nodo ha un solo database.
+function sonarNodeQuery() {
+
+    return "";
+}
+
+// ==== DIFFERENZA STRUTTURALE Nodo/Collettore: FINE ====
+
+function sonarMessagesUrl() {
+
+    const query =
+        sonarNodeQuery();
+
+    return (
+        "/api/sonar/messages?file=" +
+        encodeURIComponent(
+            nodesArchivePeriod
+        ) +
+        (
+            query ?
+                "&" + query :
+                ""
+        )
+    );
+}
+
+function sonarDeviceStatusUrl() {
+
+    const query =
+        sonarNodeQuery();
+
+    return (
+        "/api/device_status" +
+        (
+            query ?
+                "?" + query :
+                ""
+        )
+    );
+}
+
+//
+// Chiave stabile di una RICEZIONE fra un ricaricamento e l'altro: l'id di
+// sonar_rx (presente anche negli archivi); senza id, i campi che la
+// individuano. L'indice nell'array no: arrivano ricezioni nuove in fondo.
+//
+function sonarMessageKey(
+    message
+) {
+
+    if (
+        message.id !== null &&
+        message.id !== undefined
+    ) {
+
+        return "id:" + message.id;
+    }
+
+    return (
+        "t:" +
+        message.observed_at + ":" +
+        message.src_prefix + ":" +
+        message.seq
+    );
+}
+
+//
+// Chiave del MESSAGGIO a cui appartiene una ricezione: le copie dello stesso
+// pacchetto arrivate per path diversi hanno lo stesso mittente, pkt_hash e
+// seq (§87, D2: «le copie si raggruppano per pkt_hash»). Senza pkt_hash non
+// si può dire che due ricezioni siano lo stesso messaggio: ognuna è a sé.
+//
+function sonarMessageGroupKey(
+    message
+) {
+
+    if (
+        message.pkt_hash === null ||
+        message.pkt_hash === undefined
+    ) {
+
+        return "r:" + sonarMessageKey(message);
+    }
+
+    return (
+        "p:" +
+        message.src_prefix + ":" +
+        message.pkt_hash + ":" +
+        message.seq
+    );
+}
+
+//
+// true se la ricezione `a` è arrivata prima di `b` (a parità di secondo, id
+// minore). Non si fa affidamento sull'ordine dell'array: lo garantisce il
+// server, ma qui basta un confronto.
+//
+function sonarReceivedBefore(
+    a,
+    b
+) {
+
+    if (
+        a.observed_at !== b.observed_at
+    ) {
+
+        return a.observed_at < b.observed_at;
+    }
+
+    return (
+        (a.id === null || a.id === undefined ? 0 : a.id) <
+        (b.id === null || b.id === undefined ? 0 : b.id)
+    );
+}
+
+//
+// Riepilogo di UN mittente. entries: le sue ricezioni come
+// { message, index } (index = posizione nell'array d'origine), in qualunque
+// ordine. Restituisce il suo ULTIMO messaggio — quello la cui prima copia è
+// arrivata per ultima — rappresentato dalla PRIMA copia, più il numero di
+// ricezioni totali: { message, index, receptions }.
+//
+function summarizeSonarSender(
+    entries
+) {
+
+    const groups =
+        new Map();
+
+    entries.forEach(
+        entry => {
+
+            const key =
+                sonarMessageGroupKey(
+                    entry.message
+                );
+
+            const known =
+                groups.get(key);
+
+            if (
+                !known ||
+                sonarReceivedBefore(
+                    entry.message,
+                    known.message
+                )
+            ) {
+
+                groups.set(
+                    key,
+                    entry
+                );
+            }
+        }
+    );
+
+    let last = null;
+
+    groups.forEach(
+        entry => {
+
+            if (
+                last === null ||
+                sonarReceivedBefore(
+                    last.message,
+                    entry.message
+                )
+            ) {
+
+                last = entry;
+            }
+        }
+    );
+
+    return {
+        message: last.message,
+        index: last.index,
+        receptions: entries.length
+    };
+}
+
+//
+// Le righe dell'elenco: una per mittente, più recente in cima (per l'arrivo
+// della prima copia del suo ultimo messaggio; a parità, quello arrivato dopo
+// nell'array). messages: l'array di /api/sonar/messages.
+// Ritorna [{ prefix, message, index, receptions }].
+//
+function buildSonarSenderRows(
+    messages
+) {
+
+    const bySender =
+        new Map();
+
+    messages.forEach(
+        (message, index) => {
+
+            let list =
+                bySender.get(
+                    message.src_prefix
+                );
+
+            if (
+                !list
+            ) {
+
+                list = [];
+
+                bySender.set(
+                    message.src_prefix,
+                    list
+                );
+            }
+
+            list.push(
+                { message: message, index: index }
+            );
+        }
+    );
+
+    const rows = [];
+
+    bySender.forEach(
+        (entries, prefix) => {
+
+            const summary =
+                summarizeSonarSender(
+                    entries
+                );
+
+            rows.push(
+                {
+                    prefix: prefix,
+                    message: summary.message,
+                    index: summary.index,
+                    receptions: summary.receptions
+                }
+            );
+        }
+    );
+
+    rows.sort(
+        (a, b) =>
+            b.message.observed_at - a.message.observed_at ||
+            b.index - a.index
+    );
+
+    return rows;
+}
+
+//
+// Filtro «solo mittenti trace-mon» (solo Collettore: nel Nodo il checkbox
+// non esiste e la funzione risponde false). Dalle righe del server arriva
+// `trace_mon` (true/false); una risposta senza il campo non filtra niente.
+//
+function sonarTraceMonOnlyEnabled() {
+
+    const checkbox =
+        document.getElementById(
+            "sonarTraceMonOnlyFilter"
+        );
+
+    return Boolean(
+        checkbox &&
+        checkbox.checked
+    );
+}
+
+//
+// Stato iniziale del filtro e listener, una volta sola (guard
+// dataset.bound come initNodesFilters()). Spento di default (scelta
+// dell'utente): si vede tutto ciò che è arrivato sul canale; la scelta
+// successiva resta nel browser come per gli altri filtri della pagina.
+//
+function initSonarFilter() {
+
+    const checkbox =
+        document.getElementById(
+            "sonarTraceMonOnlyFilter"
+        );
+
+    if (
+        !checkbox ||
+        checkbox.dataset.bound
+    ) {
+
+        return;
+    }
+
+    checkbox.dataset.bound =
+        "true";
+
+    checkbox.checked =
+        safeLocalStorageGet(
+            "sonarTraceMonOnly"
+        ) === "true";
+
+    checkbox.addEventListener(
+        "change",
+        () => {
+
+            safeLocalStorageSet(
+                "sonarTraceMonOnly",
+                checkbox.checked
+            );
+
+            renderSonarMessagesTable();
+        }
+    );
+}
+
+function updateSonarMessagesHeading(
+    shown,
+    total
+) {
+
+    const heading =
+        document.getElementById(
+            "sonarMessagesHeading"
+        );
+
+    if (
+        !heading
+    ) {
+
+        return;
+    }
+
+    //
+    // Si contano i MITTENTI (le righe dell'elenco), non le ricezioni.
+    //
+    heading.textContent =
+        shown === null ?
+            tl("idx.sonarMessages") :
+            shown === total ?
+                tln("sonar.heading", total) :
+                tln("sonar.headingFiltered", total, { shown: shown });
+}
+
+async function loadSonarMessages() {
+
+    const table =
+        document.getElementById(
+            "sonarMessagesTable"
+        );
+
+    if (
+        !table
+    ) {
+
+        return;
+    }
+
+    initSonarFilter();
+
+    const requestId =
+        ++sonarMessagesRequestId;
+
+    try {
+
+        const res =
+            await fetch(
+                sonarMessagesUrl()
+            );
+
+        assertResOk(res);
+
+        const data =
+            await res.json();
+
+        if (
+            requestId !== sonarMessagesRequestId
+        ) {
+
+            return;
+        }
+
+        if (
+            !data ||
+            !Array.isArray(data.messages) ||
+            typeof data.senders !== "object" ||
+            data.senders === null
+        ) {
+
+            throw new Error(
+                "invalid sonar messages response"
+            );
+        }
+
+        sonarMessagesState = {
+            available: data.available !== false,
+            reason: data.reason || null,
+            messages: data.messages,
+            senders: data.senders
+        };
+
+        renderSonarMessagesTable();
+    }
+
+    catch (
+        err
+    ) {
+
+        if (
+            requestId !== sonarMessagesRequestId
+        ) {
+
+            return;
+        }
+
+        console.error(
+            "Error loading Sonar messages:",
+            err
+        );
+
+        updateSonarMessagesHeading(
+            null,
+            0
+        );
+
+        table.innerHTML =
+            `<tr><td>${tle("common.errorLoadingData")}</td></tr>`;
+    }
+}
+
+//
+// Testo (non HTML) con cui si indica un mittente: titolo del dettaglio.
+// Il nome viene da `nodes`, cioè da advert ricevuti dalla rete: chi lo
+// inserisce in innerHTML deve escaparlo.
+//
+function sonarSenderLabel(
+    prefix,
+    sender
+) {
+
+    const status =
+        sender && sender.status ?
+            sender.status :
+            "unknown";
+
+    if (
+        status === "ok"
+    ) {
+
+        return (
+            sender.adv_name ||
+            prefix
+        );
+    }
+
+    if (
+        status === "ambiguous"
+    ) {
+
+        return `${tl("sonar.senderAmbiguous")} ${prefix}`;
+    }
+
+    return `${tl("common.unknownParen")} ${prefix}`;
+}
+
+//
+// Cella «Sender» dell'elenco: il nome (se noto) è il LINK al dettaglio, con
+// accanto il prefisso di 8 caratteri, che è l'unica cosa certa del mittente.
+// Un mittente senza nome ha il prefisso come testo del link; sconosciuto o
+// ambiguo ha «(unknown)» / «(ambiguous)» come in Known Nodes un nodo senza
+// nome. Tutto passa da escapeHtml(): il nome viene dalla rete.
+//
+function buildSonarSenderHtml(
+    prefix,
+    sender
+) {
+
+    const link =
+        text =>
+            `<a href="#" class="nodeLink sonarSenderLink" data-prefix="${escapeHtml(prefix)}">${escapeHtml(text)}</a>`;
+
+    const prefixHtml =
+        `<span class="sonarSenderPrefix">${escapeHtml(prefix)}</span>`;
+
+    const status =
+        sender && sender.status ?
+            sender.status :
+            "unknown";
+
+    if (
+        status === "ok" &&
+        sender.adv_name
+    ) {
+
+        return `${link(sender.adv_name)} ${prefixHtml}`;
+    }
+
+    if (
+        status === "ok"
+    ) {
+
+        return link(prefix);
+    }
+
+    if (
+        status === "ambiguous"
+    ) {
+
+        return `${link(tl("sonar.senderAmbiguous"))} ${prefixHtml}`;
+    }
+
+    return `${link(tl("common.unknownParen"))} ${prefixHtml}`;
+}
+
+//
+// Cella «Path»: come in Known Nodes. Unica differenza: hop_count > 0 senza
+// path_hex (riga con path non esadecimale, svuotato dal server) non deve
+// leggersi «DIRECT», che è ciò che buildAdvertPathHtml() scriverebbe.
+//
+// hopSpans (Map, facoltativa): memoria dei <span> già costruiti per ogni
+// hop, valida per UN ridisegno della tabella. Serve solo a non rifare per
+// ogni riga la risoluzione del nome (resolveNodeName() scorre tutti i
+// repeater noti): con migliaia di messaggi la tabella altrimenti impiega
+// secondi. L'HTML prodotto è identico a quello di buildAdvertPathHtml()
+// (lo verifica il test).
+//
+function buildSonarPathCellHtml(
+    message,
+    hopSpans
+) {
+
+    if (
+        message.hop_count > 0 &&
+        !message.path_hex
+    ) {
+
+        return tle("sonar.pathUnknown", { n: message.hop_count });
+    }
+
+    const hops =
+        splitAdvertPathHops(
+            message.hop_count,
+            message.path_hex
+        );
+
+    if (
+        !hopSpans ||
+        hops.length === 0
+    ) {
+
+        return buildAdvertPathHtml(
+            message.hop_count,
+            message.path_hex
+        );
+    }
+
+    return hops
+        .map(
+            hop => {
+
+                let span =
+                    hopSpans.get(hop);
+
+                if (
+                    span === undefined
+                ) {
+
+                    span =
+                        `<span data-tooltip="${escapeHtml(resolveNodeName(hop))}">${hop}</span>`;
+
+                    hopSpans.set(
+                        hop,
+                        span
+                    );
+                }
+
+                return span;
+            }
+        )
+        .join(" > ");
+}
+
+function renderSonarMessagesTable() {
+
+    const table =
+        document.getElementById(
+            "sonarMessagesTable"
+        );
+
+    if (
+        !table
+    ) {
+
+        return;
+    }
+
+    const state =
+        sonarMessagesState;
+
+    //
+    // Tabella non presente nel database (nodo non aggiornato): lo stesso
+    // messaggio «dati non presenti» di Known Nodes sul Collettore.
+    //
+    if (
+        !state.available
+    ) {
+
+        updateSonarMessagesHeading(
+            null,
+            0
+        );
+
+        table.innerHTML =
+            `<tr><td>${tle("nodes.noDataForNode")}</td></tr>`;
+
+        return;
+    }
+
+    //
+    // Una riga per mittente (D112): il suo ultimo messaggio, con la data e il
+    // path della prima copia arrivata. Il filtro «solo trace-mon» (solo
+    // Collettore) toglie i mittenti, non le ricezioni.
+    //
+    const senderRows =
+        buildSonarSenderRows(
+            state.messages
+        );
+
+    const onlyTraceMon =
+        sonarTraceMonOnlyEnabled();
+
+    const rows =
+        onlyTraceMon ?
+            senderRows.filter(
+                r => r.message.trace_mon === true
+            ) :
+            senderRows;
+
+    updateSonarMessagesHeading(
+        rows.length,
+        senderRows.length
+    );
+
+    if (
+        rows.length === 0
+    ) {
+
+        const text =
+            senderRows.length > 0 ?
+                tle("sonar.noMatch") :
+                state.reason === "no_archive" ?
+                    tle("sonar.noArchive") :
+                    tle("sonar.noMessages");
+
+        table.innerHTML =
+            `<tr><td>${text}</td></tr>`;
+
+        return;
+    }
+
+    let html =
+        `<tr><th>${tle("sonar.colSender")}</th><th>${tle("ndet.colReceived")}</th><th>Path</th></tr>`;
+
+    const hopSpans =
+        new Map();
+
+    rows.forEach(
+        row => {
+
+            html += "<tr>";
+            html += `<td>${buildSonarSenderHtml(row.prefix, state.senders[row.prefix])}</td>`;
+            html += `<td>${formatUnixTime(row.message.observed_at)}</td>`;
+            html += `<td>${buildSonarPathCellHtml(row.message, hopSpans)}</td>`;
+            html += "</tr>";
+        }
+    );
+
+    table.innerHTML = html;
+
+    table.querySelectorAll(
+        ".sonarSenderLink"
+    ).forEach(
+        link => {
+
+            link.addEventListener(
+                "click",
+                (e) => {
+
+                    e.preventDefault();
+
+                    goToSonarSenderDetail(
+                        link.dataset.prefix
+                    );
+                }
+            );
+        }
+    );
+}
+
+/* ---- pagina di dettaglio del mittente ---- */
+
+//
+// Apre la pagina di dettaglio (stesso schema di goToNodeDetail()): ferma
+// l'aggiornamento automatico di Nodes, nasconde ogni pagina e mostra
+// #sonarDetailPage. «Back to list» (index.html) fa il percorso inverso.
+//
+function goToSonarSenderDetail(
+    prefix
+) {
+
+    if (
+        typeof stopNodesAutoRefresh === "function"
+    ) {
+
+        stopNodesAutoRefresh();
+    }
+
+    document.querySelectorAll(
+        ".tabButton"
+    ).forEach(
+        b => b.classList.remove("active")
+    );
+
+    document.querySelectorAll(
+        ".tabPage"
+    ).forEach(
+        p => p.style.display = "none"
+    );
+
+    document.getElementById(
+        "sonarDetailPage"
+    ).style.display = "block";
+
+    loadSonarSenderDetail(
+        prefix
+    );
+}
+
+//
+// Prende dall'ultimo elenco caricato le ricezioni del mittente (copia, in
+// ordine cronologico) e disegna intestazione, tabella info e tabella delle
+// ricezioni. Nessuna richiesta di rete: lo stesso elenco da cui si è partiti.
+//
+function loadSonarSenderDetail(
+    prefix
+) {
+
+    sonarDetailPrefix =
+        prefix;
+
+    sonarDetailSender =
+        sonarMessagesState.senders[prefix] ||
+        null;
+
+    sonarDetailRows =
+        sonarMessagesState.messages.filter(
+            m => m.src_prefix === prefix
+        );
+
+    document.getElementById(
+        "sonarDetailName"
+    ).textContent =
+        sonarSenderLabel(
+            prefix,
+            sonarDetailSender
+        );
+
+    renderSonarDetailInfo();
+
+    renderSonarDetailTable();
+}
+
+//
+// Tabella info (come #nodeDetailInfoTable): tipo, chiave, posizione dal
+// mittente risolto; ultimo messaggio e ricezioni totali dalle ricezioni.
+// Un mittente sconosciuto o ambiguo ha solo la riga del prefisso.
+//
+function renderSonarDetailInfo() {
+
+    const infoTable =
+        document.getElementById(
+            "sonarDetailInfoTable"
+        );
+
+    if (
+        !infoTable
+    ) {
+
+        return;
+    }
+
+    const sender =
+        sonarDetailSender;
+
+    let html = "";
+
+    if (
+        sender &&
+        sender.status === "ok"
+    ) {
+
+        html += `<tr><th>${tle("ndet.infoType")}</th><td>${escapeHtml(formatNodeType(sender.node_type))}</td></tr>`;
+        html += `<tr><th>${tle("ndet.infoPublicKey")}</th><td>${escapeHtml(sender.public_key || sonarDetailPrefix)}</td></tr>`;
+        html += `<tr><th>${tle("ndet.infoPosition")}</th><td>${formatNodePosition(sender.adv_lat, sender.adv_lon)}</td></tr>`;
+
+    } else {
+
+        const note =
+            sender && sender.status === "ambiguous" ?
+                tl("sonar.senderAmbiguous") :
+                tl("common.unknownParen");
+
+        html += `<tr><th>${tle("ndet.infoPublicKey")}</th><td>${escapeHtml(sonarDetailPrefix)} ${escapeHtml(note)}</td></tr>`;
+    }
+
+    if (
+        sonarDetailRows.length > 0
+    ) {
+
+        const summary =
+            summarizeSonarSender(
+                sonarDetailRows.map(
+                    (message, index) => ({ message: message, index: index })
+                )
+            );
+
+        html += `<tr><th>${tle("sonar.infoLastMessage")}</th><td>${formatUnixTime(summary.message.observed_at)}</td></tr>`;
+        html += `<tr><th>${tle("sonar.infoReceptions")}</th><td>${summary.receptions}</td></tr>`;
+    }
+
+    infoTable.innerHTML =
+        html;
+}
+
+//
+// Tabella di TUTTE le ricezioni del mittente (come #nodeDetailObsTable),
+// più recenti in cima. L'indice originale (posizione in sonarDetailRows)
+// viaggia con ogni link in data-sonar-index. Ogni (ri)disegno riporta la
+// mappa al messaggio guida: la ricezione selezionata potrebbe non esistere
+// più. Msg = numero progressivo del mittente (seq): le righe con lo stesso
+// numero sono le copie dello stesso messaggio.
+//
+function renderSonarDetailTable() {
+
+    resetSonarPathMap();
+
+    const table =
+        document.getElementById(
+            "sonarDetailMsgTable"
+        );
+
+    if (
+        !table
+    ) {
+
+        return;
+    }
+
+    const rows =
+        sonarDetailRows;
+
+    if (
+        rows.length === 0
+    ) {
+
+        table.innerHTML =
+            `<tr><td>${tle("sonar.noMessages")}</td></tr>`;
+
+        return;
+    }
+
+    let html =
+        `<tr><th>${tle("sonar.colMsg")}</th><th>${tle("ndet.colReceived")}</th><th>${tle("ndet.colHops")}</th><th>Path</th><th>RSSI</th><th>SNR</th></tr>`;
+
+    const hopSpans =
+        new Map();
+
+    for (
+        let i = rows.length - 1;
+        i >= 0;
+        i--
+    ) {
+
+        const m =
+            rows[i];
+
+        html += "<tr>";
+        html += `<td>${m.seq === null || m.seq === undefined ? "-" : "#" + m.seq}</td>`;
+        html += `<td><a href="#" class="traceLink nodePathLink sonarPathLink" data-sonar-index="${i}" data-sonar-key="${escapeHtml(sonarMessageKey(m))}">${formatUnixTime(m.observed_at)}</a></td>`;
+        html += `<td>${m.hop_count}</td>`;
+        html += `<td>${buildSonarPathCellHtml(m, hopSpans)}</td>`;
+        html += `<td>${m.rssi ?? "-"}</td>`;
+        html += `<td>${m.snr === null || m.snr === undefined ? "-" : colorizeSnr(m.snr)}</td>`;
+        html += "</tr>";
+    }
+
+    table.innerHTML = html;
+
+    table.querySelectorAll(
+        ".sonarPathLink"
+    ).forEach(
+        link => {
+
+            link.addEventListener(
+                "click",
+                (e) => {
+
+                    e.preventDefault();
+
+                    showSonarMessagePath(
+                        Number(
+                            link.dataset.sonarIndex
+                        )
+                    );
+                }
+            );
+        }
+    );
+}
+
+/* ---- mappa del path del messaggio ---- */
+
+//
+// Modello PURO (nessun DOM, nessuna fetch) del path di un messaggio.
+// Riusa buildAdvertPathModel() con un «nodo» fatto col mittente risolto,
+// poi corregge solo il punto d'origine:
+//   - mittente risolto: nome e posizione sono quelli di `nodes` (un nodo
+//     senza GPS o a (0,0) viene omesso con il motivo di sempre);
+//   - sconosciuto / ambiguo: non ha posizione, quindi non è disegnato; il
+//     motivo è quello vero («mittente sconosciuto/ambiguo»), non «posizione
+//     non nota», e il prefisso sostituisce il nome.
+// message  riga di /api/sonar/messages
+// sender   message's entry in `senders` (o undefined)
+// srcInfo  come per buildAdvertPathModel()
+//
+function buildSonarPathModel(
+    message,
+    sender,
+    srcInfo
+) {
+
+    const status =
+        sender && sender.status ?
+            sender.status :
+            "unknown";
+
+    const resolved =
+        status === "ok";
+
+    const model =
+        buildAdvertPathModel(
+            resolved ?
+                {
+                    adv_name: sender.adv_name,
+                    node_type: sender.node_type,
+                    adv_lat: sender.adv_lat,
+                    adv_lon: sender.adv_lon
+                } :
+                {
+                    adv_name: null,
+                    node_type: null,
+                    adv_lat: null,
+                    adv_lon: null
+                },
+            {
+                hop_count: message.hop_count,
+                path_hex: message.path_hex
+            },
+            srcInfo
+        );
+
+    const origin =
+        model.points[0];
+
+    origin.step =
+        tl("smap.stepSender");
+
+    if (
+        resolved
+    ) {
+
+        origin.name =
+            sender.adv_name ||
+            message.src_prefix;
+
+        return model;
+    }
+
+    origin.name = null;
+    origin.hash = message.src_prefix;
+    origin.nodeType = null;
+
+    origin.reason =
+        status === "ambiguous" ?
+            {
+                kind: "duplicate",
+                text:
+                    tl("smap.reasonSenderAmbiguous", { n: sender.count, prefix: message.src_prefix })
+            } :
+            {
+                kind: "missing",
+                text:
+                    tl("smap.reasonSenderUnknown", { prefix: message.src_prefix })
+            };
+
+    return model;
+}
+
+function ensureSonarPathMap() {
+
+    if (
+        sonarPathMap
+    ) {
+
+        return sonarPathMap;
+    }
+
+    sonarPathMap =
+        L.map(
+            "sonarPathMap"
+        ).setView(
+            [0, 0],
+            2
+        );
+
+    createOsmTileLayer().addTo(
+        sonarPathMap
+    );
+
+    sonarPathMarkerLayerGroup =
+        L.layerGroup().addTo(
+            sonarPathMap
+        );
+
+    sonarPathSegmentLayerGroup =
+        L.layerGroup().addTo(
+            sonarPathMap
+        );
+
+    //
+    // Pane delle frecce, per-mappa come in ensureNodeDetailPathMap().
+    //
+    const arrowPane =
+        sonarPathMap.createPane(
+            "traceArrowPane"
+        );
+
+    arrowPane.style.zIndex = 660;
+    arrowPane.style.pointerEvents = "none";
+
+    //
+    // Riquadro «punti non mostrati» in alto a destra (classe nodePathInfo,
+    // stessa del path advert): click e scroll non devono arrivare alla
+    // mappa sottostante.
+    //
+    sonarPathInfoControl =
+        L.control(
+            { position: "topright" }
+        );
+
+    sonarPathInfoControl.onAdd =
+        function () {
+
+            const div =
+                L.DomUtil.create(
+                    "div",
+                    "nodePathInfo"
+                );
+
+            L.DomEvent.disableClickPropagation(
+                div
+            );
+
+            L.DomEvent.disableScrollPropagation(
+                div
+            );
+
+            div.style.display = "none";
+
+            return div;
+        };
+
+    sonarPathInfoControl.addTo(
+        sonarPathMap
+    );
+
+    sonarPathMap.on(
+        "zoomend",
+        renderSonarPathSegmentsAtCurrentZoom
+    );
+
+    return sonarPathMap;
+}
+
+function updateSonarPathInfo(
+    html
+) {
+
+    if (
+        !sonarPathInfoControl
+    ) {
+
+        return;
+    }
+
+    const container =
+        sonarPathInfoControl.getContainer();
+
+    if (
+        !container
+    ) {
+
+        return;
+    }
+
+    container.innerHTML =
+        html;
+
+    container.style.display =
+        html ?
+            "block" :
+            "none";
+}
+
+//
+// Riporta la sezione allo stato iniziale: messaggio guida, mappa nascosta e
+// svuotata, nessun messaggio selezionato. Incrementa sonarPathRequestId:
+// la fetch di SRC di un click precedente, se risponde dopo, scarta il suo
+// risultato. Tollera elementi DOM assenti (test con DOM minimale).
+//
+function resetSonarPathMap() {
+
+    ++sonarPathRequestId;
+
+    sonarSelectedKey = null;
+
+    sonarPathSegmentDefs = [];
+
+    if (
+        sonarPathMarkerLayerGroup
+    ) {
+
+        sonarPathMarkerLayerGroup.clearLayers();
+    }
+
+    if (
+        sonarPathSegmentLayerGroup
+    ) {
+
+        sonarPathSegmentLayerGroup.clearLayers();
+    }
+
+    updateSonarPathInfo(
+        ""
+    );
+
+    const guide =
+        document.getElementById(
+            "sonarPathGuide"
+        );
+
+    const caption =
+        document.getElementById(
+            "sonarPathCaption"
+        );
+
+    const mapEl =
+        document.getElementById(
+            "sonarPathMap"
+        );
+
+    if (
+        guide
+    ) {
+
+        guide.style.display = "";
+    }
+
+    if (
+        caption
+    ) {
+
+        caption.textContent = "";
+    }
+
+    if (
+        mapEl
+    ) {
+
+        mapEl.style.display = "none";
+    }
+
+    markSelectedSonarPathLink();
+}
+
+//
+// Evidenzia il link (e la riga) della ricezione selezionata nel dettaglio, in
+// base alla chiave: sopravvive a un ridisegno della tabella.
+//
+function markSelectedSonarPathLink() {
+
+    document.querySelectorAll(
+        "#sonarDetailMsgTable .sonarPathLink"
+    ).forEach(
+        link => {
+
+            const selected =
+                sonarSelectedKey !== null &&
+                link.dataset.sonarKey === sonarSelectedKey;
+
+            link.classList.toggle(
+                "selected",
+                selected
+            );
+
+            const row =
+                link.closest(
+                    "tr"
+                );
+
+            if (
+                row
+            ) {
+
+                row.classList.toggle(
+                    "nodePathSelectedRow",
+                    selected
+                );
+            }
+        }
+    );
+}
+
+//
+// Click su un «Received» del dettaglio: legge la posizione LIVE di SRC (come
+// per l'advert, mai una copia nella riga), costruisce il modello e lo disegna.
+//
+async function showSonarMessagePath(
+    index
+) {
+
+    const message =
+        sonarDetailRows[index];
+
+    if (
+        !message
+    ) {
+
+        return;
+    }
+
+    //
+    // Token catturato PRIMA di qualunque await: due click ravvicinati
+    // fanno vincere l'ultimo, non il più lento a rispondere.
+    //
+    const requestId =
+        ++sonarPathRequestId;
+
+    sonarSelectedKey =
+        sonarMessageKey(
+            message
+        );
+
+    markSelectedSonarPathLink();
+
+    const srcInfo = {
+        fetchFailed: false,
+        lat: null,
+        lon: null
+    };
+
+    try {
+
+        const res =
+            await fetch(
+                sonarDeviceStatusUrl()
+            );
+
+        assertResOk(res);
+
+        const status =
+            await res.json();
+
+        if (
+            requestId !== sonarPathRequestId
+        ) {
+
+            return;
+        }
+
+        if (
+            status
+        ) {
+
+            srcInfo.lat =
+                status.adv_lat;
+
+            srcInfo.lon =
+                status.adv_lon;
+        }
+
+    } catch (
+        err
+    ) {
+
+        if (
+            requestId !== sonarPathRequestId
+        ) {
+
+            return;
+        }
+
+        console.error(
+            "Error loading device status for Sonar message path:",
+            err
+        );
+
+        srcInfo.fetchFailed = true;
+    }
+
+    renderSonarPath(
+        buildSonarPathModel(
+            message,
+            sonarDetailSender,
+            srcInfo
+        ),
+        message
+    );
+}
+
+//
+// Disegna il modello: marker dei punti mostrati, vista sui loro limiti,
+// segmenti+frecce, riquadro dei punti mancanti, didascalia.
+//
+function renderSonarPath(
+    model,
+    message
+) {
+
+    const guide =
+        document.getElementById(
+            "sonarPathGuide"
+        );
+
+    const mapEl =
+        document.getElementById(
+            "sonarPathMap"
+        );
+
+    const caption =
+        document.getElementById(
+            "sonarPathCaption"
+        );
+
+    if (
+        guide
+    ) {
+
+        guide.style.display = "none";
+    }
+
+    //
+    // Il contenitore va reso visibile PRIMA di creare la mappa o di
+    // chiamare invalidateSize() (v. ensureNodeDetailPathMap()).
+    //
+    mapEl.style.display = "block";
+
+    const map =
+        ensureSonarPathMap();
+
+    map.invalidateSize();
+
+    sonarPathMarkerLayerGroup.clearLayers();
+    sonarPathSegmentLayerGroup.clearLayers();
+
+    const bounds = [];
+
+    model.points.forEach(
+        p => {
+
+            if (
+                !p.shown
+            ) {
+
+                return;
+            }
+
+            const label =
+                p.role === "origin" ?
+                    tl("smap.markerSender", { name: p.name }) :
+                    p.role === "src" ?
+                        p.name :
+                        `${p.name} (${p.hash})`;
+
+            L.marker(
+                [p.lat, p.lon],
+                { icon: nodePathIconForPoint(p) }
+            ).bindTooltip(
+                escapeHtml(label),
+                {
+                    permanent: true,
+                    direction: "top"
+                }
+            ).addTo(
+                sonarPathMarkerLayerGroup
+            );
+
+            bounds.push(
+                [p.lat, p.lon]
+            );
+        }
+    );
+
+    sonarPathSegmentDefs =
+        model.segments.map(
+            s => ({
+                latlngFrom: { lat: s.from.lat, lng: s.from.lon },
+                latlngTo: { lat: s.to.lat, lng: s.to.lon },
+                bridged: s.bridged,
+                isDegenerate:
+                    s.from.lat === s.to.lat &&
+                    s.from.lon === s.to.lon
+            })
+        );
+
+    if (
+        bounds.length >= 2
+    ) {
+
+        map.fitBounds(
+            bounds,
+            {
+                padding: [30, 30],
+                animate: false,
+                maxZoom: 16
+            }
+        );
+
+    } else if (
+        bounds.length === 1
+    ) {
+
+        map.setView(
+            bounds[0],
+            13,
+            { animate: false }
+        );
+    }
+
+    renderSonarPathSegmentsAtCurrentZoom();
+
+    updateSonarPathInfo(
+        buildNodePathInfoHtml(
+            model
+        )
+    );
+
+    if (
+        caption
+    ) {
+
+        caption.textContent =
+            tl("smap.caption", {
+                time: formatUnixTime(message.observed_at),
+                hops:
+                    message.hop_count === 0 ?
+                        "DIRECT (0 hop)" :
+                        `${message.hop_count} hop`,
+                shown: bounds.length,
+                total: model.points.length
+            });
+    }
+
+    const section =
+        document.getElementById(
+            "sonarPathSection"
+        );
+
+    if (
+        section &&
+        typeof section.scrollIntoView === "function"
+    ) {
+
+        section.scrollIntoView(
+            { block: "nearest", behavior: "smooth" }
+        );
+    }
+}
+
+//
+// Segmenti+frecce con lo zoom corrente — stessa logica di
+// renderNodeDetailPathSegmentsAtCurrentZoom() (le frecce di arrivo sono a
+// distanza fissa in pixel dal marker, quindi dipendono dallo zoom).
+//
+function renderSonarPathSegmentsAtCurrentZoom() {
+
+    if (
+        !sonarPathMap ||
+        !sonarPathSegmentLayerGroup
+    ) {
+
+        return;
+    }
+
+    sonarPathSegmentLayerGroup.clearLayers();
+
+    const zoom =
+        sonarPathMap.getZoom();
+
+    sonarPathSegmentDefs.forEach(
+        def => {
+
+            const offsetResult =
+                offsetSegmentPixels(
+                    sonarPathMap,
+                    zoom,
+                    def.latlngFrom,
+                    def.latlngTo,
+                    0
+                );
+
+            const offset =
+                offsetResult.latlngs;
+
+            const lineColor =
+                def.bridged ?
+                    NODE_PATH_BRIDGE_COLOR :
+                    NODE_PATH_LINE_COLOR;
+
+            const arrowColor =
+                def.bridged ?
+                    NODE_PATH_BRIDGE_COLOR :
+                    NODE_PATH_ARROW_COLOR;
+
+            const line =
+                L.polyline(
+                    offset,
+                    {
+                        color: lineColor,
+                        weight: 3,
+                        dashArray:
+                            def.bridged ?
+                                "8 6" :
+                                "4 6"
+                    }
+                );
+
+            if (
+                def.bridged
+            ) {
+
+                line.bindTooltip(
+                    tle("pmap.bridgedTooltip"),
+                    { sticky: true }
+                );
+            }
+
+            line.addTo(
+                sonarPathSegmentLayerGroup
+            );
+
+            //
+            // Segmento degenere (due punti alla stessa posizione):
+            // nessuna freccia, il bearing non è definito.
+            //
+            if (
+                def.isDegenerate
+            ) {
+
+                return;
+            }
+
+            const bearing =
+                bearingDegrees(
+                    offset[0],
+                    offset[1]
+                );
+
+            const ARROW_MID_T = 0.7;
+
+            addTraceArrowMarker(
+                offset,
+                bearing,
+                arrowColor,
+                ARROW_MID_T,
+                sonarPathSegmentLayerGroup
+            );
+
+            const desiredEndT =
+                1 -
+                TRACE_ARROW_END_BACKOFF_PIXELS /
+                    offsetResult.lengthPixels;
+
+            const minEndT =
+                ARROW_MID_T +
+                TRACE_ARROW_MIN_SEPARATION_PIXELS /
+                    offsetResult.lengthPixels;
+
+            const ARROW_END_T =
+                Math.min(
+                    0.98,
+                    Math.max(
+                        desiredEndT,
+                        minEndT
+                    )
+                );
+
+            addTraceArrowMarker(
+                offset,
+                bearing,
+                arrowColor,
+                ARROW_END_T,
+                sonarPathSegmentLayerGroup
             );
         }
     );

@@ -36,6 +36,14 @@ const {
     parseTraceContent
 } = require("./parser");
 
+// stato di connessione del device (§94): modulo identico nel Nodo e nel
+// Collettore, separato da server.js per poterlo provare senza avviarlo
+const { readDeviceConnection } = require("./device_connection");
+
+// messaggi Sonar ricevuti (§96): modulo identico nel Nodo e nel Collettore,
+// separato da server.js per lo stesso motivo
+const { loadSonarMessages, sonarArchiveName } = require("./sonar_messages");
+
 const app = express();
 
 //
@@ -736,8 +744,28 @@ app.get(
                         `SELECT * FROM device_status WHERE id = 1`
                     ).get();
 
+                //
+                // Campo aggiunto `connection` (§94): stato di connessione
+                // daemon <-> companion, {state, changed_at, checked_at} o
+                // null se la tabella device_connection non c'è/è vuota
+                // (nodo non ancora aggiornato). Senza riga in device_status
+                // la risposta resta null come prima: senza nome del device
+                // non c'è nulla a cui affiancare l'indicatore.
+                //
                 res.json(
-                    row || null
+                    row
+                        ? Object.assign(
+                            {},
+                            row,
+                            {
+                                connection:
+                                    readDeviceConnection(
+                                        db,
+                                        Math.floor(Date.now() / 1000)
+                                    )
+                            }
+                        )
+                        : null
                 );
 
             } finally {
@@ -1295,6 +1323,79 @@ app.get(
 
             console.error(
                 "API ERROR (/api/nodes/:publicKey/archive/load):",
+                err
+            );
+
+            res
+                .status(
+                    500
+                )
+                .json({
+                    error:
+                        GENERIC_ERROR_MESSAGE
+                });
+        }
+    }
+);
+
+/* =========================
+   SONAR MESSAGES API
+
+   Messaggi del canale Sonar ricevuti da questo nodo (tabella sonar_rx e
+   archivi mensili sonar_rx-AAAA-MM.json.gz), per la tabella «Sonar
+   Messages» della pagina Nodes (docs/ARCHITECTURE.md §96).
+
+   `file` è il valore del selettore Period della pagina — "live" oppure
+   l'id di un archivio path_observations (§75): il mese è quello, il
+   file letto è sonar_rx dello stesso mese. Qualunque altro valore è 400
+   (allowlist sul formato esatto, come per gli altri endpoint di
+   archivio). Tutta la logica sta in sonar_messages.js.
+========================= */
+
+app.get(
+    "/api/sonar/messages",
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const file =
+                req.query.file === undefined ?
+                    "live" :
+                    req.query.file;
+
+            if (
+                file !== "live" &&
+                !sonarArchiveName(file)
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        error:
+                            "Missing or invalid file parameter"
+                    });
+            }
+
+            res.json(
+                await loadSonarMessages(
+                    {
+                        dbFile: CONTACTS_DB_FILE,
+                        backupDir: BACKUP_DIR,
+                        file: file
+                    }
+                )
+            );
+        }
+
+        catch (
+            err
+        ) {
+
+            console.error(
+                "API ERROR (/api/sonar/messages):",
                 err
             );
 

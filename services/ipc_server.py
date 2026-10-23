@@ -186,7 +186,6 @@ class IPCServer:
     async def stop(self):
         if self.server:
             self.server.close()
-            await self.server.wait_closed()
 
         #
         # Prima di questo fix (code review 2026-08-20, §3.1), stop()
@@ -221,6 +220,18 @@ class IPCServer:
                     "IPC Server: timeout in attesa degli handler "
                     "in corso, procedo comunque con lo shutdown."
                 )
+
+        #
+        # wait_closed() DOPO l'attesa degli handler, non prima
+        # (ARCHITECTURE.md §95): da Python 3.12.1 attende anche la chiusura
+        # di tutte le connessioni ancora aperte, quindi, messa prima,
+        # rendeva inutile SHUTDOWN_HANDLERS_TIMEOUT (stop() restava
+        # bloccato quanto l'handler: 39.7 s invece di 30 s, misurati da
+        # test_ipc_shutdown_timing). Qui le connessioni sono già chiuse
+        # (handler terminati o annullati dal timeout) e ritorna subito.
+        #
+        if self.server:
+            await self.server.wait_closed()
 
         if SOCKET_FILE.exists():
             SOCKET_FILE.unlink()

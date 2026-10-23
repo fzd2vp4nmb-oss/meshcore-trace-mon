@@ -700,10 +700,9 @@ body.dark .tabButton.active {
 }
 
 /*
-   Link stile "tabBar" (Installation, Info, e i link di intestazione
-   di info.html/info_it.html/info_en.html) — stile cosmetico generico
-   qui sotto, non scoperto a .tabBar apposta: serve anche fuori da lì
-   (link di navigazione/cambio lingua nell'header delle pagine Info).
+   Link stile "tabBar" (Installation, Guida) — stile cosmetico generico
+   qui sotto, non scoperto a .tabBar apposta. (La guida, guide_it.html,
+   ha un foglio di stile proprio, guide.css, e non usa questa classe.)
    Solo il posizionamento "spingi a destra dentro la riga dei tab" è
    specifico di .tabBar, isolato nelle due regole successive.
    (Riferimento a ".helpBar" nel commento originale rimosso — code
@@ -1110,6 +1109,60 @@ body.dark #nodeDetailPathMap {
     border-color: #555555;
 }
 
+/* =========================
+   NODES — MESSAGGI SONAR
+
+   Vedi docs/ARCHITECTURE.md §96. La tabella sta in un riquadro ad altezza
+   fissa con scorrimento verticale, come #nodesTable (Known Nodes): un
+   ridisegno periodico non sposta il resto della pagina. La mappa del path
+   segue la convenzione di #nodeDetailPathMap sopra (altezza esplicita,
+   display:none inline in index.html finché non si seleziona un messaggio);
+   guida, didascalia, link selezionato e riquadro dei punti mancanti
+   riusano le classi .nodePath* del path advert.
+========================= */
+
+#sonarMessagesTable {
+
+    display: block;
+
+    max-height: 600px;
+
+    overflow-y: auto;
+}
+
+#sonarPathMap {
+
+    width: 100%;
+
+    height: 500px;
+
+    border: 1px solid #cccccc;
+
+    border-radius: 4px;
+
+    overflow: hidden;
+}
+
+body.dark #sonarPathMap {
+
+    border-color: #555555;
+}
+
+/* prefisso di 8 caratteri del mittente, accanto al nome */
+.sonarSenderPrefix {
+
+    font-family: monospace;
+
+    font-size: 13px;
+
+    color: #555555;
+}
+
+body.dark .sonarSenderPrefix {
+
+    color: #b0b0b0;
+}
+
 /*
    Messaggio guida (stato iniziale, prima del primo click) e
    didascalia della mappa (quale osservazione è mostrata). Colori
@@ -1392,18 +1445,6 @@ body.dark .analysisWarning {
     border-color: #8a6a20;
 }
 
-.analysisErrorText {
-
-    color: #b3261e;
-
-    font-weight: bold;
-}
-
-body.dark .analysisErrorText {
-
-    color: #ff8a80;
-}
-
 .analysisNotes {
 
     margin: 10px 0;
@@ -1533,6 +1574,29 @@ tr.analysisRowError td {
     min-width: 150px;
 }
 
+/*
+   prima colonna della matrice (angolo e intestazioni delle sorgenti) ferma a
+   sinistra mentre il riquadro scorre in orizzontale (§95). Le <th> hanno già
+   uno sfondo pieno (chiaro e scuro, regole globali), quindi le celle che
+   scorrono sotto non si vedono in trasparenza. Con border-collapse il bordo
+   destro non seguirebbe la cella: lo rifà un'ombra interna.
+*/
+.analysisMatrix th:first-child {
+
+    position: sticky;
+
+    left: 0;
+
+    z-index: 1;
+
+    box-shadow: inset -1px 0 0 #cccccc;
+}
+
+body.dark .analysisMatrix th:first-child {
+
+    box-shadow: inset -1px 0 0 #555555;
+}
+
 td.analysisMatrixCell {
 
     text-align: left;
@@ -1638,6 +1702,23 @@ body.dark .amSub {
 .analysisScroll table {
 
     margin-top: 0;
+}
+
+/*
+   matrice sorgente → tracciatore (§93): solo scorrimento orizzontale. Ogni
+   colonna di tracciatore è larga almeno 190 px (td.analysisMatrixCell), così
+   con molti tracciatori la tabella scorre nel riquadro invece di allargare
+   tutta la pagina; in verticale la matrice cresce come prima. Stesso
+   riquadro per le tabelle dati del pannello 1 (tracciatori, sorgenti Sonar,
+   sorgenti escluse, risoluzione dei nomi): a 390 px la pagina arrivava a
+   740 px (§95).
+*/
+.analysisScrollMatrix,
+.analysisScrollStatus {
+
+    overflow-x: auto;
+
+    overflow-y: hidden;
 }
 
 /* confronto di coppia */
@@ -1934,6 +2015,12 @@ body.dark .analysisHopMaybe {
     margin-top: 3px;
 }
 
+/* badge con testo lungo (tabelle mancanti, messaggio di errore nel pannello 1): può andare a capo (§93) */
+.analysisBadgeWrap {
+
+    white-space: normal;
+}
+
 /* impostazione o tetto: ultimo valore letto quando a fine periodo non è noto (attenuato) */
 .analysisCapLast {
 
@@ -1998,4 +2085,77 @@ body.dark tr.analysisRowChanged td {
     border-bottom: 1px dotted currentColor;
 
     cursor: help;
+}
+
+/* =========================
+   INDICATORE DI CONNESSIONE DEL DEVICE (§94)
+
+   Accanto al nome del device in cima al tab Nodes:
+   «<nome>: ✓ Connesso» / «✗ Disconnesso» / «? Sconosciuto».
+   #nodesDeviceTitle affianca l'h3 del nome (invariato) e il riquadro
+   #nodesDeviceConnection (vuoto finché non ci sono dati); i due punti
+   stanno nel riquadro, con lo stile dell'h3, perché il testo dell'h3 resta
+   il solo nome. Colori dei verdetti dell'Analysis (verde/rosso/grigio),
+   uguali in tema chiaro e scuro (testo bianco su fondo pieno).
+========================= */
+#nodesDeviceTitle {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    align-items: baseline;
+}
+
+#nodesDeviceConnection {
+
+    display: inline-flex;
+
+    align-items: baseline;
+}
+
+.deviceConnColon {
+
+    font-size: 1.17em;
+
+    font-weight: bold;
+
+    margin-right: 8px;
+}
+
+.deviceConnBadge {
+
+    display: inline-block;
+
+    padding: 2px 10px;
+
+    border-radius: 12px;
+
+    color: #ffffff;
+
+    font-size: 14px;
+
+    font-weight: bold;
+
+    white-space: nowrap;
+}
+
+.deviceConnIcon {
+
+    margin-right: 5px;
+}
+
+.deviceConnOn {
+
+    background-color: #1f7a3d;
+}
+
+.deviceConnOff {
+
+    background-color: #b3261e;
+}
+
+.deviceConnUnknown {
+
+    background-color: #5b6770;
 }

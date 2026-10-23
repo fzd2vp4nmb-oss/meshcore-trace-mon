@@ -68,10 +68,11 @@
         Analysis
     </button>
     <a
-        href="info.html"
+        href="guide.html"
         class="tabBarLink"
+        data-i18n="idx.tabGuide"
     >
-        Info
+        Guide
     </a>
 </div>
 
@@ -153,8 +154,15 @@
     Known Nodes — come il nome del repeater nel tab Repeaters. Le due
     sezioni sono h4 sotto questo h3, stessa gerarchia di Repeaters e
     del dettaglio nodo. Popolato da renderNodesDeviceName() (app.js).
+
+    Accanto al nome, l'indicatore di connessione del device (§94: «: ✓
+    Connesso» / «✗ Disconnesso» / «? Sconosciuto»), popolato da
+    renderNodesDeviceConnection() (app.js); vuoto finché non ci sono dati.
 -->
+<div id="nodesDeviceTitle">
 <h3 id="nodesDeviceName"></h3>
+<span id="nodesDeviceConnection"></span>
+</div>
 
 <h4 data-i18n="idx.deviceStatus">Device Status</h4>
 <table id="deviceStatusTable"></table>
@@ -263,6 +271,22 @@
 
 <table id="nodesTable"></table>
 
+<!--
+    Messaggi Sonar ricevuti dal nodo (2026-10-22, v. docs/ARCHITECTURE.md
+    §96 e §97): sotto Known Nodes, nella stessa pagina. Il Period scelto più
+    in alto vale anche qui (Live = tabella sonar_rx; un mese = archivio
+    sonar_rx dello stesso mese). Una riga per mittente; il nome del mittente
+    apre la pagina #sonarDetailPage (più sotto), come il nome di un nodo apre
+    #nodeDetailPage. Popolato da loadSonarMessages() (app.js).
+-->
+<div id="sonarMessagesSection">
+
+<h4 id="sonarMessagesHeading" data-i18n="idx.sonarMessages">Sonar Messages</h4>
+
+<table id="sonarMessagesTable"></table>
+
+</div>
+
 </div>
 
 <div id="nodeDetailPage" class="tabPage" style="display:none">
@@ -283,6 +307,33 @@
 
 <h4 data-i18n="idx.observations">Observations</h4>
 <table id="nodeDetailObsTable"></table>
+
+</div>
+
+<!--
+    Dettaglio di un mittente Sonar (§97): stesso schema di #nodeDetailPage.
+    Si apre dal nome del mittente nell'elenco Sonar Messages; «Back to list»
+    torna alla pagina Nodes, alla sezione Sonar. Popolato da
+    loadSonarSenderDetail() (app.js).
+-->
+<div id="sonarDetailPage" class="tabPage" style="display:none">
+
+<p><a href="#" id="backToSonarLink" data-i18n-html="idx.backToList">&larr; Back to list</a></p>
+
+<h3 id="sonarDetailName"></h3>
+<table id="sonarDetailInfoTable"></table>
+
+<br>
+
+<div id="sonarPathSection">
+    <h4 data-i18n="idx.sonarPath">Message Path</h4>
+    <p id="sonarPathGuide" class="nodePathGuide" data-i18n="idx.sonarPathGuide">Select a value in the "Received" column of the Messages table to see on the map the path followed by that message.</p>
+    <div id="sonarPathCaption" class="nodePathCaption"></div>
+    <div id="sonarPathMap" style="display:none"></div>
+</div>
+
+<h4 data-i18n="idx.sonarDetailMessages">Messages</h4>
+<table id="sonarDetailMsgTable"></table>
 
 </div>
 
@@ -343,7 +394,11 @@
     Compares the path taken by <b>adverts</b> (repeater flood, all nodes)
     with the path taken by <b>Sonar messages</b> (a message sent on purpose
     from a known node, so its source and send time are known). Both are read
-    from the paths recorded by the tracers. The aim is to see how far
+    from the paths recorded by the tracers. Source and tracer are two
+    roles, not two kinds of node: the source is the node that transmits a
+    packet, the tracer is another trace-mon node that receives it and
+    records its path. The same trace-mon node is the source of the packets
+    it transmits and the tracer of those it receives. The aim is to see how far
     each kind of packet really travels, and which repeaters are seen
     forwarding at depth. It is an inference from recorded paths, not a
     measurement of any repeater's settings. The only settings known are the
@@ -862,6 +917,80 @@ document.getElementById(
 
             startNodesAutoRefresh();
         }
+    }
+);
+
+/* =========================
+   SONAR DETAIL: BACK LINK
+
+   Stesso schema di backToNodesLink sopra (§97): torna alla pagina Nodes,
+   ricarica l'elenco e riavvia l'auto-refresh; in più riporta lo scorrimento
+   alla sezione Sonar Messages, da cui si era partiti. La tabella Known Nodes
+   sopra resta nel DOM mentre il dettaglio è aperto, quindi la posizione
+   della sezione è nota subito.
+========================= */
+
+document.getElementById(
+    "backToSonarLink"
+).addEventListener(
+    "click",
+    (e) => {
+
+        e.preventDefault();
+
+        document.querySelectorAll(
+            ".tabPage"
+        ).forEach(
+            p => p.style.display = "none"
+        );
+
+        document.getElementById(
+            "nodesPage"
+        ).style.display = "block";
+
+        document.querySelectorAll(
+            ".tabButton"
+        ).forEach(
+            b => b.classList.remove("active")
+        );
+
+        document
+            .querySelector(
+                '.tabButton[data-tab="nodesPage"]'
+            )
+            .classList.add(
+                "active"
+            );
+
+        safeLocalStorageSet(
+            "activeTab",
+            "nodesPage"
+        );
+
+        if (
+            typeof populateNodesArchiveSelector === "function"
+        ) {
+
+            populateNodesArchiveSelector();
+        }
+
+        if (
+            typeof loadNodesTab === "function"
+        ) {
+
+            loadNodesTab();
+        }
+
+        if (
+            typeof startNodesAutoRefresh === "function"
+        ) {
+
+            startNodesAutoRefresh();
+        }
+
+        document.getElementById(
+            "sonarMessagesSection"
+        ).scrollIntoView();
     }
 );
 

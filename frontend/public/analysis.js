@@ -387,6 +387,15 @@ function analysisNoteText(note, data) {
     }
 }
 
+// riquadro a scorrimento orizzontale per le tabelle dati del pannello 1, come
+// le tabelle degli altri pannelli: sugli schermi stretti (390 px) la tabella
+// dei tracciatori (8 colonne) e quella delle sorgenti Sonar (7) allargavano
+// l'intera pagina fino a 740 px (§95)
+function analysisStatusScrollBox(tableHtml) {
+
+    return `<div class="analysisScroll analysisScrollStatus">${tableHtml}</div>`;
+}
+
 function analysisStatusHtml(data, index) {
 
     const h = [];
@@ -434,13 +443,22 @@ function analysisStatusHtml(data, index) {
             ? Object.keys(o.tables).filter(t => !o.tables[t])
             : [];
 
+        // Posizione e Stato come badge, negli stessi colori dei verdetti del
+        // pannello 5: verde = a posto, ambra = incompleto (tabelle mancanti),
+        // rosso = errore o posizione assente (§93)
         const state = o.error
-            ? `<span class="analysisErrorText">${escapeHtml(o.error)}</span>`
-            : (missing.length > 0 ? `<span class="analysisMuted">${tle("an.missing")} ${escapeHtml(missing.join(", "))}</span>` : "ok");
+            ? `<span class="analysisBadge analysisBadgeStop analysisBadgeWrap">${escapeHtml(o.error)}</span>`
+            : (missing.length > 0
+                ? `<span class="analysisBadge analysisBadgeMaybe analysisBadgeWrap">${tle("an.missing")} ${escapeHtml(missing.join(", "))}</span>`
+                : `<span class="analysisBadge analysisBadgeOpen">${tle("an.stateOk")}</span>`);
+
+        const position = hasPos
+            ? `<span class="analysisBadge analysisBadgeOpen">${tle("an.yes")}</span>`
+            : `<span class="analysisBadge analysisBadgeStop">${tle("an.no")}</span>`;
 
         return `<tr${cls}>` +
             `<td>${escapeHtml(analysisObserverLabel(o))}</td>` +
-            `<td>${hasPos ? tle("an.yes") : tle("an.no")}</td>` +
+            `<td>${position}</td>` +
             `<td>${analysisCountHtml(c.adverts)}</td>` +
             `<td>${escapeHtml(analysisFormatSpan(c.advert_first_t, c.advert_last_t))}</td>` +
             `<td>${sonarRx}</td>` +
@@ -450,13 +468,13 @@ function analysisStatusHtml(data, index) {
             "</tr>";
     });
 
-    h.push(
+    h.push(analysisStatusScrollBox(
         '<table class="analysisTable">' +
         `<tr><th>${tle("an.thTracer")}</th><th>${tle("an.thPosition")}</th><th>${tle("an.thAdvertsReceived")}</th><th>${tle("an.thAdvertsSpan")}</th>` +
         `<th>${tle("an.thSonarReceived")}</th><th>${tle("an.thSonarSent")}</th><th>${tle("an.thAdvertsSent")}</th><th>${tle("an.thState")}</th></tr>` +
         (obsRows.length > 0 ? obsRows.join("") : `<tr><td colspan="8">${tle("an.noTracer")}</td></tr>`) +
         "</table>"
-    );
+    ));
 
     // --- sorgenti
     h.push(`<h5>${tle("an.hSonarSources")}</h5>`);
@@ -479,13 +497,13 @@ function analysisStatusHtml(data, index) {
             "</tr>";
     });
 
-    h.push(
+    h.push(analysisStatusScrollBox(
         '<table class="analysisTable">' +
         `<tr><th>${tle("an.thSource")}</th><th>${tle("an.thPrefix")}</th><th>${tle("an.thNode")}</th><th>${tle("an.thSonarSent")}</th>` +
         `<th>${tle("an.thAdvertsSent")}</th><th>${tle("an.thAdvertsSeen")}</th><th>${tle("an.thLastAdvert")}</th></tr>` +
         (srcRows.length > 0 ? srcRows.join("") : `<tr><td colspan="7">${tle("an.noSonarSource")}</td></tr>`) +
         "</table>"
-    );
+    ));
 
     // --- sorgenti escluse
     const excluded = data.excluded_sources || [];
@@ -510,11 +528,11 @@ function analysisStatusHtml(data, index) {
                 "</tr>";
         });
 
-        h.push(
+        h.push(analysisStatusScrollBox(
             '<table class="analysisTable">' +
             `<tr><th>${tle("an.thName")}</th><th>${tle("an.thPrefix")}</th><th>${tle("an.thMessages")}</th><th>${tle("an.thCopies")}</th><th>${tle("an.thHeardBy")}</th></tr>` +
             exRows.join("") + "</table>"
-        );
+        ));
     }
 
     // --- sufficienza delle prove profonde
@@ -547,7 +565,7 @@ function analysisStatusHtml(data, index) {
     h.push(
         `<p class="analysisHelp">${tle("an.helpNameResolution")}</p>`
     );
-    h.push(
+    h.push(analysisStatusScrollBox(
         '<table class="analysisTable">' +
         `<tr><th>${tle("an.thHopsCounted")}</th><th>${tle("an.thTotal")}</th><th>${tle("an.thResolved")}</th><th>${tle("an.thAmbiguousPrefix")}</th><th>${tle("an.thNoKnownRepeater")}</th></tr>` +
         covRow(tl("an.covAdverts"), cov.adverts) +
@@ -555,7 +573,7 @@ function analysisStatusHtml(data, index) {
         covRow(tl("an.covDeepAdverts"), cov.deep_adverts) +
         covRow(tl("an.covDeepSonar"), cov.deep_sonar) +
         "</table>"
-    );
+    ));
 
     // --- note e avvisi del job
     const notes = (data.notes || []).map(n => `<li>${escapeHtml(analysisNoteText(n, data))}</li>`);
@@ -701,8 +719,13 @@ function analysisMatrixHtml(data) {
             `<div class="amSub">${tlnh("an.sonarSentN", (s.tx && s.tx.sent) || 0)}</div>${adv}</th>${tds}</tr>`;
     });
 
-    return '<table class="analysisTable analysisMatrix">' +
-        `<tr><th>${tle("an.matrixCorner")}</th>${head}</tr>${rows.join("")}</table>`;
+    // riquadro a scorrimento orizzontale: con molti tracciatori la matrice
+    // (una colonna da 190 px per tracciatore) scorre nel riquadro invece di
+    // allargare l'intera pagina (§93); la prima colonna (sorgente) resta
+    // ferma a sinistra durante lo scorrimento (CSS, §95)
+    return '<div class="analysisScroll analysisScrollMatrix">' +
+        '<table class="analysisTable analysisMatrix">' +
+        `<tr><th>${tle("an.matrixCorner")}</th>${head}</tr>${rows.join("")}</table></div>`;
 }
 
 /* =========================
@@ -2382,7 +2405,23 @@ function analysisRenderMatrix() {
         return;
     }
 
+    // il ridisegno (anche quello al clic su una cella) non deve riportare a
+    // sinistra lo scorrimento orizzontale della matrice (§93)
+    const host = analysisEl("analysisMatrix");
+    const find = () => (host && typeof host.querySelector === "function") ? host.querySelector(".analysisScrollMatrix") : null;
+    const before = find();
+    const left = before ? before.scrollLeft : 0;
+
     analysisSetHtml("analysisMatrix", analysisMatrixHtml(analysisData));
+
+    if (left > 0) {
+
+        const after = find();
+
+        if (after) {
+            after.scrollLeft = left;
+        }
+    }
 }
 
 /* ----- istogramma ----- */

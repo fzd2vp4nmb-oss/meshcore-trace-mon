@@ -1,3 +1,3 @@
-meshcore>=2.3.8
+meshcore>=2.3.17
 PyYAML
 aiohttp

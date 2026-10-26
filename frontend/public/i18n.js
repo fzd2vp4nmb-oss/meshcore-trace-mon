@@ -89,6 +89,10 @@
             en: "Guide",
             it: "Guida"
         },
+        "idx.tabInsights": {
+            en: "Insights",
+            it: "Approfondimenti"
+        },
         "idx.tabTelegram": {
             en: "Telegram Notification",
             it: "Notifiche Telegram"

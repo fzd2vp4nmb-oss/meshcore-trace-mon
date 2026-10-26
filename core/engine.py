@@ -1,4 +1,6 @@
 import asyncio
+import time
+from collections import deque
 from contextlib import asynccontextmanager
 
 from meshcore.meshcore import MeshCore
@@ -6,6 +8,19 @@ from meshcore.events import EventType
 
 from core.config import config
 from core.logger import log
+
+
+class MeshCreateError(RuntimeError):
+    """
+    MeshCore.create_*() ha restituito None invece di sollevare: la
+    connessione di trasporto (TCP) è stata aperta ma il companion non
+    ha risposto all'handshake applicativo entro il timeout della
+    libreria (send_appstart, 2 s dalla 2.3.14), quindi la libreria
+    chiude e ritorna None (docs/ARCHITECTURE.md §104). È un tentativo
+    fallito come un altro: lo gestisce il recovery loop, che lo
+    distingue dagli altri errori per ritentare dopo pochi secondi
+    invece che dopo recovery_retry_interval.
+    """
 
 
 class Engine:
@@ -22,6 +37,9 @@ class Engine:
     nessun traffico radio). reconnect() è protetto da un lock, così
     anche se più trigger lo richiamano in rapida successione, la
     ricreazione effettiva della connessione avviene una sola volta.
+    Se l'auto-reconnect nativo riconnette a ripetizione in pochi
+    secondi (ciclo a 1 Hz, docs/ARCHITECTURE.md §104), un freno
+    (_note_auto_reconnect/_flap_brake) ricrea l'oggetto MeshCore.
 
     command_lock è un lock CONDIVISO tra tutti i chiamanti (IPCServer,
     BotModule, e qualsiasi futuro consumatore) che devono inviare
@@ -83,6 +101,15 @@ class Engine:
         # viene usata.
         #
         self._heartbeat_check_in_progress = False
+
+        #
+        # Istanti (time.monotonic()) delle ultime riconnessioni
+        # automatiche della libreria, nella finestra FLAP_BRAKE_WINDOW,
+        # e task del freno in corso (v. _note_auto_reconnect() e
+        # ARCHITECTURE.md §104).
+        #
+        self._auto_reconnect_times = deque()
+        self._flap_brake_task = None
 
         #
         # Riferimenti ai task "fire-and-forget" creati da
@@ -391,6 +418,36 @@ class Engine:
     #
     CREATE_MESH_TIMEOUT = 30.0
 
+    #
+    # Valori di reconnect()/recovery loop e del freno sulle
+    # riconnessioni rapide (docs/ARCHITECTURE.md §104; scelti con
+    # l'utente 2026-10-26, costanti e non chiavi di config.yaml, come
+    # CREATE_MESH_TIMEOUT sopra):
+    #
+    # RECONNECT_PAUSE — secondi di attesa tra la chiusura della vecchia
+    # connessione e l'apertura della nuova in reconnect(): il companion
+    # a volte non serve subito una nuova sessione dopo una chiusura
+    # (log DEBUG di node_04: appstart senza risposta a 3 s dalla
+    # chiusura, sessione servita 10 s dopo).
+    #
+    # CREATE_QUICK_RETRIES / CREATE_QUICK_RETRY_DELAY — se
+    # MeshCore.create_*() restituisce None (MeshCreateError), il
+    # recovery loop riprova dopo CREATE_QUICK_RETRY_DELAY secondi, al
+    # più CREATE_QUICK_RETRIES volte di seguito, poi torna a
+    # recovery_retry_interval.
+    #
+    # FLAP_BRAKE_THRESHOLD / FLAP_BRAKE_WINDOW — numero di
+    # riconnessioni automatiche della libreria entro la finestra (in
+    # secondi) oltre il quale l'oggetto MeshCore viene ricreato con
+    # reconnect(force=True). Una caduta vera produce UNA riconnessione;
+    # il ciclo a 1 Hz ne produce una al secondo.
+    #
+    RECONNECT_PAUSE = 3.0
+    CREATE_QUICK_RETRIES = 2
+    CREATE_QUICK_RETRY_DELAY = 5.0
+    FLAP_BRAKE_THRESHOLD = 3
+    FLAP_BRAKE_WINDOW = 10.0
+
     async def _create_mesh(self):
 
         common_kwargs = dict(
@@ -430,7 +487,7 @@ class Engine:
             )
 
         try:
-            return await asyncio.wait_for(
+            mesh = await asyncio.wait_for(
                 coro,
                 timeout=self.CREATE_MESH_TIMEOUT
             )
@@ -446,6 +503,34 @@ class Engine:
             )
 
             raise
+
+        #
+        # create_tcp()/create_serial()/create_ble() restituiscono None
+        # (non sollevano) quando il trasporto si apre ma il companion
+        # non risponde all'handshake: la libreria registra "No response
+        # from meshcore node, disconnecting". Prima di questo controllo
+        # il None arrivava a connect()/reconnect() e produceva
+        # "'NoneType' object has no attribute 'subscribe'" in
+        # _subscribe_connection_events() (8 volte nel log di node_04 del
+        # 23-24/10/2026): stesso esito (tentativo fallito, ritentato dal
+        # recovery loop) ma con un messaggio che non dice la causa.
+        #
+        if mesh is None:
+
+            log.error(
+                "Apertura connessione %s: la connessione è stata "
+                "accettata ma il companion non ha risposto "
+                "all'handshake (la libreria ha restituito None), "
+                "abbandono il tentativo (verrà ritentato dal recovery "
+                "loop se in corso).",
+                self.connection_type.upper()
+            )
+
+            raise MeshCreateError(
+                "il companion non ha risposto all'handshake"
+            )
+
+        return mesh
 
     def _subscribe_connection_events(self):
 
@@ -467,10 +552,89 @@ class Engine:
             log.info(
                 "MeshCore connection restored (auto-reconnect)."
             )
+            self._note_auto_reconnect()
         else:
             log.info(
                 "MeshCore CONNECTED event received."
             )
+
+    def _note_auto_reconnect(self):
+        """
+        Freno sulle riconnessioni rapide (docs/ARCHITECTURE.md §104).
+        Chiamata a ogni riconnessione AUTOMATICA della libreria: se ce
+        ne sono FLAP_BRAKE_THRESHOLD entro FLAP_BRAKE_WINDOW secondi
+        non è una caduta ma il ciclo a 1 Hz di meshcore_py (apre la
+        connessione nuova senza chiudere la vecchia; il companion
+        chiude la vecchia, e la libreria la scambia per la caduta della
+        nuova), che la libreria non interrompe da sola perché azzera il
+        contatore dei tentativi a ogni riconnessione riuscita.
+        Interrompe il ciclo ricreando l'oggetto MeshCore (_flap_brake).
+        """
+
+        if self._shutting_down:
+            return
+
+        now = time.monotonic()
+
+        times = self._auto_reconnect_times
+
+        times.append(now)
+
+        while times and now - times[0] > self.FLAP_BRAKE_WINDOW:
+            times.popleft()
+
+        if len(times) < self.FLAP_BRAKE_THRESHOLD:
+            return
+
+        if (
+            self._flap_brake_task is not None and
+            not self._flap_brake_task.done()
+        ):
+            return
+
+        log.warning(
+            "Freno riconnessioni: %d riconnessioni automatiche in "
+            "%.0fs (ciclo di meshcore_py): ricreo la connessione.",
+            len(times),
+            self.FLAP_BRAKE_WINDOW
+        )
+
+        times.clear()
+
+        self._flap_brake_task = asyncio.create_task(
+            self._flap_brake(self.mesh)
+        )
+
+        self._background_tasks.add(self._flap_brake_task)
+        self._flap_brake_task.add_done_callback(
+            self._background_tasks.discard
+        )
+
+    async def _flap_brake(self, mesh):
+
+        #
+        # expected_mesh: se nel frattempo un'altra riconnessione (il
+        # recovery loop) ha già sostituito l'oggetto che oscillava, non
+        # c'è più nulla da fermare e reconnect() non fa niente.
+        #
+        try:
+            await self.reconnect(
+                force=True,
+                expected_mesh=mesh,
+                pause=True
+            )
+
+        except asyncio.CancelledError:
+            raise
+
+        except Exception:
+
+            log.exception(
+                "Freno riconnessioni: ricreazione fallita, passo al "
+                "recovery loop."
+            )
+
+            self._start_recovery_loop()
 
     async def _on_disconnected(self, event):
 
@@ -509,6 +673,16 @@ class Engine:
         ):
             return
 
+        #
+        # Non parte mentre una ricreazione della connessione è in corso
+        # (docs/ARCHITECTURE.md §79 alternativa (A), applicata nel
+        # §104): sarebbe un get_bat() su una connessione che sta per
+        # essere chiusa. Come per le altre uscite anticipate, la
+        # prossima verifica periodica la rifà.
+        #
+        if self._reconnect_lock.locked():
+            return
+
         if self._heartbeat_check_in_progress:
             #
             # Guardia esplicita (Finding 6, review affidabilità
@@ -533,6 +707,15 @@ class Engine:
 
         self._heartbeat_check_in_progress = True
 
+        #
+        # Oggetto MeshCore su cui questo controllo è partito: se
+        # reconnect() lo sostituisce mentre get_bat() aspetta, l'esito
+        # (di solito un timeout, perché la vecchia connessione è stata
+        # chiusa) non dice nulla sulla connessione nuova e non deve
+        # marcarla caduta (§79 alternativa (A), §104).
+        #
+        mesh = self.mesh
+
         try:
             try:
                 #
@@ -551,9 +734,16 @@ class Engine:
                 # altrove, quindi ha priorità sul resto.
                 #
                 result = await asyncio.wait_for(
-                    self.mesh.commands.get_bat(),
+                    mesh.commands.get_bat(),
                     timeout=self.heartbeat_timeout
                 )
+
+                if self.mesh is not mesh:
+                    log.info(
+                        "Heartbeat: connessione sostituita durante "
+                        "il controllo, esito scartato."
+                    )
+                    return
 
                 if result.type == EventType.ERROR:
                     raise RuntimeError(
@@ -563,6 +753,14 @@ class Engine:
                 self._connected = True
 
             except Exception as e:
+
+                if self.mesh is not mesh:
+                    log.info(
+                        "Heartbeat: connessione sostituita durante "
+                        "il controllo, esito scartato (%s).",
+                        e
+                    )
+                    return
 
                 log.warning(
                     "Heartbeat: il device non risponde (%s). "
@@ -633,19 +831,43 @@ class Engine:
 
     async def _recovery_loop(self):
 
+        quick_retries_left = self.CREATE_QUICK_RETRIES
+
+        delay = self.recovery_retry_interval
+
         while not self.connected:
 
             log.info(
                 "Recovery: retrying full reconnect in %ss...",
-                self.recovery_retry_interval
+                delay
             )
 
-            await asyncio.sleep(
-                self.recovery_retry_interval
-            )
+            await asyncio.sleep(delay)
+
+            delay = self.recovery_retry_interval
 
             try:
-                await self.reconnect()
+                await self.reconnect(pause=True)
+
+            except MeshCreateError:
+
+                #
+                # Il companion ha accettato la connessione ma non ha
+                # risposto all'handshake (§104): di solito risponde
+                # pochi secondi dopo, quindi qualche tentativo rapido
+                # prima di tornare alla cadenza normale.
+                #
+                log.warning(
+                    "Recovery: il companion non ha risposto "
+                    "all'handshake."
+                )
+
+                if quick_retries_left > 0:
+                    quick_retries_left -= 1
+                    delay = min(
+                        self.CREATE_QUICK_RETRY_DELAY,
+                        self.recovery_retry_interval
+                    )
 
             except Exception:
                 log.exception(
@@ -737,7 +959,7 @@ class Engine:
 
         await self._teardown_mesh()
 
-    async def reconnect(self, force=False):
+    async def reconnect(self, force=False, expected_mesh=None, pause=False):
         """
         Ricrea completamente la connessione MeshCore. Protetto da
         lock: se un'altra chiamata concorrente ha già ripristinato
@@ -755,9 +977,30 @@ class Engine:
         alla prima scrittura successiva), quindi il controllo
         "connected" non è un'informazione affidabile e una connessione
         NUOVA verso il device riavviato va creata esplicitamente.
+
+        expected_mesh (default None: nessun effetto per tutti i
+        chiamanti preesistenti) è l'oggetto MeshCore che il chiamante
+        vuole sostituire: se, ottenuto il lock, self.mesh è un altro
+        (qualcun altro l'ha già ricreato), non fa nulla. Lo usa il
+        freno sulle riconnessioni rapide (_flap_brake, §104).
+
+        pause (default False: nessun effetto per i chiamanti
+        preesistenti, in particolare per la riconnessione forzata del
+        daemon dopo il riavvio del companion, §79, che ha già la sua
+        attesa) = True: dopo la chiusura della vecchia connessione
+        attende RECONNECT_PAUSE secondi prima di aprire la nuova, se
+        c'era una connessione da chiudere (§104). Lo usano il recovery
+        loop e il freno sulle riconnessioni rapide.
         """
 
         async with self._reconnect_lock:
+
+            if expected_mesh is not None and self.mesh is not expected_mesh:
+                log.info(
+                    "Reconnect: la connessione è già stata sostituita, "
+                    "nessuna azione."
+                )
+                return self.mesh
 
             if self.connected and not force:
                 log.info(
@@ -771,7 +1014,12 @@ class Engine:
                 " (forzato)" if force else ""
             )
 
+            had_mesh = self.mesh is not None
+
             await self._teardown_mesh()
+
+            if pause and had_mesh and self.RECONNECT_PAUSE > 0:
+                await asyncio.sleep(self.RECONNECT_PAUSE)
 
             self.mesh = await self._create_mesh()
 

@@ -606,25 +606,29 @@ menu_sonar() {
 }
 
 # ============================================================
-# Allinea al template (docs/ARCHITECTURE.md §45) — aggiunge a
-# config.yaml solo le chiavi che config/config.yaml.template definisce
+# Allinea al template (docs/ARCHITECTURE.md §45, §107) — aggiunge a
+# config.yaml le chiavi che config/config.yaml.template definisce
 # ma che qui non ci sono ancora (es. un parametro introdotto da una
 # versione più recente del codice, non ancora presente su
-# un'installazione già in uso). Non tocca MAI una chiave già presente
-# né una lista (path tracciati, repeater, regioni bot, servizi) — per
-# quelle restano i menu dedicati sopra. Unica eccezione: la chiave del
-# canale Sonar (sonar.channel_secret), uguale su tutti i nodi e scritta
-# nel template dall'amministratore: viene copiata anche se è presente
-# ma vuota, e non viene mai mostrata a video.
+# un'installazione già in uso). Non tocca MAI il valore di una chiave
+# già presente né una lista (path tracciati, repeater, regioni bot,
+# servizi) — per quelle restano i menu dedicati sopra. Eccezioni: la
+# chiave del canale Sonar (sonar.channel_secret), uguale su tutti i nodi
+# e scritta nel template dall'amministratore (copiata anche se presente
+# ma vuota, mai mostrata a video); i parametri il cui default è cambiato
+# (connection.heartbeat_timeout), aggiornati solo se hanno ancora il
+# vecchio default — un valore diverso resta com'è e viene segnalato.
 # ============================================================
 menu_align() {
 
     echo
     echo "--- Allinea al template ---"
     echo "Confronta config.yaml con config/config.yaml.template e"
-    echo "aggiunge solo le chiavi mancanti, senza toccare nulla di già"
-    echo "presente (personalizzazioni incluse). Unica eccezione: la chiave"
-    echo "del canale Sonar, copiata dal template se qui è vuota."
+    echo "aggiunge le chiavi mancanti, senza toccare i valori già presenti"
+    echo "(personalizzazioni incluse). Eccezioni: la chiave del canale Sonar,"
+    echo "copiata dal template se qui è vuota, e i parametri con nuovo"
+    echo "default (heartbeat_timeout), aggiornati solo se hanno ancora il"
+    echo "vecchio valore; un valore diverso viene solo segnalato."
     echo
 
     output=$(engine align)
@@ -652,7 +656,7 @@ while true; do
     echo "  6) Servizi"
     echo "  7) Logging"
     echo "  8) Telegram (notifiche al gestore del nodo)"
-    echo "  9) Allinea al template (aggiungi parametri mancanti)"
+    echo "  9) Allinea al template (parametri mancanti e nuovi default)"
     echo " 10) Sonar (canale dedicato per l'acquisizione dei path)"
     echo "  0) Esci"
     read -p "Scelta: " main_choice || { echo; break; }

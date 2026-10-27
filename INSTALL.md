@@ -611,8 +611,9 @@ propone di riavviare `trace-mon.service` per applicare le modifiche.
 
 Qualora fosse necessario allineare un nuovo parametro di
 configurazione, esiste l'opzione **"9) Allinea al template"** che
-aggiunge a `config.yaml` solo i parametri mancanti, senza modificare
-le altre scelte già salvate in precedenza.
+aggiunge a `config.yaml` i parametri mancanti e aggiorna quelli che
+hanno ancora il vecchio valore predefinito (es. `heartbeat_timeout`),
+senza modificare le altre scelte già salvate in precedenza.
 
 ---
 

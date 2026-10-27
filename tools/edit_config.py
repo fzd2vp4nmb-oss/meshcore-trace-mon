@@ -110,6 +110,34 @@ FILL_WHEN_EMPTY_PATHS = frozenset({
     "sonar.channel_secret",
 })
 
+#
+# Parametri il cui DEFAULT è cambiato nel template (docs/ARCHITECTURE.md
+# §107): path -> valori che erano il default PRECEDENTE. `align` li
+# aggiorna al valore del template SOLO se il valore corrente è uno di
+# questi (cioè il nodo ha ancora il vecchio default, mai toccato); ogni
+# altro valore è una scelta del gestore (o un valore in prova) e non si
+# tocca, ma viene segnalato. Per propagare un nuovo default basta
+# cambiare il template e aggiungere qui il vecchio valore; la voce si può
+# togliere quando tutti i nodi sono stati allineati.
+#
+TEMPLATE_VALUE_MIGRATIONS = {
+    "connection.heartbeat_timeout": frozenset({5}),
+}
+
+
+def _is_old_default(path, current):
+    """True se `current` è uno dei vecchi default di `path` (numerico, non bool)."""
+
+    old_values = TEMPLATE_VALUE_MIGRATIONS.get(path)
+
+    if not old_values or isinstance(current, bool):
+        return False
+
+    if not isinstance(current, (int, float)):
+        return False
+
+    return current in old_values
+
 _SHARED_SECRET_RE = re.compile(r"^[0-9a-fA-F]{32}$")
 _PLACEHOLDER_VALUE_RE = re.compile(r"^__[A-Z0-9_]+__$")
 
@@ -1076,9 +1104,12 @@ def cmd_align(args):
       template — è esattamente il caso di una personalizzazione fatta
       con config.sh, che va sempre preservata): align tocca solo la
       PRESENZA/ASSENZA di una chiave, mai un valore già impostato
-      (unica eccezione, deliberata: FILL_WHEN_EMPTY_PATHS, la chiave
+      (due eccezioni, deliberate: FILL_WHEN_EMPTY_PATHS, la chiave
       del canale sonar, che viene riempita anche se presente ma vuota
-      e mai mostrata a video);
+      e mai mostrata a video; TEMPLATE_VALUE_MIGRATIONS, un parametro
+      il cui default è cambiato nel template, aggiornato solo se il
+      valore corrente è ancora il VECCHIO default — un valore diverso
+      resta com'è e viene solo segnalato, §107);
     - non tocca MAI una lista, né in aggiunta né in rimozione
       (walk_template_scalars()/find_prunable_scalars() non vi
       entrano — restano sempre di competenza dei sottocomandi/menu
@@ -1111,6 +1142,7 @@ def cmd_align(args):
     data = load_config()
 
     added = []
+    updated = []
     notes = []
 
     for path, template_value in walk_template_scalars(template):
@@ -1155,6 +1187,19 @@ def cmd_align(args):
             continue
 
         if current is not None:
+
+            if path in TEMPLATE_VALUE_MIGRATIONS and current != template_value:
+
+                if _is_old_default(path, current):
+                    set_path(data, path, template_value)
+                    updated.append((path, current, template_value))
+                else:
+                    notes.append(
+                        f"NOTA: {path} = {current!r} in config.yaml è diverso "
+                        f"dal template ({template_value!r}): non modificato "
+                        f"(valore personalizzato)."
+                    )
+
             continue
 
         set_path(data, path, template_value)
@@ -1168,12 +1213,15 @@ def cmd_align(args):
     for note in notes:
         print(note)
 
-    if not added and not removed:
+    if not added and not updated and not removed:
         print("config.yaml già allineato al template — nessuna modifica necessaria.")
         return
 
     for path, value in added:
         print(f"AGGIUNTA: {path} = {_display_value(path, value)!r}")
+
+    for path, old_value, new_value in updated:
+        print(f"AGGIORNATA (vecchio default): {path}: {old_value!r} → {new_value!r}")
 
     for path, value in removed:
         print(f"RIMOSSA (non più nel template): {path} (era: {_display_value(path, value)!r})")
@@ -1181,7 +1229,10 @@ def cmd_align(args):
     backup_path = backup_config()
     save_config(data, backup_path)
 
-    print(f"Totale: {len(added)} chiave/i aggiunta/e, {len(removed)} chiave/i rimossa/e.")
+    print(
+        f"Totale: {len(added)} chiave/i aggiunta/e, "
+        f"{len(updated)} aggiornata/e, {len(removed)} rimossa/e."
+    )
 
 
 def main():

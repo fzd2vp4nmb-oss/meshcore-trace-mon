@@ -48,7 +48,7 @@ connection:
   max_reconnect_attempts: 5
   recovery_retry_interval: 30
   heartbeat_interval: 15   # secondi tra un health-check attivo e l'altro
-  heartbeat_timeout: 5     # timeout del singolo get_bat() di verifica
+  heartbeat_timeout: 10    # timeout del singolo get_bat() di verifica (il companion può tacere fino a ~7 s dopo un advert)
 
   tcp:
     host: __TCP_HOST__

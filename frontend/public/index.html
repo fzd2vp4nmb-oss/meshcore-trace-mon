@@ -64,9 +64,6 @@
     <button class="tabButton" data-tab="neighborsPage" data-i18n="idx.tabRepeaters">
         Repeaters
     </button>
-    <button class="tabButton" data-tab="analysisPage" data-i18n="idx.tabAnalysis">
-        Analysis
-    </button>
     <a
         href="guide.html"
         class="tabBarLink"
@@ -89,6 +86,8 @@
 <span><b>Path:</b></span>
 <select id="pathSelector"></select>
 <br><br>
+
+<div id="pathInfoBox" class="pathInfoBox" style="display:none"></div>
 
 <div class="rangeBar">
     <span><b data-i18n="idx.timeRange">Time Range:</b></span>
@@ -364,236 +363,17 @@
 
 </div>
 
-<!--
-    Scheda «Analysis» (2026-10-21, v. docs/ARCHITECTURE.md §88): un
-    CONTENITORE di analisi, oggi una sola — «propagation», path degli
-    advert contro path dei messaggi Sonar. I dati sono calcolati ogni due
-    ore da analysis_job.js (cron) e serviti in sola lettura da
-    /api/analysis/*; tutto il disegno sta in analysis.js (nessuna modifica
-    ad app.js). Gli id qui sotto sono il contratto con analysis.js: il
-    test sandbox_tests/test_analysis_frontend_2026_10_21.js verifica che ci
-    siano tutti. Niente auto-refresh in questa scheda.
--->
-<div id="analysisPage" class="tabPage" style="display:none">
-
-<span><b data-i18n="an.selectorLabel">Analysis:</b></span>
-<select id="analysisTypeSelector"></select>
-&nbsp;&nbsp;&nbsp;
-<span><b data-i18n="idx.period">Period:</b></span>
-<select id="analysisWindowSelector"></select>
-
-<p id="analysisInfo" class="analysisInfoLine"></p>
-
-<div id="analysisNotice"></div>
-
-<div id="analysisContent" style="display:none">
-
-<div id="analysisPropagation">
-
-<p class="analysisHelp" data-i18n-html="an.intro">
-    Compares the path taken by <b>adverts</b> (repeater flood, all nodes)
-    with the path taken by <b>Sonar messages</b> (a message sent on purpose
-    from a known node, so its source and send time are known). Both are read
-    from the paths recorded by the tracers. Source and tracer are two
-    roles, not two kinds of node: the source is the node that transmits a
-    packet, the tracer is another trace-mon node that receives it and
-    records its path. The same trace-mon node is the source of the packets
-    it transmits and the tracer of those it receives. The aim is to see how far
-    each kind of packet really travels, and which repeaters are seen
-    forwarding at depth. It is an inference from recorded paths, not a
-    measurement of any repeater's settings. The only settings known are the
-    flood limits of the repeaters managed by trace-mon (panel 6).
-</p>
-
-<h4 data-i18n="an.h1">1. Data status</h4>
-<div id="analysisStatus"></div>
-
-<h4 data-i18n-html="an.h2">2. Source &rarr; tracer matrix</h4>
-<p class="analysisHelp" data-i18n="an.help2">
-    One cell per pair: how many Sonar messages sent by the source reached the
-    tracer, and how many adverts of the same source it saw. Click a cell
-    to compare that pair in panel 4.
-</p>
-<div id="analysisMatrix"></div>
-
-<h4 data-i18n="an.h3">3. Hops histogram</h4>
-<div class="analysisControls">
-    <label><span data-i18n="an.lblTracer">Tracer</span>
-        <select id="analysisHistObserver"></select>
-    </label>
-    <label><span data-i18n="an.lblScope">Scope</span>
-        <select id="analysisHistScope">
-            <option value="both" data-i18n="an.optBoth">Both</option>
-            <option value="FLOOD" data-i18n="an.optNoRegion">No region (FLOOD)</option>
-            <option value="TC" data-i18n="an.optRegion">Region (TC_FLOOD)</option>
-        </select>
-    </label>
-    <label><span data-i18n="an.lblCount">Count</span>
-        <select id="analysisHistMetric">
-            <option value="copies" data-i18n="an.optCopies">All copies received</option>
-            <option value="best" data-i18n="an.optBest">Best copy of each transmission</option>
-        </select>
-    </label>
-    <label><span data-i18n="an.lblYAxis">Y axis</span>
-        <select id="analysisHistYMode">
-            <option value="share" data-i18n="an.optShare">Share of each series</option>
-            <option value="count" data-i18n="an.optNumber">Number</option>
-        </select>
-    </label>
-</div>
-<div id="analysisHistContainer">
-    <canvas id="analysisHistChart"></canvas>
-</div>
-<p id="analysisHistNote" class="analysisHelp"></p>
-<p id="analysisHistGateway" class="analysisHelp"></p>
-
-<h4 id="analysisPairHeading" data-i18n="an.h4">4. Pair comparison</h4>
-<div id="analysisPairEmpty"></div>
-<div id="analysisPairBody" style="display:none">
-
-    <div class="analysisControls">
-        <label><span data-i18n="an.lblSource">Source</span>
-            <select id="analysisPairSource"></select>
-        </label>
-        <label><span data-i18n="an.lblTracer">Tracer</span>
-            <select id="analysisPairObserver"></select>
-        </label>
-    </div>
-
-    <div id="analysisPairSummary"></div>
-
-    <h5><span data-i18n="an.hAdvertPaths">Advert paths</span> <span class="analysisSwatch" style="background:#1e6fd9"></span></h5>
-    <div class="analysisScroll analysisScrollPair">
-        <table id="analysisPairAdvertTable" class="analysisTable analysisPairTable"></table>
-    </div>
-    <div id="analysisPairAdvertMore"></div>
-
-    <h5><span data-i18n="an.hSonarPaths">Sonar paths</span> <span class="analysisSwatch" style="background:#d9480f"></span></h5>
-    <div class="analysisScroll analysisScrollPair">
-        <table id="analysisPairSonarTable" class="analysisTable analysisPairTable"></table>
-    </div>
-    <div id="analysisPairSonarMore"></div>
-
-    <div class="analysisMapBar">
-        <span id="analysisPairCaption" class="nodePathCaption"></span>
-        <button id="analysisPairClearMap" type="button" data-i18n="an.btnClearMap">Clear map</button>
-    </div>
-    <div id="analysisPairMap"></div>
-
-</div>
-
-<h4 data-i18n="an.h5">5. Repeaters seen at depth</h4>
-<p class="analysisHelp" data-i18n="an.help5">
-    Repeaters seen forwarding at position 9 or beyond in the recorded paths.
-    The last hop, next to the tracer, is not counted. The list is
-    descriptive: it does not classify any repeater's limit. The last two
-    columns add what is known about the advert limit (panel 6).
-</p>
-<div class="analysisControls">
-    <label><span data-i18n="an.lblStatus">Status</span>
-        <select id="analysisRepStatus">
-            <option value="all" data-i18n="idx.optAll">All</option>
-            <option value="proven" data-i18n="an.optProven">Proven ≥ 9 hops</option>
-            <option value="indication" data-i18n="an.optIndication">Indication</option>
-            <option value="messages_only" data-i18n="an.optSonarOnly">Sonar only</option>
-        </select>
-    </label>
-    <label><span data-i18n="an.lblNameKey">Name / key</span>
-        <input type="text" id="analysisRepFilter" placeholder="e.g. repeater-1 or a1b2" data-i18n-attr="placeholder:idx.phName">
-    </label>
-</div>
-<div id="analysisRepSummary"></div>
-<div class="analysisScroll analysisScrollRep">
-    <table id="analysisRepeatersTable" class="analysisTable analysisRepeatersTable"></table>
-</div>
-
-<h4 data-i18n="an.h6">6. Operating limits</h4>
-<p class="analysisHelp" data-i18n-html="an.help6">
-    A repeater forwards a flooded packet only up to a number of hops, set by
-    three settings: <b>Flood Max Hops (Unscoped)</b>,
-    <b>Flood Max Hops (Advert)</b> and <b>Flood Max Hops</b>. trace-mon reads
-    them only from the repeaters it manages; for every other repeater on a
-    path they are not known, and only the highest position at which it was
-    seen forwarding is. The effective cap used here is a working hypothesis:
-    advert without region = min(Unscoped, Advert), advert with region =
-    Advert, message without region = min(Unscoped, Flood Max Hops), message
-    with region = Flood Max Hops. A repeater at position <i>k</i> of a path
-    can appear only if <i>k</i> is within its cap. In panels 3, 4 and 5,
-    &ldquo;would stop&rdquo; and &ldquo;not stopped&rdquo; say whether the
-    other kind of packet, with the same scope, could have followed the same
-    path, judged only on the settings known: it describes a path, it does not
-    classify a repeater.
-</p>
-<div id="analysisLimitsNotice"></div>
-<div id="analysisLimitsBody" style="display:none">
-
-    <h5 data-i18n="an.hSettings">Settings of the repeaters managed by trace-mon</h5>
-    <p class="analysisHelp" data-i18n-html="an.helpSettings">
-        The list of repeaters is not fixed: each manager of trace-mon can add
-        or remove repeaters, and a node may start without any and get one
-        later. The table follows the period selected above: it shows the
-        settings in force at the <b>end</b> of the period, only for the
-        repeaters whose settings are known in it. A repeater added during the
-        period is marked <i>added in this period</i>; one that stopped being
-        read, <i>no longer read</i>. The readings are kept even after a
-        repeater is removed from the configuration, so it still counts for
-        the periods in which it was read.
-    </p>
-    <div class="analysisScroll analysisScrollLimits">
-        <table id="analysisLimitsTable" class="analysisTable analysisLimitsTable"></table>
-    </div>
-    <div id="analysisLimitsOutside"></div>
-
-    <h5 data-i18n="an.hSources">Where the settings come from</h5>
-    <p class="analysisHelp" data-i18n="an.helpSources">
-        Each node reads the settings of its own repeaters, but a repeater of
-        one node also affects the packets seen at every other node, so the
-        readings of all nodes are combined. A node with no managed repeater
-        adds nothing: it is normal until one is added.
-    </p>
-    <div class="analysisScroll">
-        <table id="analysisSourcesTable" class="analysisTable analysisSourcesTable"></table>
-    </div>
-
-    <h5 data-i18n="an.hGateways">Gateway ceiling at each tracer</h5>
-    <p class="analysisHelp" data-i18n="an.helpGateways">
-        The gateway is the last repeater before the tracer. A copy cannot
-        have more hops than its gateway's cap, so where the gateways are
-        capped low the tracer cannot see deep paths of that kind, whatever
-        the repeaters in the middle do. Counted over all copies of the
-        period, from any source.
-    </p>
-    <div class="analysisScroll analysisScrollLimits">
-        <table id="analysisGatewaysTable" class="analysisTable analysisGatewaysTable"></table>
-    </div>
-
-</div>
-
-</div>
-
-</div>
-
-</div>
-
 <footer class="footerBar">
     trace-mon - 2026 - by Armando Accardo, IK2XYP
 </footer>
 
 <!--
     i18n.js (testi in Italiano/English e selettore della lingua) DEVE stare
-    prima di app.js e di analysis.js: tl()/tlh()/tln() servono a entrambi.
+    prima di app.js: tl()/tlh()/tln() servono a app.js.
 -->
 <script src="i18n.js"></script>
 
 <script src="app.js"></script>
-
-<!--
-    analysis.js DEVE stare dopo app.js (usa le sue funzioni e costanti di
-    primo livello) e PRIMA dello script inline qui sotto: il click di
-    ripristino della tab attiva (RESTORE ACTIVE TAB) gira al caricamento e,
-    se la tab salvata è «Analysis», chiama loadAnalysisTab() subito.
--->
-<script src="analysis.js"></script>
 
 <script>
 const btn =
@@ -773,33 +553,6 @@ document.querySelectorAll(
                                 }
                             }
                         );
-                    }
-                }
-
-                else if (
-                    tabBtn.dataset.tab === "analysisPage"
-                ) {
-
-                    //
-                    // Analysis (§88): nessun auto-refresh — i dati sono
-                    // precalcolati ogni due ore da analysis_job.js. Si
-                    // ferma però il timer condiviso lasciato acceso da
-                    // Trace/Nodes/Repeaters (è uno solo, v.
-                    // startAutoRefresh() in app.js), altrimenti
-                    // continuerebbe a ricaricare una tab nascosta.
-                    //
-                    if (
-                        typeof stopAutoRefresh === "function"
-                    ) {
-
-                        stopAutoRefresh();
-                    }
-
-                    if (
-                        typeof loadAnalysisTab === "function"
-                    ) {
-
-                        loadAnalysisTab();
                     }
                 }
 

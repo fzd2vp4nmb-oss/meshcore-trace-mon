@@ -483,6 +483,14 @@
             en: "No stats data available.",
             it: "Nessun dato statistico disponibile."
         },
+        "trace.pathInfoTitle": {
+            en: "Info Path",
+            it: "Info Path"
+        },
+        "trace.pathInfoText": {
+            en: "These are the repeaters analysed with this trace:",
+            it: "Questi sono i repeater analizzati con questa traccia:"
+        },
         "trace.showingObservations.one": {
             en: "Showing {n} observations",
             it: "Mostrata {n} osservazione"
@@ -1088,7 +1096,7 @@
             it: "Nessun nodo osservato nel periodo selezionato per questo nodo."
         },
 
-        // ---- analysis.js: costanti, formati, avvisi, note ----
+        // ---- analysis.js e analysis_propagation.js: costanti, formati, avvisi, note ----
         "an.tipProven": {
             en: "Seen forwarding a packet at position 9 or beyond (the last hop, next to the tracer, is not counted) in at least 3 distinct advert transmissions from at least 2 different sources.",
             it: "Visto ritrasmettere un pacchetto alla posizione 9 o oltre (l'ultimo hop, accanto al tracciatore, non viene contato) in almeno 3 trasmissioni di advert distinte provenienti da almeno 2 sorgenti diverse."
@@ -1174,7 +1182,7 @@
             it: "Nota: {code}"
         },
 
-        // ---- analysis.js: pannello 1, stato dei dati ----
+        // ---- analysis_propagation.js: pannello 1, stato dei dati ----
         "an.modeCollector": {
             en: "All nodes configured on this collector.",
             it: "Tutti i nodi configurati su questo collettore."
@@ -1444,7 +1452,7 @@
             it: "inferenza statistica dai path registrati, non una misura delle impostazioni di ciascun repeater"
         },
 
-        // ---- analysis.js: parole per i plurali (analysisPlural) ----
+        // ---- analysis_propagation.js: parole per i plurali (analysisPlural) ----
         "an.wCopy": {
             en: "copy",
             it: "copia"
@@ -1478,7 +1486,7 @@
             it: "messaggi"
         },
 
-        // ---- analysis.js: pannello 2, matrice ----
+        // ---- analysis_propagation.js: pannello 2, matrice ----
         "an.noneReceived": {
             en: "none received",
             it: "nessuno ricevuto"
@@ -1552,7 +1560,7 @@
             it: "Sorgente ↓ / Tracciatore →"
         },
 
-        // ---- analysis.js: pannello 4, confronto della coppia ----
+        // ---- analysis_propagation.js: pannello 4, confronto della coppia ----
         "an.kindAdvert": {
             en: "advert",
             it: "advert"
@@ -1698,7 +1706,7 @@
             it: "nessun repeater noto ha il prefisso {prefix}"
         },
 
-        // ---- analysis.js: pannello 5, repeater profondi ----
+        // ---- analysis_propagation.js: pannello 5, repeater profondi ----
         "an.colStatus": {
             en: "Status",
             it: "Stato"
@@ -1764,7 +1772,7 @@
             it: "con regione"
         },
 
-        // ---- analysis.js: pannello 6, limiti operativi ----
+        // ---- analysis_propagation.js: pannello 6, limiti operativi ----
         "an.lastRead": {
             en: "last read",
             it: "ultima lettura"
@@ -2138,7 +2146,7 @@
             it: "hop"
         },
 
-        // ---- analysis.js: pannello 5 (verdetti e tetto), caricamento, istogramma, confronto, mappa ----
+        // ---- analysis.js e analysis_propagation.js: pannello 5 (verdetti e tetto), caricamento, istogramma, confronto, mappa ----
         "an.followBasis": {
             en: "An advert with the same scope on the same repeaters, judged only on the flood settings trace-mon knows (deep Sonar copies that include this repeater).",
             it: "Un advert con lo stesso ambito sugli stessi repeater, giudicato solo in base alle impostazioni di flood che trace-mon conosce (copie Sonar arrivate da lontano che includono questo repeater)."
@@ -2278,8 +2286,568 @@
         "an.mapMax": {
             en: "At most {n} paths can be drawn at once.",
             it: "Si possono disegnare al massimo {n} path alla volta."
+        },
+        // ---- analysis_quality.js: «Qualità dei path e simmetrie» (§109) ----
+        "an.regQuality": {
+            en: "Path quality and symmetries",
+            it: "Qualità dei path e simmetrie"
+        },
+        "aq.winLive": {
+            en: "Live (current trace file)",
+            it: "In tempo reale (file di tracce corrente)"
+        },
+        "aq.infoInference": {
+            en: "indication drawn from recorded traces, not a laboratory measurement",
+            it: "indicazione ricavata dalle tracce registrate, non una misura di laboratorio"
+        },
+        "aq.badData": {
+            en: "These analysis data do not have the expected format.",
+            it: "Questi dati di analisi non hanno il formato atteso."
+        },
+        "aq.intro": {
+            en: "Shows how good each radio link is and how balanced it is between the two directions, using the results of the traces run by the nodes (Trace tab). A trace sends a packet along a path of repeaters and back, and for every leg the receiver reports the <b>SNR</b>: so a link between two repeaters is measured in both directions, either in the same trace (mirror paths, where the way back retraces the way out) or in different ones. The <b>margin</b> is how far the average SNR of the weaker direction is above the lowest SNR the radio can demodulate: how much room the link has before it fails. The <b>symmetry</b> is the difference between the two directions. A link can be symmetric and weak, or strong and lopsided, so the two are shown together. These are indications drawn from recorded traces, not laboratory measurements: the SNR exists only for traces that were answered, a TIMEOUT cannot be attributed to a single leg, and the difference between the two directions mixes propagation, transmit power and noise floor at the two ends.",
+            it: "Mostra quanto è buono ogni collegamento radio e quanto è equilibrato tra le due direzioni, a partire dai risultati delle tracce eseguite dai nodi (scheda Tracce). Una traccia invia un pacchetto lungo un path di repeater e ritorno, e per ogni tratta il ricevente riporta l'<b>SNR</b>: così un collegamento tra due repeater viene misurato in entrambe le direzioni, nella stessa traccia (path speculari, in cui il ritorno ripercorre l'andata) o in tracce diverse. Il <b>margine</b> è di quanto l'SNR medio della direzione più debole supera l'SNR minimo che la radio sa demodulare: quanto spazio ha il collegamento prima di cedere. La <b>simmetria</b> è la differenza tra le due direzioni. Un collegamento può essere simmetrico ma debole, o forte ma sbilanciato: per questo i due aspetti sono mostrati insieme. Sono indicazioni ricavate dalle tracce registrate, non misure di laboratorio: l'SNR esiste solo per le tracce che hanno avuto risposta, un TIMEOUT non è attribuibile a una singola tratta, e la differenza tra le due direzioni mescola propagazione, potenza di trasmissione e rumore di fondo ai due estremi."
+        },
+        "aq.h1": {
+            en: "1. Data status and coverage",
+            it: "1. Stato dei dati e copertura"
+        },
+        "aq.h2": {
+            en: "2. Symmetry and margin",
+            it: "2. Simmetria e margine"
+        },
+        "aq.help2": {
+            en: "Each link falls in one cell: its symmetry (rows) and its margin (columns). The best case is symmetric and good. Click a number to list those links in panel 3; click it again to remove the filter.",
+            it: "Ogni collegamento cade in una cella: la sua simmetria (righe) e il suo margine (colonne). Il caso migliore è simmetrico e buono. Clicca un numero per elencare quei collegamenti nel pannello 3; cliccalo di nuovo per togliere il filtro."
+        },
+        "aq.h3": {
+            en: "3. Links",
+            it: "3. Collegamenti"
+        },
+        "aq.help3": {
+            en: "One row per link between two repeaters measured in at least one direction. In each row the first repeater is A and the second is B: A → B is the average SNR of the leg from A to B, B → A the one of the opposite leg, and Δ is A → B minus B → A. The symmetry is judged only when both directions have enough samples; the margin is that of the weaker direction. Click a row to show that link in panels 4 and 6.",
+            it: "Una riga per ogni collegamento tra due repeater misurato in almeno una direzione. In ogni riga il primo repeater è A e il secondo è B: A → B è l'SNR medio della tratta da A a B, B → A quello della tratta opposta, e Δ è A → B meno B → A. La simmetria si giudica solo quando entrambe le direzioni hanno campioni sufficienti; il margine è quello della direzione più debole. Clicca una riga per mostrare quel collegamento nei pannelli 4 e 6."
+        },
+        "aq.h4": {
+            en: "4. Trend over time",
+            it: "4. Andamento nel tempo"
+        },
+        "aq.help4": {
+            en: "Average SNR of the selected link, day by day (month by month over long periods). Empty points have fewer samples than the minimum: read them with care. Only links with enough samples in both directions are listed.",
+            it: "SNR medio del collegamento scelto, giorno per giorno (mese per mese sui periodi lunghi). I punti vuoti hanno meno campioni del minimo: vanno letti con cautela. Sono elencati solo i collegamenti con campioni sufficienti in entrambe le direzioni."
+        },
+        "aq.h5": {
+            en: "5. Reachability vs margin",
+            it: "5. Raggiungibilità e margine"
+        },
+        "aq.help5": {
+            en: "Each point is a path run by a node: the horizontal axis is the margin of its weakest leg, the vertical axis is the share of its traces that were answered. A path with a good margin but few answers is marked as an anomaly: its legs look fine on average, yet something else may be making its traces fail (for example a repeater that does not forward, interference or congestion at certain times). It is a hint to investigate, not a diagnosis. Click a row of the table to see that path by time of day in panel 6.",
+            it: "Ogni punto è un path eseguito da un nodo: l'asse orizzontale è il margine della sua tratta più debole, quello verticale la quota delle sue tracce che hanno avuto risposta. Un path con buon margine ma poche risposte è segnato come anomalia: le sue tratte sembrano buone in media, eppure qualcos'altro può far fallire le sue tracce (per esempio un repeater che non ritrasmette, interferenze o congestione in certi orari). È uno spunto da approfondire, non una diagnosi. Clicca una riga della tabella per vedere quel path per fascia oraria nel pannello 6."
+        },
+        "aq.h6": {
+            en: "6. Day and hour profile",
+            it: "6. Profilo per giorno e ora"
+        },
+        "aq.help6": {
+            en: "How the selected link or path behaves over the day (bands of hours) and over the week. The hours are those of the node's clock. A cell with fewer samples than the minimum shows no value.",
+            it: "Come si comporta il collegamento o il path scelto nell'arco della giornata (fasce orarie) e della settimana. Le ore sono quelle dell'orologio del nodo. Una cella con meno campioni del minimo non mostra alcun valore."
+        },
+        "aq.h7": {
+            en: "7. Comparison between nodes",
+            it: "7. Confronto tra nodi"
+        },
+        "aq.help7": {
+            en: "The same link measured by more than one node. A large spread between nodes means that the figure depends on the traces that crossed the link, not only on the link itself.",
+            it: "Lo stesso collegamento misurato da più di un nodo. Una grande dispersione tra i nodi significa che il valore dipende dalle tracce che hanno attraversato il collegamento, non solo dal collegamento stesso."
+        },
+        "aq.lblSym": {
+            en: "Symmetry",
+            it: "Simmetria"
+        },
+        "aq.lblMargin": {
+            en: "Margin",
+            it: "Margine"
+        },
+        "aq.lblSort": {
+            en: "Order",
+            it: "Ordine"
+        },
+        "aq.sortDelta": {
+            en: "Largest difference first",
+            it: "Differenza maggiore prima"
+        },
+        "aq.sortMargin": {
+            en: "Lowest margin first",
+            it: "Margine minore prima"
+        },
+        "aq.sortName": {
+            en: "Name",
+            it: "Nome"
+        },
+        "aq.lblLink": {
+            en: "Link",
+            it: "Collegamento"
+        },
+        "aq.lblGrain": {
+            en: "Group by",
+            it: "Raggruppa per"
+        },
+        "aq.lblMetric": {
+            en: "Show",
+            it: "Mostra"
+        },
+        "aq.lblNode": {
+            en: "Node",
+            it: "Nodo"
+        },
+        "aq.lblKind": {
+            en: "Look at",
+            it: "Osserva"
+        },
+        "aq.lblSubject": {
+            en: "Link / path",
+            it: "Collegamento / path"
+        },
+        "aq.grainDay": {
+            en: "Day",
+            it: "Giorno"
+        },
+        "aq.grainMonth": {
+            en: "Month",
+            it: "Mese"
+        },
+        "aq.metricSnr": {
+            en: "SNR of both directions",
+            it: "SNR delle due direzioni"
+        },
+        "aq.metricDelta": {
+            en: "Difference Δ",
+            it: "Differenza Δ"
+        },
+        "aq.allNodes": {
+            en: "All nodes",
+            it: "Tutti i nodi"
+        },
+        "aq.kindLink": {
+            en: "Link (two repeaters)",
+            it: "Collegamento (due repeater)"
+        },
+        "aq.kindPath": {
+            en: "Path (run by one node)",
+            it: "Path (eseguito da un nodo)"
+        },
+        "aq.metricPctOk": {
+            en: "Traces answered (%)",
+            it: "Tracce con risposta (%)"
+        },
+        "aq.metricAB": {
+            en: "{a} → {b}: mean SNR (dB)",
+            it: "{a} → {b}: SNR medio (dB)"
+        },
+        "aq.metricBA": {
+            en: "{b} → {a}: mean SNR (dB)",
+            it: "{b} → {a}: SNR medio (dB)"
+        },
+        "aq.metricDeltaLong": {
+            en: "Δ: first → second minus second → first (dB)",
+            it: "Δ: prima → seconda meno seconda → prima (dB)"
+        },
+        "aq.sym_symmetric": {
+            en: "symmetric",
+            it: "simmetrico"
+        },
+        "aq.sym_moderate": {
+            en: "moderate",
+            it: "moderato"
+        },
+        "aq.sym_asymmetric": {
+            en: "asymmetric",
+            it: "asimmetrico"
+        },
+        "aq.sym_insufficient": {
+            en: "few samples",
+            it: "pochi campioni"
+        },
+        "aq.sym_unmeasured": {
+            en: "one direction only",
+            it: "una sola direzione"
+        },
+        "aq.symTip_symmetric": {
+            en: "The two directions have almost the same average SNR.",
+            it: "Le due direzioni hanno quasi lo stesso SNR medio."
+        },
+        "aq.symTip_moderate": {
+            en: "The two directions differ noticeably.",
+            it: "Le due direzioni differiscono in modo apprezzabile."
+        },
+        "aq.symTip_asymmetric": {
+            en: "One direction is clearly stronger than the other.",
+            it: "Una direzione è nettamente più forte dell'altra."
+        },
+        "aq.symTip_insufficient": {
+            en: "Too few samples in at least one direction to judge the symmetry.",
+            it: "Troppi pochi campioni in almeno una direzione per giudicare la simmetria."
+        },
+        "aq.symTip_unmeasured": {
+            en: "Measured in one direction only, so the symmetry cannot be judged.",
+            it: "Misurato in una sola direzione: la simmetria non si può giudicare."
+        },
+        "aq.mar_critical": {
+            en: "critical",
+            it: "critico"
+        },
+        "aq.mar_sufficient": {
+            en: "sufficient",
+            it: "sufficiente"
+        },
+        "aq.mar_good": {
+            en: "good",
+            it: "buono"
+        },
+        "aq.marTip_critical": {
+            en: "The weaker direction is close to the lowest SNR the radio can demodulate: the link can fail.",
+            it: "La direzione più debole è vicina all'SNR minimo che la radio sa demodulare: il collegamento può cedere."
+        },
+        "aq.marTip_sufficient": {
+            en: "The weaker direction has some margin, but not a comfortable one.",
+            it: "La direzione più debole ha un certo margine, ma non comodo."
+        },
+        "aq.marTip_good": {
+            en: "The weaker direction has plenty of margin above the demodulation floor.",
+            it: "La direzione più debole ha ampio margine sopra la soglia di demodulazione."
+        },
+        "aq.kind_mirror": {
+            en: "mirror",
+            it: "speculare"
+        },
+        "aq.kind_non_mirror": {
+            en: "non-mirror",
+            it: "non speculare"
+        },
+        "aq.kind_direct": {
+            en: "direct",
+            it: "diretto"
+        },
+        "aq.rangeSymmetric": {
+            en: "Δ below {a} dB",
+            it: "Δ sotto {a} dB"
+        },
+        "aq.rangeModerate": {
+            en: "Δ {a}–{b} dB",
+            it: "Δ {a}–{b} dB"
+        },
+        "aq.rangeAsymmetric": {
+            en: "Δ above {b} dB",
+            it: "Δ oltre {b} dB"
+        },
+        "aq.rangeCritical": {
+            en: "below {a} dB",
+            it: "sotto {a} dB"
+        },
+        "aq.rangeSufficient": {
+            en: "{a}–{b} dB",
+            it: "{a}–{b} dB"
+        },
+        "aq.rangeGood": {
+            en: "{b} dB or more",
+            it: "{b} dB o più"
+        },
+        "aq.unknownRepeater": {
+            en: "unknown repeater ({hash})",
+            it: "repeater sconosciuto ({hash})"
+        },
+        "aq.localRadio": {
+            en: "local radio of {node}",
+            it: "radio locale di {node}"
+        },
+        "aq.weekdays": {
+            en: "Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday",
+            it: "Lunedì,Martedì,Mercoledì,Giovedì,Venerdì,Sabato,Domenica"
+        },
+        "aq.weekdaysShort": {
+            en: "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+            it: "Lun,Mar,Mer,Gio,Ven,Sab,Dom"
+        },
+        "aq.colNode": {
+            en: "Node",
+            it: "Nodo"
+        },
+        "aq.colLive": {
+            en: "Live file",
+            it: "File corrente"
+        },
+        "aq.colArchives": {
+            en: "Archives",
+            it: "Archivi"
+        },
+        "aq.colRecords": {
+            en: "Traces recorded",
+            it: "Tracce registrate"
+        },
+        "aq.colOk": {
+            en: "Answered",
+            it: "Con risposta"
+        },
+        "aq.colUnusable": {
+            en: "Unusable",
+            it: "Non utilizzabili"
+        },
+        "aq.colPaths": {
+            en: "Paths",
+            it: "Path"
+        },
+        "aq.colPeriod": {
+            en: "Period",
+            it: "Periodo"
+        },
+        "aq.yes": {
+            en: "yes",
+            it: "sì"
+        },
+        "aq.no": {
+            en: "no",
+            it: "no"
+        },
+        "aq.total": {
+            en: "Total",
+            it: "Totale"
+        },
+        "aq.pathsSplit": {
+            en: "{mirror} mirror, {non} non-mirror, {direct} direct",
+            it: "{mirror} speculari, {non} non speculari, {direct} diretti"
+        },
+        "aq.hMonths": {
+            en: "Traces per month (share answered)",
+            it: "Tracce per mese (quota con risposta)"
+        },
+        "aq.colMonth": {
+            en: "Month",
+            it: "Mese"
+        },
+        "aq.monthsHelp": {
+            en: "Each cell: traces recorded in the month and, in brackets, the share that got an answer.",
+            it: "Ogni cella: tracce registrate nel mese e, tra parentesi, la quota che ha avuto risposta."
+        },
+        "aq.noteNodeError": {
+            en: "Node {node}: {message}",
+            it: "Nodo {node}: {message}"
+        },
+        "aq.noteNoTrace": {
+            en: "Node {node} has no trace file yet.",
+            it: "Il nodo {node} non ha ancora un file di tracce."
+        },
+        "aq.noteDupLegs": {
+            en: "{n} paths pass twice through the same leg: the parser keeps a single SNR value for a repeated leg, so their SNR is not attributed to the links.",
+            it: "{n} path passano due volte per la stessa tratta: il parser conserva un solo valore di SNR per una tratta ripetuta, quindi la loro SNR non è attribuita ai collegamenti."
+        },
+        "aq.noteUnresolved": {
+            en: "{n} hops could not be matched to a known repeater (unknown or ambiguous hash) and are shown by their hash.",
+            it: "{n} hop non associati a un repeater noto (hash sconosciuto o ambiguo), mostrati con il loro hash."
+        },
+        "aq.statusParams": {
+            en: "Thresholds: a link is symmetric if Δ is below {symOk} dB, moderate up to {symMod} dB, asymmetric above. Margin = mean SNR of the weaker direction minus the demodulation floor ({floor} dB): critical below {marCrit} dB, good from {marGood} dB, sufficient in between. Links and cells need at least {min} samples; the time of day is grouped in bands of {bucket} hours. A path is flagged as anomaly when its margin is good but fewer than {anomaly} % of its traces get an answer.",
+            it: "Soglie: un collegamento è simmetrico se Δ è sotto {symOk} dB, moderato fino a {symMod} dB, asimmetrico oltre. Margine = SNR medio della direzione più debole meno la soglia di demodulazione ({floor} dB): critico sotto {marCrit} dB, buono da {marGood} dB, sufficiente nel mezzo. Collegamenti e celle richiedono almeno {min} campioni; l'ora del giorno è raggruppata in fasce di {bucket} ore. Un path è segnalato come anomalia quando il suo margine è buono ma meno del {anomaly} % delle sue tracce riceve risposta."
+        },
+        "aq.summaryLine": {
+            en: "<b>{measured}</b> of {pairs} links are measured in both directions with enough samples; {insufficient} have too few samples and {unmeasured} were measured in one direction only.",
+            it: "<b>{measured}</b> collegamenti su {pairs} sono misurati in entrambe le direzioni con campioni sufficienti; {insufficient} hanno pochi campioni e {unmeasured} sono misurati in una sola direzione."
+        },
+        "aq.summaryBest": {
+            en: "Symmetric and with a good margin: <b>{good}</b> of {measured} measured links.",
+            it: "Simmetrici e con buon margine: <b>{good}</b> collegamenti misurati su {measured}."
+        },
+        "aq.sumCellTip": {
+            en: "Click to list these links",
+            it: "Clicca per elencare questi collegamenti"
+        },
+        "aq.colLink": {
+            en: "Link",
+            it: "Collegamento"
+        },
+        "aq.colNodes": {
+            en: "Measured by",
+            it: "Misurato da"
+        },
+        "aq.colAB": {
+            en: "A → B (mean SNR dB)",
+            it: "A → B (SNR medio dB)"
+        },
+        "aq.colBA": {
+            en: "B → A (mean SNR dB)",
+            it: "B → A (SNR medio dB)"
+        },
+        "aq.colSymmetry": {
+            en: "Symmetry",
+            it: "Simmetria"
+        },
+        "aq.colMargin": {
+            en: "Margin",
+            it: "Margine"
+        },
+        "aq.dirTip": {
+            en: "A is the first repeater named in the row, B the second. The SNR is read by the receiver of the leg.",
+            it: "A è il primo repeater nominato nella riga, B il secondo. L'SNR è letto dal ricevente della tratta."
+        },
+        "aq.deltaTip": {
+            en: "A → B minus B → A (mean SNR)",
+            it: "A → B meno B → A (SNR medio)"
+        },
+        "aq.sdTip": {
+            en: "standard deviation {sd} dB",
+            it: "deviazione standard {sd} dB"
+        },
+        "aq.pairedTip": {
+            en: "Same-trace difference (mirror paths): mean {mean} dB, standard deviation {sd} dB, {n} traces",
+            it: "Differenza nella stessa traccia (path speculari): media {mean} dB, deviazione standard {sd} dB, {n} tracce"
+        },
+        "aq.linksNone": {
+            en: "No link matches the filters.",
+            it: "Nessun collegamento corrisponde ai filtri."
+        },
+        "aq.linksShown": {
+            en: "{shown} of {total} links shown",
+            it: "{shown} collegamenti su {total}"
+        },
+        "aq.trendNone": {
+            en: "This link has no daily series: it needs enough samples in both directions.",
+            it: "Questo collegamento non ha una serie giornaliera: servono campioni sufficienti in entrambe le direzioni."
+        },
+        "aq.axisDay": {
+            en: "Day",
+            it: "Giorno"
+        },
+        "aq.axisMonth": {
+            en: "Month",
+            it: "Mese"
+        },
+        "aq.axisSnr": {
+            en: "Mean SNR (dB)",
+            it: "SNR medio (dB)"
+        },
+        "aq.axisDelta": {
+            en: "Difference between the two directions Δ (dB)",
+            it: "Differenza tra le due direzioni Δ (dB)"
+        },
+        "aq.colPath": {
+            en: "Path",
+            it: "Path"
+        },
+        "aq.colKind": {
+            en: "Type",
+            it: "Tipo"
+        },
+        "aq.colTraces": {
+            en: "Traces",
+            it: "Tracce"
+        },
+        "aq.colWeakest": {
+            en: "Weakest leg (mean SNR)",
+            it: "Tratta più debole (SNR medio)"
+        },
+        "aq.pathsNone": {
+            en: "No path in this period.",
+            it: "Nessun path in questo periodo."
+        },
+        "aq.dupLegs": {
+            en: "repeated leg",
+            it: "tratta ripetuta"
+        },
+        "aq.dupLegsTip": {
+            en: "The path crosses the same leg twice, so its SNR values are not attributed to the links.",
+            it: "Il path attraversa due volte la stessa tratta, quindi i suoi valori di SNR non sono attribuiti ai collegamenti."
+        },
+        "aq.anomaly": {
+            en: "anomaly",
+            it: "anomalia"
+        },
+        "aq.anomalyTip": {
+            en: "Good margin but few traces answered: worth investigating.",
+            it: "Buon margine ma poche tracce con risposta: da approfondire."
+        },
+        "aq.reachCount": {
+            en: "{points} paths plotted, {rows} listed, {anomalies} flagged as anomaly.",
+            it: "{points} path nel grafico, {rows} in elenco, {anomalies} segnalati come anomalia."
+        },
+        "aq.reachNoMargin": {
+            en: "{n} have no margin yet (no leg with enough samples) and are not plotted.",
+            it: "{n} non hanno ancora un margine (nessuna tratta con campioni sufficienti) e non sono nel grafico."
+        },
+        "aq.legendNormal": {
+            en: "Paths",
+            it: "Path"
+        },
+        "aq.axisMargin": {
+            en: "Margin of the weakest leg (dB)",
+            it: "Margine della tratta più debole (dB)"
+        },
+        "aq.axisPctOk": {
+            en: "Traces answered (%)",
+            it: "Tracce con risposta (%)"
+        },
+        "aq.guideMargin": {
+            en: "margin {n} dB",
+            it: "margine {n} dB"
+        },
+        "aq.guideOk": {
+            en: "{n} % answered",
+            it: "{n} % con risposta"
+        },
+        "aq.profileNone": {
+            en: "No day and hour data for this choice (a link needs enough samples in both directions).",
+            it: "Nessun dato per giorno e ora per questa scelta (un collegamento richiede campioni sufficienti in entrambe le direzioni)."
+        },
+        "aq.hByHour": {
+            en: "By time of day",
+            it: "Per fascia oraria"
+        },
+        "aq.hByDay": {
+            en: "By weekday",
+            it: "Per giorno della settimana"
+        },
+        "aq.hGrid": {
+            en: "Weekday × time of day",
+            it: "Giorno × fascia oraria"
+        },
+        "aq.cellFew": {
+            en: "{n} samples: fewer than the minimum of {min}, so no value is shown",
+            it: "{n} campioni: meno del minimo di {min}, quindi nessun valore"
+        },
+        "aq.cellN": {
+            en: "{n} samples",
+            it: "{n} campioni"
+        },
+        "aq.legendSnr": {
+            en: "More intense blue = higher SNR (scale from the lowest to the highest value shown). A dash means fewer than {min} samples.",
+            it: "Blu più intenso = SNR più alto (scala dal valore più basso al più alto mostrato). Un trattino indica meno di {min} campioni."
+        },
+        "aq.legendPct": {
+            en: "More intense blue = more traces answered (steps of 20 %). A dash means fewer than {min} samples.",
+            it: "Blu più intenso = più tracce con risposta (a passi del 20 %). Un trattino indica meno di {min} campioni."
+        },
+        "aq.legendDelta": {
+            en: "Green: Δ below the symmetry limit; amber: moderate; red: asymmetric (limits in panel 1). A dash means fewer than {min} samples in a direction.",
+            it: "Verde: Δ sotto il limite di simmetria; ambra: moderato; rosso: asimmetrico (limiti nel pannello 1). Un trattino indica meno di {min} campioni in una direzione."
+        },
+        "aq.crossNodeOnly": {
+            en: "The comparison between nodes needs the Collector, which sees the traces of all the nodes. This Node only analyzes its own traces.",
+            it: "Il confronto tra nodi richiede il Collettore, che vede le tracce di tutti i nodi. Questo Nodo analizza solo le proprie tracce."
+        },
+        "aq.crossNone": {
+            en: "No link has been measured by more than one node in this period.",
+            it: "Nessun collegamento è stato misurato da più di un nodo in questo periodo."
+        },
+        "aq.colSpread": {
+            en: "Spread of Δ between nodes (dB)",
+            it: "Dispersione di Δ tra i nodi (dB)"
+        },
+        "aq.few": {
+            en: "few",
+            it: "pochi"
+        },
+        "aq.fewTip": {
+            en: "Fewer than {min} samples in a direction: not counted in the spread.",
+            it: "Meno di {min} campioni in una direzione: non conta nella dispersione."
         }
-
     };
 
     var currentLang = null;

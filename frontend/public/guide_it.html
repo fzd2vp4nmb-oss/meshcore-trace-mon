@@ -47,8 +47,9 @@ questa guida.
     seguito, e i messaggi Sonar (<a href="#nodes" class="xref">sezione 4</a>).</li>
 <li><b>Repeater</b>: ciò che i repeater riportano di sé quando vengono
     interrogati (<a href="#repeaters" class="xref">sezione 5</a>).</li>
-<li><b>Analisi</b>: un confronto tra il path degli advert e quello dei
-    messaggi Sonar (<a href="#analysis" class="xref">sezione 6</a>).</li>
+<li><i>Solo Collettore:</i> <b>Analisi</b>: analisi dei dati registrati. Una confronta il path degli
+    advert con quello dei messaggi Sonar. L'altra misura la qualità dei
+    collegamenti tra repeater a partire dalle tracce (<a href="#analysis" class="xref">sezione 6</a>).</li>
 </ul>
 
 <p>
@@ -105,8 +106,8 @@ scrive <i>Nodo trace-mon</i> oppure <i>nodo MeshCore</i>.
 SRC, dall'inglese <i>source</i>, è il nome che le mappe e i path danno al
 companion del Nodo. Nelle tracce è il nodo che invia il pacchetto e a cui
 il path ritorna. Nei path degli advert è il punto in cui l'advert è stato
-registrato. La scheda Analisi chiama <i>sorgente</i> qualsiasi nodo che
-trasmette un pacchetto (<a href="#analysis-terms" class="xref">sezione 6.1</a>).
+registrato. <i>Solo Collettore:</i> nella scheda Analisi, l'analisi Propagazione
+chiama <i>sorgente</i> qualsiasi nodo che trasmette un pacchetto (<a href="#analysis-terms" class="xref">sezione 6.2</a>).
 </p>
 
 <p>
@@ -183,7 +184,7 @@ Le due parti differiscono in pochi punti, segnalati nel testo con
 <tr><th scope="col">Aspetto</th><th scope="col">Nodo</th><th scope="col">Collettore</th></tr>
 <tr><td>Come si apre la dashboard</td><td>Dall'indirizzo del computer del Nodo, sulla rete locale. Vedi <code>INSTALL.md</code>, sezione «Collegarsi alla Dashboard locale».</td><td>Dal sito del Collettore. L'indirizzo del Collettore ufficiale è nell'introduzione della sezione «Collegarsi al server Collector» di <code>INSTALL.md</code>.</td></tr>
 <tr><td>Selettore Nodo</td><td>Assente: i dati sono quelli del Nodo.</td><td>Presente, tranne nella scheda Analisi (<a href="#common-node" class="xref">sezione 2.2</a>).</td></tr>
-<tr><td>Scheda Analisi</td><td>Usa i dati di questo Nodo.</td><td>Usa i dati di tutti i Nodi (<a href="#analysis" class="xref">sezione 6</a>).</td></tr>
+<tr><td>Scheda Analisi</td><td>Assente: la scheda è solo del Collettore.</td><td>Presente: usa i dati di tutti i Nodi (<a href="#analysis" class="xref">sezione 6</a>).</td></tr>
 <tr><td>Messaggi Sonar</td><td>Tutti quelli ricevuti.</td><td>Casella per mostrare solo i mittenti che sono Nodi (<a href="#nodes-sonar" class="xref">sezione 4.4</a>).</td></tr>
 <tr><td>Approfondimenti</td><td>Il link e la pagina non ci sono.</td><td>Elenco di video. Un clic sul titolo apre il lettore nella stessa pagina.</td></tr>
 <tr><td>Notifiche Telegram</td><td>La pagina e l'invio degli avvisi non ci sono. L'attivazione si fa sul Nodo (<a href="#telegram-enable" class="xref">sezione 7.2</a>).</td><td>Pagina e invio degli avvisi (<a href="#telegram" class="xref">sezione 7</a>).</td></tr>
@@ -258,12 +259,12 @@ attività che il computer esegue a orari fissi. Il modello è in
 <div class="scrollBox">
 <table>
 <tr><th scope="col">Attività</th><th scope="col">Cadenza predefinita</th><th scope="col">Dove si vede</th></tr>
-<tr><td>Traccia di ogni path configurato</td><td>ogni 30 minuti</td><td>scheda Tracce (<a href="#trace" class="xref">sezione 3</a>)</td></tr>
+<tr><td>Traccia di ogni path configurato</td><td>ogni 30 minuti</td><td>scheda Tracce (<a href="#trace" class="xref">sezione 3</a>). <i>Solo Collettore:</i> scheda Analisi (<a href="#analysis-quality" class="xref">sezione 6.9</a>)</td></tr>
 <tr><td>Interrogazione dei repeater</td><td>ogni 2 ore</td><td>scheda Repeater (<a href="#repeaters" class="xref">sezione 5</a>)</td></tr>
 <tr><td>Lettura dello stato del device</td><td>ogni ora</td><td>scheda Nodi (<a href="#nodes-device" class="xref">sezione 4.1</a>)</td></tr>
-<tr><td>Advert in flood trasmesso dal Nodo</td><td>4 volte al giorno</td><td>scheda Analisi (<a href="#analysis" class="xref">sezione 6</a>)</td></tr>
-<tr><td>Messaggio Sonar trasmesso dal Nodo</td><td>4 volte al giorno</td><td>schede Nodi (<a href="#nodes-sonar" class="xref">sezione 4.4</a>) e Analisi</td></tr>
-<tr><td>Calcolo dei risultati della scheda Analisi</td><td>ogni 2 ore</td><td>scheda Analisi (<a href="#analysis" class="xref">sezione 6</a>)</td></tr>
+<tr><td>Advert in flood trasmesso dal Nodo</td><td>4 volte al giorno</td><td><i>Solo Collettore:</i> scheda Analisi (<a href="#analysis-terms" class="xref">sezione 6.2</a>)</td></tr>
+<tr><td>Messaggio Sonar trasmesso dal Nodo</td><td>4 volte al giorno</td><td>scheda Nodi (<a href="#nodes-sonar" class="xref">sezione 4.4</a>). <i>Solo Collettore:</i> scheda Analisi</td></tr>
+<tr><td><i>Solo Collettore:</i> calcolo dei risultati della scheda Analisi</td><td>ogni 2 ore</td><td>scheda Analisi (<a href="#analysis" class="xref">sezione 6</a>)</td></tr>
 <tr><td>Invio al Collettore dei dati diversi dalle tracce</td><td>ogni 5 minuti dalle 0:00 alle 5:59, ogni 10 minuti dalle 6:00 alle 23:59</td><td>Collettore</td></tr>
 <tr><td>Archiviazione del mese concluso</td><td>il giorno 1 di ogni mese</td><td>selettori del periodo (<a href="#common-period" class="xref">sezione 2.3</a>)</td></tr>
 </table>
@@ -317,9 +318,9 @@ tema. Sotto stanno le schede e i link.
 <li><b>🌙 Modalità scura</b> e <b>☀️ Modalità chiara</b>: il pulsante
     cambia il tema e mostra il nome di quello in cui si passa. Anche
     questa guida segue il tema.</li>
-<li><b>Tracce</b>, <b>Nodi</b>, <b>Repeater</b> e <b>Analisi</b>: le
-    schede, descritte nelle sezioni da <a href="#trace" class="xref">3</a> a <a href="#analysis" class="xref">6</a>. Un clic su una scheda la
-    apre. Dal contenuto di una scheda si arriva ai dettagli, con un link
+<li><b>Tracce</b>, <b>Nodi</b> e <b>Repeater</b>: le schede, descritte
+    nelle sezioni da <a href="#trace" class="xref">3</a> a <a href="#repeaters" class="xref">5</a>. <i>Solo Collettore:</i> c'è anche la scheda
+    <b>Analisi</b> (<a href="#analysis" class="xref">sezione 6</a>). Un clic su una scheda la apre. Dal contenuto di una scheda si arriva ai dettagli, con un link
     per tornare.</li>
 <li>Dopo le schede compare il link <b>Guida</b>, che apre questa guida.
     <i>Solo Collettore:</i> compaiono anche il link
@@ -348,8 +349,8 @@ browser ricorda il Nodo scelto.
 </p>
 
 <p>
-Nella scheda <b>Analisi</b> il selettore non compare. La scheda usa i
-dati di tutti i Nodi (<a href="#analysis" class="xref">sezione 6</a>).
+<i>Solo Collettore:</i> nella scheda <b>Analisi</b> il selettore non compare.
+La scheda usa i dati di tutti i Nodi (<a href="#analysis" class="xref">sezione 6</a>).
 </p>
 </div>
 </details>
@@ -405,8 +406,8 @@ selettori. Il mese in corso è la voce <b>In tempo reale</b>.
 </p>
 
 <p>
-La scheda <b>Analisi</b> ha in più la voce <b>Tutta la storia</b>, che
-comprende tutti i mesi insieme (<a href="#analysis-controls" class="xref">sezione 6.2</a>).
+<i>Solo Collettore:</i> la scheda <b>Analisi</b> ha in più la voce
+<b>Tutta la storia</b>, che comprende tutti i mesi insieme (<a href="#analysis-controls" class="xref">sezione 6.1</a>).
 </p>
 
 <p>
@@ -420,7 +421,7 @@ cosa cambia scegliendo un mese archiviato.
 <tr><td>Tracce</td><td>Sorgente dati</td><td>Grafico, statistiche e tabella mostrano le tracce di quel mese (<a href="#trace-controls" class="xref">sezione 3.1</a>).</td></tr>
 <tr><td>Nodi</td><td>Periodo</td><td>L'elenco dei nodi, i dettagli e i messaggi Sonar riguardano quel mese (sezioni <a href="#nodes-known" class="xref">4.2</a> e <a href="#nodes-sonar" class="xref">4.4</a>).</td></tr>
 <tr><td>Repeater</td><td>Periodo</td><td>Cambiano solo i vicini. Il resto resta corrente (<a href="#repeaters-neighbours" class="xref">sezione 5.5</a>).</td></tr>
-<tr><td>Analisi</td><td>Periodo</td><td>I risultati usano solo i dati di quel mese (<a href="#analysis-controls" class="xref">sezione 6.2</a>).</td></tr>
+<tr><td>Analisi</td><td>Periodo</td><td><i>Solo Collettore:</i> i risultati usano solo i dati di quel mese (<a href="#analysis-controls" class="xref">sezione 6.1</a>).</td></tr>
 </table>
 </div>
 </div>
@@ -440,7 +441,7 @@ nuove misure. I dati nuovi arrivano con le cadenze della <a href="#intro-cadence
 <tr><td>Tracce</td><td>Lo decide il controllo <b>Aggiornamento automatico</b>, con <b>OFF</b> o <b>5 min</b>. Funziona solo con <b>In tempo reale</b> (<a href="#trace-controls" class="xref">sezione 3.1</a>).</td></tr>
 <tr><td>Nodi</td><td>Ogni 5 minuti, solo con <b>In tempo reale</b> (<a href="#nodes-known" class="xref">sezione 4.2</a>).</td></tr>
 <tr><td>Repeater</td><td>Ogni 5 minuti, finché la scheda è visibile. Riporta il <b>Periodo</b> dei vicini su <b>In tempo reale</b> (<a href="#repeaters" class="xref">sezione 5</a>).</td></tr>
-<tr><td>Analisi</td><td>Nessuno: i risultati sono calcolati in anticipo (<a href="#analysis-controls" class="xref">sezione 6.2</a>).</td></tr>
+<tr><td>Analisi</td><td><i>Solo Collettore:</i> nessuno, perché i risultati sono calcolati in anticipo (<a href="#analysis-controls" class="xref">sezione 6.1</a>).</td></tr>
 </table>
 </div>
 
@@ -622,8 +623,10 @@ Lo schema mostra tre casi. I colori servono solo a distinguerli.
 </ul>
 
 <p>
-La scheda <b>Analisi</b> non indovina mai un nome. Un hop ambiguo o
+<i>Solo Collettore:</i> l'analisi Propagazione non indovina mai un nome. Un hop ambiguo o
 sconosciuto resta scritto con un «?» seguito dall'hash (<a href="#analysis-p4" class="xref">sezione 6.6</a>).
+L'analisi Qualità lo scrive «repeater sconosciuto», con l'hash tra
+parentesi (<a href="#analysis-quality" class="xref">sezione 6.9</a>).
 </p>
 </div>
 </details>
@@ -649,7 +652,8 @@ La tabella lo dice per ogni punto in cui l'interfaccia mostra RSSI o SNR.
 <tr><td>Stato del device (<b>Last RSSI</b> e <b>Last SNR</b>)</td><td>Il companion</td><td>L'ultimo pacchetto ricevuto, di qualunque nodo (<a href="#nodes-device" class="xref">sezione 4.1</a>)</td></tr>
 <tr><td>Stato di un repeater (<b>Last RSSI</b> e <b>Last SNR</b>)</td><td>Il repeater</td><td>L'ultimo pacchetto ricevuto, di qualunque nodo (<a href="#repeaters-status" class="xref">sezione 5.1</a>)</td></tr>
 <tr><td>Vicini di un repeater (<b>SNR</b>)</td><td>Il repeater</td><td>La ricezione di quel vicino (<a href="#repeaters-neighbours" class="xref">sezione 5.5</a>)</td></tr>
-<tr><td>Scheda <b>Analisi</b></td><td>Nessuno</td><td>Non mostra né RSSI né SNR (<a href="#analysis" class="xref">sezione 6</a>)</td></tr>
+<tr><td><i>Solo Collettore:</i> analisi <b>Propagazione: path degli advert contro path Sonar</b></td><td>Nessuno</td><td>Non mostra né RSSI né SNR (<a href="#analysis-terms" class="xref">sezione 6.2</a>)</td></tr>
+<tr><td><i>Solo Collettore:</i> analisi <b>Qualità dei path e simmetrie</b></td><td>Il ricevente di ogni tratta, in una traccia</td><td>L'SNR medio di una tratta in una direzione, su molte tracce (<a href="#analysis-quality" class="xref">sezione 6.9</a>)</td></tr>
 </table>
 </div>
 
@@ -657,7 +661,8 @@ La tabella lo dice per ogni punto in cui l'interfaccia mostra RSSI o SNR.
 Il path di un advert o di un messaggio Sonar non contiene RSSI e SNR dei
 passaggi intermedi. Con 0 hop i valori sono quelli della ricezione
 dal nodo che ha trasmesso, senza repeater. Solo la scheda <b>Tracce</b> dà l'SNR
-di ogni passaggio di un path con più hop.
+di ogni passaggio di un path con più hop. <i>Solo Collettore:</i> l'analisi
+<b>Qualità dei path e simmetrie</b> ne mostra le medie, calcolate sulle tracce.
 </p>
 
 <p>
@@ -678,6 +683,11 @@ della mappa di una traccia. Compaiono anche nella colonna
 <b>SNR</b> delle osservazioni di un nodo e dei messaggi di un mittente
 Sonar. L'SNR dei vicini, nella scheda <b>Repeater</b>, non è colorato.
 </p>
+
+<p>
+<i>Solo Collettore:</i> l'analisi <b>Qualità dei path e simmetrie</b> non usa
+questi tre colori per l'SNR. I suoi colori sono descritti nelle sezioni <a href="#analysis-quality" class="xref">6.9</a> e <a href="#analysis-q6" class="xref">6.15</a>.
+</p>
 </div>
 </details>
 <details class="guideSub">
@@ -685,7 +695,9 @@ Sonar. L'SNR dei vicini, nella scheda <b>Repeater</b>, non è colorato.
 <div class="guideBody">
 <p>
 Le mappe compaiono nel dettaglio di una traccia, di un nodo e di un
-mittente Sonar, e nel confronto della scheda <b>Analisi</b>. Lo sfondo è
+mittente Sonar. <i>Solo Collettore:</i> compaiono anche nel confronto
+dell'analisi Propagazione della scheda <b>Analisi</b>.
+Lo sfondo è
 la cartina OpenStreetMap, caricata dal browser di chi guarda. Serve una
 connessione a Internet.
 </p>
@@ -726,7 +738,7 @@ non permette di memorizzare, la dashboard funziona ma non ricorda.
 <li>Scheda <b>Nodi</b>: il periodo, i filtri dell'elenco dei nodi e, solo
     Collettore, la casella dei messaggi Sonar.</li>
 <li>Scheda <b>Repeater</b>: il repeater scelto, per ogni Nodo.</li>
-<li>Scheda <b>Analisi</b>: il periodo.</li>
+<li><i>Solo Collettore:</i> scheda <b>Analisi</b>: il periodo.</li>
 </ul>
 </div>
 </details>
@@ -1489,8 +1501,8 @@ stato davvero ricevuto si usa la colonna <b>Ricevuto</b>.
 La tabella <b>Osservazioni</b> ha una riga per ogni ricezione di un
 advert del nodo, dalla più recente. Lo stesso advert può comparire più
 volte, se è arrivato per strade diverse: le righe non vengono unificate.
-Nella scheda <b>Analisi</b> una ricezione si chiama <i>copia</i> (<a href="#analysis-terms" class="xref">sezione
-6.1</a>).
+<i>Solo Collettore:</i> nell'analisi Propagazione della scheda <b>Analisi</b>
+una ricezione si chiama <i>copia</i> (<a href="#analysis-terms" class="xref">sezione 6.2</a>).
 </p>
 
 <div class="scrollBox">
@@ -1959,9 +1971,10 @@ admin nell'ACL del repeater.
 </ul>
 
 <p>
-Senza dati compare «Nessun dato di configurazione disponibile.». I limiti
-di hop di questa tabella sono quelli che la scheda <b>Analisi</b>
-considera per i repeater gestiti da trace-mon (<a href="#analysis" class="xref">sezione 6</a>).
+Senza dati compare «Nessun dato di configurazione disponibile.».
+<i>Solo Collettore:</i> i limiti di hop di questa tabella sono quelli che
+l'analisi Propagazione considera per i repeater gestiti da trace-mon
+(<a href="#analysis-p6" class="xref">sezione 6.8</a>).
 </p>
 </div>
 </details>
@@ -2041,24 +2054,147 @@ regione restano quelli correnti.
 <div class="guideBody">
 
 <p>
-La scheda <b>Analisi</b> confronta il path seguito da due tipi di
-pacchetti: gli advert e i messaggi Sonar. Risponde a due domande. Fino a
+<i>Solo Collettore:</i> questa scheda c'è solo nel Collettore, che raccoglie i
+dati di tutti i Nodi. Sul Nodo non compare.
+</p>
+
+<p>
+La scheda <b>Analisi</b> raccoglie analisi diverse dei dati registrati.
+Ogni analisi ha i propri pannelli, numerati da 1. Il selettore
+<b>Analisi</b> sceglie quale mostrare.
+</p>
+
+<p>
+La <a href="#analysis-controls" class="xref">sezione 6.1</a> descrive i controlli e l'aggiornamento dei dati, comuni a
+tutte le analisi. Ogni analisi ha poi un proprio blocco di sezioni: una
+panoramica con i termini che usa e una sezione per ogni pannello.
+</p>
+
+<div class="scrollBox">
+<table>
+<tr><th scope="col">Analisi</th><th scope="col">A cosa serve</th><th scope="col">Si basa su</th><th scope="col">Sezioni</th></tr>
+<tr><td><b>Propagazione: path degli advert contro path Sonar</b></td><td>Confronta fino a quanti hop arrivano gli advert e i messaggi Sonar. Elenca i repeater visti ritrasmettere lontano.</td><td>I path di advert e messaggi Sonar registrati dai Nodi (sezioni <a href="#nodes-known" class="xref">4.2</a> e <a href="#nodes-sonar" class="xref">4.4</a>).</td><td>sezioni da <a href="#analysis-terms" class="xref">6.2</a> a <a href="#analysis-p6" class="xref">6.8</a></td></tr>
+<tr><td><b>Qualità dei path e simmetrie</b></td><td>Mostra quanto è buono ogni collegamento tra due repeater e quanto è equilibrato tra le due direzioni. Segnala i path che rispondono poco pur avendo un buon margine.</td><td>I risultati delle tracce eseguite dai Nodi (<a href="#trace" class="xref">sezione 3</a>).</td><td>sezioni da <a href="#analysis-quality" class="xref">6.9</a> a <a href="#analysis-q7" class="xref">6.16</a></td></tr>
+</table>
+</div>
+<details class="guideSub">
+<summary><h4 id="analysis-controls"><span class="secNum">6.1</span> Controlli e aggiornamento dei dati</h4></summary>
+<div class="guideBody">
+<p>
+I controlli stanno in cima alla scheda e valgono per tutte le analisi. Il
+browser ricorda la scelta del periodo, non quella dell'analisi.
+</p>
+
+<ul>
+<li><b>Analisi</b>: tipo di analisi. Il selettore ha due voci,
+    <b>Propagazione: path degli advert contro path Sonar</b> e
+    <b>Qualità dei path e simmetrie</b>. Aprendo la scheda è scelta la
+    prima. Cambiando analisi cambiano i pannelli sotto i controlli.</li>
+<li><b>Periodo</b>: dati da analizzare. Il selettore ha tre tipi di
+    voce.
+    <ul>
+    <li><b>Tutta la storia</b>: il mese in corso e tutti i mesi
+        archiviati. È il valore predefinito.</li>
+    <li>La voce del mese in corso: <b>In tempo reale (database corrente)</b>
+        nella Propagazione, <b>In tempo reale (file di tracce
+        corrente)</b> nella Qualità.</li>
+    <li>Una voce per ogni mese archiviato, con il nome del mese, per
+        esempio «Settembre 2026».</li>
+    </ul>
+    </li>
+</ul>
+
+<p>
+Ogni analisi ha la propria lista di periodi, perché i mesi disponibili
+possono essere diversi. Se il periodo ricordato dal browser non esiste per
+l'analisi scelta, la scheda usa il valore predefinito.
+</p>
+
+<p>
+Il selettore <b>Nodo</b> non compare in cima alla scheda. Una nota
+ricorda che ogni analisi combina i dati di ogni Nodo: «Tutti i nodi
+configurati su questo collettore.».
+</p>
+
+<h5 id="analysis-refresh">Aggiornamento dei dati</h5>
+
+<p>
+La scheda non ha l'aggiornamento automatico. Mostra risultati calcolati
+in anticipo da un calcolo pianificato, eseguito sul Collettore. Con la
+cadenza predefinita (<a href="#intro-cadence" class="xref">sezione 1.4</a>) il calcolo parte ogni 2 ore.
+</p>
+
+<p>
+Lo stesso calcolo pianificato prepara tutte le analisi. Ogni analisi ha
+però il proprio esito: se una fallisce, l'altra si aggiorna comunque.
+</p>
+
+<p>
+Aprendo la scheda, o cambiando analisi, il browser controlla se esistono
+risultati più recenti e, in quel caso, li ricarica.
+</p>
+
+<p>
+Sotto i controlli una riga riporta l'orario del calcolo e da quanto
+tempo è stato fatto, per esempio «Calcolato 22/10/2026 10:53 (35 min
+fa)». Seguono l'esito dell'ultima esecuzione, la durata del calcolo e il
+motore usato. La riga ricorda poi che i risultati sono indicativi, con una
+frase che dipende dall'analisi.
+</p>
+
+<ul>
+<li><b>Propagazione: path degli advert contro path Sonar</b>:
+    «inferenza statistica dai path registrati, non una misura delle
+    impostazioni di ciascun repeater».</li>
+<li><b>Qualità dei path e simmetrie</b>: «indicazione ricavata dalle
+    tracce registrate, non una misura di laboratorio».</li>
+</ul>
+
+<p>
+Sotto la riga possono comparire avvisi.
+</p>
+
+<ul>
+<li>Se i risultati hanno più di 6 ore, un avviso dice quanto sono vecchi
+    e che il calcolo pianificato potrebbe essersi fermato.</li>
+<li>Se l'ultima esecuzione è fallita, un avviso lo segnala. La scheda
+    mostra i risultati dell'ultima esecuzione riuscita, con il suo
+    orario.</li>
+<li>Se non esiste ancora nessun risultato compare «Nessun dato di analisi
+    ancora disponibile.». Succede finché il calcolo pianificato non è
+    mai stato eseguito.</li>
+<li>Se i dati non si caricano compare «Impossibile caricare i dati di
+    analisi» con il motivo. Se la scheda aveva già dati, continua a
+    mostrare quelli.</li>
+</ul>
+
+<p>
+Sotto la riga compaiono i pannelli dell'analisi scelta, numerati da 1.
+Le sezioni seguenti li descrivono, un blocco per analisi.
+</p>
+</div>
+</details>
+<details class="guideSub">
+<summary><h4 id="analysis-terms"><span class="secNum">6.2</span> Propagazione: panoramica e termini</h4></summary>
+<div class="guideBody">
+<p>
+L'analisi <b>Propagazione: path degli advert contro path Sonar</b> confronta il
+path seguito da due tipi di pacchetti: gli advert e i messaggi Sonar. Risponde a due domande. Fino a
 quanti hop arriva ciascun tipo di pacchetto? Quali repeater risultano
 ritrasmettere lontano?
 </p>
 
 <p>
-Quattro termini servono subito. Sono definiti per intero nella <a href="#analysis-terms" class="xref">sezione
-6.1</a>.
+Quattro termini servono subito. Sono definiti per intero più avanti, nel
+paragrafo Termini della propagazione di questa sezione.
 </p>
 
 <ul>
 <li><i>Sorgente</i>: il nodo che ha trasmesso un pacchetto. È un ruolo,
-    non un tipo di nodo diverso (<a href="#analysis-terms" class="xref">sezione 6.1</a>). Nelle tracce si chiama SRC
+    non un tipo di nodo diverso. Nelle tracce si chiama SRC
     (<a href="#intro-parts" class="xref">sezione 1.2</a>).</li>
 <li><i>Tracciatore</i>: un altro Nodo, che riceve quel pacchetto e ne
-    registra il path con il proprio companion. È anch'esso un ruolo
-    (<a href="#analysis-terms" class="xref">sezione 6.1</a>).</li>
+    registra il path con il proprio companion. È anch'esso un ruolo.</li>
 <li><i>Lontano</i>: in una posizione del path pari o superiore a 9,
     contata dalla sorgente. Non è una distanza in chilometri.</li>
 <li><i>Limite di hop</i>: il numero massimo di hop fino al quale un
@@ -2068,8 +2204,8 @@ Quattro termini servono subito. Sono definiti per intero nella <a href="#analysi
 <p>
 Il confronto è possibile perché un messaggio Sonar parte di proposito da
 un nodo noto, quindi origine e ora di invio sono note. Gli advert
-arrivano da tutti i nodi della rete. Per ogni pacchetto ricevuto la
-scheda usa il path registrato da un Nodo (<a href="#nodes-known" class="xref">sezione 4.2</a>). I messaggi
+arrivano da tutti i nodi della rete. Per ogni pacchetto ricevuto
+l'analisi usa il path registrato da un Nodo (<a href="#nodes-known" class="xref">sezione 4.2</a>). I messaggi
 Sonar sono descritti nella <a href="#nodes-sonar" class="xref">sezione 4.4</a>.
 </p>
 
@@ -2140,11 +2276,11 @@ diverso di hop.
 <p>
 La sorgente è il Nodo che trasmette il pacchetto. Il tracciatore è un
 altro Nodo, che lo riceve e ne registra il path. Sono due ruoli dello
-stesso tipo di Nodo (<a href="#analysis-terms" class="xref">sezione 6.1</a>).
+stesso tipo di Nodo.
 </p>
 
 <p>
-La scheda si legge dal generale al particolare, un pannello alla volta.
+L'analisi si legge dal generale al particolare, un pannello alla volta.
 </p>
 
 <ol>
@@ -2167,14 +2303,28 @@ La scheda si legge dal generale al particolare, un pannello alla volta.
 </ol>
 
 <p>
-La scheda descrive i path registrati: non indica interventi da fare sui
+L'analisi descrive i path registrati: non indica interventi da fare sui
 repeater.
 </p>
-<details class="guideSub">
-<summary><h4 id="analysis-terms"><span class="secNum">6.1</span> Termini della scheda</h4></summary>
-<div class="guideBody">
+
 <p>
-La scheda usa alcuni termini propri. Valgono per tutta la scheda e sono
+Sono sorgenti solo i Nodi configurati con il Sonar
+attivo. Gli altri mittenti Sonar stanno nel riquadro <b>Sorgenti Sonar non
+conteggiate</b> (<a href="#analysis-p1" class="xref">sezione 6.3</a>). Il Sonar è abilitato per impostazione
+predefinita su ogni Nodo e si disattiva con <code>config.sh</code>
+(sezioni <a href="#admin-config-services" class="xref">8.10</a> e <a href="#admin-config-sonar" class="xref">8.14</a>; <code>INSTALL.md</code>, sezione «Modificare la
+configurazione in seguito (config.sh)»).
+</p>
+
+<p>
+In tutti i pannelli di questa analisi «nessun dato» non vuol dire zero.
+Indica un dato che non c'è, per esempio perché un Nodo non è stato
+aggiornato e non registra quel tipo di informazione.
+</p>
+
+<h5 id="analysis-terms-list">Termini della propagazione</h5>
+<p>
+L'analisi usa alcuni termini propri. Valgono per i pannelli da 1 a 6 e sono
 definiti qui.
 </p>
 
@@ -2188,9 +2338,8 @@ sorgente, e come colonna, in quanto tracciatore (<a href="#analysis-p2" class="x
 
 <ul>
 <li><i>Tracciatore</i>: ruolo del Nodo che registra i path dei pacchetti
-    ricevuti dal suo companion. <i>Solo Collettore:</i> i tracciatori sono tutti i
-    Nodi configurati. Sul Nodo il solo tracciatore è il Nodo stesso, con
-    l'etichetta «Questo nodo».</li>
+    ricevuti dal suo companion. I tracciatori sono tutti i Nodi
+    configurati.</li>
 <li><i>Sorgente</i>: ruolo del nodo che ha inviato il pacchetto. Nei
     pannelli da 1 a 4 le sorgenti sono i nodi che inviano messaggi Sonar e
     di ognuna si contano anche gli advert. Nei pannelli 5 e 6 la sorgente
@@ -2220,7 +2369,7 @@ sorgente, e come colonna, in quanto tracciatore (<a href="#analysis-p2" class="x
     (TC_FLOOD)</b>. TC sta
     per transport code, il codice che porta la regione. <i>Unscoped</i>,
     nei nomi delle impostazioni del repeater, è lo stesso di <i>senza
-    regione</i> (<a href="#repeaters-config" class="xref">sezione 5.3</a>). La scheda considera solo i pacchetti in
+    regione</i> (<a href="#repeaters-config" class="xref">sezione 5.3</a>). L'analisi considera solo i pacchetti in
     flood.</li>
 <li><i>Limite di hop</i>: numero massimo di hop fino al quale un
     repeater ritrasmette un pacchetto in flood. Le impostazioni che lo
@@ -2280,103 +2429,6 @@ copia per trasmissione (<a href="#analysis-p3" class="xref">sezione 6.5</a>).
 </div>
 </details>
 <details class="guideSub">
-<summary><h4 id="analysis-controls"><span class="secNum">6.2</span> Controlli e aggiornamento dei dati</h4></summary>
-<div class="guideBody">
-<p>
-I controlli stanno in cima alla scheda. Il browser ricorda la scelta del
-periodo.
-</p>
-
-<ul>
-<li><b>Analisi</b>: tipo di analisi. Ha una sola voce,
-    <b>Propagazione: path degli advert contro path Sonar</b>.</li>
-<li><b>Periodo</b>: dati da analizzare. Il selettore ha tre tipi di
-    voce.
-    <ul>
-    <li><b>Tutta la storia</b>: il mese in corso e tutti i mesi
-        archiviati. È il valore predefinito.</li>
-    <li><b>In tempo reale (database corrente)</b>: il solo mese in
-        corso.</li>
-    <li>Una voce per ogni mese archiviato, con il nome del mese, per
-        esempio «Settembre 2026».</li>
-    </ul>
-    </li>
-</ul>
-
-<p>
-<i>Solo Collettore:</i> il selettore <b>Nodo</b> non compare in questa
-scheda. Una nota ricorda che l'analisi combina i dati di ogni Nodo:
-«Tutti i nodi configurati su questo collettore.». Sono sorgenti solo i
-Nodi configurati con il Sonar attivo; gli altri mittenti Sonar stanno nel
-riquadro <b>Sorgenti Sonar non conteggiate</b> (<a href="#analysis-p1" class="xref">sezione 6.3</a>). Il Sonar è
-abilitato per impostazione predefinita su ogni Nodo e si disattiva con
-<code>config.sh</code> (sezioni <a href="#admin-config-services" class="xref">8.10</a> e <a href="#admin-config-sonar" class="xref">8.14</a>; <code>INSTALL.md</code>,
-sezione «Modificare la configurazione in seguito (config.sh)»).
-</p>
-
-<p>
-<i>Solo Nodo:</i> l'analisi usa i soli dati di questo Nodo, che compare
-come tracciatore con l'etichetta «Questo nodo». Il Nodo non sa quali
-altri nodi partecipano al Sonar. Non applica quindi nessun filtro e
-mostra ogni sorgente Sonar sentita sul canale.
-</p>
-
-<h5 id="analysis-refresh">Aggiornamento dei dati</h5>
-
-<p>
-La scheda non ha l'aggiornamento automatico. Mostra risultati calcolati
-in anticipo da un calcolo pianificato. Con la cadenza predefinita
-(<a href="#intro-cadence" class="xref">sezione 1.4</a>) il calcolo parte ogni 2 ore. La cadenza è nella sezione
-«Crontab» di <code>INSTALL.md</code>.
-</p>
-
-<p>
-Aprendo la scheda il browser controlla se esistono risultati più recenti
-e, in quel caso, li ricarica.
-</p>
-
-<p>
-Sotto i controlli una riga riporta l'orario del calcolo e da quanto
-tempo è stato fatto, per esempio «Calcolato 22/10/2026 10:53 (35 min
-fa)». Seguono l'esito dell'ultima esecuzione, la durata del calcolo e il
-motore usato. La riga ricorda che i risultati sono un'«inferenza
-statistica dai path registrati, non una misura delle impostazioni di
-ciascun repeater».
-</p>
-
-<p>
-Sotto la riga possono comparire avvisi.
-</p>
-
-<ul>
-<li>Se i risultati hanno più di 6 ore, un avviso dice quanto sono vecchi
-    e che il calcolo pianificato potrebbe essersi fermato.</li>
-<li>Se l'ultima esecuzione è fallita, un avviso lo segnala. La scheda
-    mostra i risultati dell'ultima esecuzione riuscita, con il suo
-    orario.</li>
-<li>Se non esiste ancora nessun risultato compare «Nessun dato di analisi
-    ancora disponibile.». Succede finché il calcolo pianificato non è
-    mai stato eseguito. Il messaggio rimanda alle note di
-    installazione, cioè alla sezione «Crontab» di <code>INSTALL.md</code>,
-    dove è indicato il calcolo pianificato.</li>
-<li>Se i dati non si caricano compare «Impossibile caricare i dati di
-    analisi» con il motivo. Se la scheda aveva già dati, continua a
-    mostrare quelli.</li>
-</ul>
-
-<p>
-In tutti i pannelli «nessun dato» non vuol dire zero. Indica un dato che
-non c'è, per esempio perché un Nodo non è stato aggiornato e non registra
-quel tipo di informazione.
-</p>
-
-<p>
-Sotto la riga compaiono sei pannelli, numerati da 1 a 6. Le sezioni
-seguenti li descrivono in ordine.
-</p>
-</div>
-</details>
-<details class="guideSub">
 <summary><h4 id="analysis-p1"><span class="secNum">6.3</span> Pannello 1: stato dei dati</h4></summary>
 <div class="guideBody">
 <p>
@@ -2419,9 +2471,7 @@ compaiono solo quando servono.
     allinearsi)».</li>
 <li><b>Ambito</b>: quali nodi sono combinati nell'analisi. Questa riga
     indica i nodi e non ha il significato di <i>ambito</i> della <a href="#analysis-terms" class="xref">sezione
-    6.1</a>. Per il Nodo il testo è
-    «Solo questo nodo; i partecipanti al Sonar non sono noti, quindi non
-    viene applicato nessun filtro.».</li>
+    6.2</a>.</li>
 <li><b>Posizione lontana</b>: da quale posizione nel path un hop è
     considerato lontano.</li>
 </ul>
@@ -2545,7 +2595,7 @@ limite al repeater.
 
 <p>
 Un hop riceve un nome solo quando il suo hash identifica esattamente un
-repeater noto. Altrimenti resta non risolto: la scheda non indovina mai
+repeater noto. Altrimenti resta non risolto: l'analisi non indovina mai
 un nome. L'ambiguità degli hash è spiegata nella <a href="#common-names" class="xref">sezione 2.6</a>.
 </p>
 
@@ -2571,12 +2621,11 @@ Ogni riga di <b>Hop conteggiati</b> conta gli hop di un gruppo di path.
 
 <p>
 Il riquadro <b>Note</b> compare solo se c'è qualcosa da segnalare. Le
-note possono riguardare quattro casi.
+note possono riguardare tre casi.
 </p>
 
 <ul>
 <li>Dati mancanti, o database non leggibile, per un tracciatore.</li>
-<li><i>Solo Nodo:</i> l'assenza del filtro dei partecipanti al Sonar.</li>
 <li>Un prefisso usato da due Nodi: resta il primo.</li>
 <li>Una sorgente il cui prefisso corrisponde a più nodi noti o a nessuno,
     quindi senza nome e posizione.</li>
@@ -2679,7 +2728,7 @@ Gli advert si contano solo dal periodo di confronto (<a href="#analysis-p1" clas
 <li><b>Conteggio</b>: <b>Tutte le copie ricevute</b> conta ogni copia.
     <b>Copia migliore di ogni trasmissione</b> conta, per ogni
     trasmissione e ogni tracciatore, la sola copia con più hop. L'unità
-    diventa la trasmissione (<a href="#analysis-terms" class="xref">sezione 6.1</a>).</li>
+    diventa la trasmissione (<a href="#analysis-terms" class="xref">sezione 6.2</a>).</li>
 <li><b>Asse Y</b>: <b>Quota di ogni serie</b> mostra ogni barra come
     percentuale del totale della sua serie. <b>Numero</b> mostra il numero
     di copie, o di trasmissioni con <b>Copia migliore di ogni
@@ -3208,7 +3257,7 @@ un'ipotesi di lavoro, ricavata dalle tre impostazioni.
 <p>
 Nelle quattro voci «Messaggio» indica il messaggio Sonar. «Senza regione»
 è l'ambito FLOOD, che le impostazioni chiamano <i>Unscoped</i>. «Con
-regione» è l'ambito TC_FLOOD (<a href="#analysis-terms" class="xref">sezione 6.1</a>).
+regione» è l'ambito TC_FLOOD (<a href="#analysis-terms" class="xref">sezione 6.2</a>).
 </p>
 
 <p>
@@ -3387,6 +3436,703 @@ sorgente. I limiti sono noti solo per i repeater gestiti da trace-mon.
 
 <p>
 Senza copie compare «Nessuna copia registrata in questo periodo».
+</p>
+</div>
+</details>
+<details class="guideSub">
+<summary><h4 id="analysis-quality"><span class="secNum">6.9</span> Qualità: panoramica e termini</h4></summary>
+<div class="guideBody">
+<p>
+L'analisi <b>Qualità dei path e simmetrie</b> mostra quanto è buono ogni
+collegamento radio tra due repeater e quanto è equilibrato tra le due
+direzioni. Parte dai risultati delle tracce eseguite dai Nodi (<a href="#trace" class="xref">sezione 3</a>).
+Segnala anche i path che rispondono poco pur avendo un buon margine.
+</p>
+
+<p>
+Una traccia manda un pacchetto lungo un path di repeater e ne attende il
+ritorno. Per ogni passaggio tra due elementi del path il ricevente
+riporta l'SNR (<a href="#common-snr" class="xref">sezione 2.7</a>). Lo stesso collegamento può quindi essere
+misurato nelle due direzioni, nella stessa traccia o in tracce diverse.
+</p>
+
+<p>
+I risultati sono indicazioni ricavate dalle tracce registrate, non
+misure di laboratorio. L'SNR esiste solo per le tracce che hanno avuto
+risposta. Un <b>TIMEOUT</b> non è attribuibile a una singola tratta. La
+differenza tra le due direzioni mescola propagazione, potenza di
+trasmissione e rumore di fondo ai due estremi.
+</p>
+
+<p>
+Il <b>Periodo</b> scelto (<a href="#analysis-controls" class="xref">sezione 6.1</a>) decide quali tracce entrano
+nell'analisi. <b>Tutta la storia</b> comprende il file di tracce corrente
+e tutti i mesi archiviati. L'analisi usa le tracce di tutti i Nodi
+configurati.
+</p>
+
+<h5 id="analysis-quality-terms">Termini della qualità</h5>
+
+<p>
+I termini valgono per i pannelli da 1 a 7 e sono definiti qui. Le soglie
+indicate sono quelle in uso e il pannello 1 le riporta (<a href="#analysis-q1" class="xref">sezione 6.10</a>).
+</p>
+
+<ul>
+<li><i>Tratta</i>: passaggio tra due elementi del path di una traccia.
+    È ciò che la scheda <b>Tracce</b> chiama tratto (<a href="#trace-chart" class="xref">sezione 3.2</a>). L'SNR
+    di una tratta è quello misurato da chi riceve. Un path con n repeater,
+    anche ripetuti, ha n + 1 tratte.</li>
+<li><i>Collegamento</i>: coppia di due repeater, misurata nelle due
+    direzioni. Si scrive A ↔ B: il primo repeater nominato è A, il secondo
+    è B. Le tratte che toccano SRC non sono collegamenti: un esempio è
+    più avanti in questa sezione.</li>
+<li><i>Direzione</i>: A → B è l'SNR medio delle tratte da A a B. B → A è
+    quello delle tratte da B ad A.</li>
+<li><i>Campione</i>: un valore di SNR di una tratta, letto in una traccia
+    con risposta. Una direzione, un path o una cella di una tabella
+    mostrano un valore solo con almeno 30 campioni.</li>
+<li><i>Soglia di demodulazione</i>: SNR minimo che la radio sa
+    demodulare. L'analisi usa -10 dB.</li>
+<li><i>Margine</i>: di quanto l'SNR medio della direzione più debole
+    supera la soglia di demodulazione. Dice quanto spazio ha il
+    collegamento prima di cedere. Per un path conta la tratta più debole
+    che ha campioni sufficienti.</li>
+<li><i>Differenza Δ</i>: A → B meno B → A, in dB. Può essere positiva o
+    negativa. La simmetria dipende dal suo valore senza segno.</li>
+<li><i>Fascia oraria</i>: gruppo di 3 ore del giorno, per un totale di 8
+    fasce. Le ore sono quelle dell'orologio del Nodo, senza conversione di
+    fuso orario.</li>
+</ul>
+
+<p>
+Un collegamento può essere simmetrico ma debole, oppure forte ma
+sbilanciato. Per questo l'analisi giudica separatamente simmetria e
+margine e mostra i due giudizi insieme. I badge hanno questi significati
+e colori.
+</p>
+
+<div class="scrollBox">
+<table>
+<tr><th scope="col">Giudizio</th><th scope="col">Badge</th><th scope="col">Condizione</th><th scope="col">Colore</th></tr>
+<tr><td>Simmetria</td><td><b>simmetrico</b></td><td>Δ sotto 3 dB</td><td>Verde</td></tr>
+<tr><td>Simmetria</td><td><b>moderato</b></td><td>Δ da 3 dB a 6 dB</td><td>Ambra</td></tr>
+<tr><td>Simmetria</td><td><b>asimmetrico</b></td><td>Δ oltre 6 dB</td><td>Rosso</td></tr>
+<tr><td>Simmetria</td><td><b>pochi campioni</b></td><td>Meno di 30 campioni in almeno una direzione</td><td>Grigio</td></tr>
+<tr><td>Simmetria</td><td><b>una sola direzione</b></td><td>Collegamento misurato in una sola direzione</td><td>Grigio</td></tr>
+<tr><td>Margine</td><td><b>critico</b></td><td>Margine sotto 3 dB</td><td>Rosso</td></tr>
+<tr><td>Margine</td><td><b>sufficiente</b></td><td>Margine da 3 dB a meno di 10 dB</td><td>Ambra</td></tr>
+<tr><td>Margine</td><td><b>buono</b></td><td>Margine di 10 dB o più</td><td>Verde</td></tr>
+</table>
+</div>
+
+<p>
+Un path ha uno di tre tipi, secondo la forma della sua sequenza di
+repeater.
+</p>
+
+<ul>
+<li><b>speculare</b>: il ritorno ripercorre l'andata. I repeater sono in
+    numero dispari, almeno tre, e la sequenza è la stessa letta al
+    contrario, come in SRC→2559→0940→2559→SRC (<a href="#trace" class="xref">sezione 3</a>). Ogni
+    collegamento è misurato nelle due direzioni dalla stessa
+    traccia.</li>
+<li><b>non speculare</b>: ogni altro path con più di un repeater, anche
+    se parte e torna a SRC. I due versi di un collegamento sono misurati
+    in tracce diverse.</li>
+<li><b>diretto</b>: path con un solo repeater, quindi senza nessun
+    collegamento tra due repeater. Qui <i>diretto</i> ha un senso diverso
+    da quello della <a href="#common-path" class="xref">sezione 2.5</a>, che indica la ricezione senza
+    repeater.</li>
+</ul>
+
+<p>
+Un path è segnalato come <b>anomalia</b> quando ha un margine buono ma
+poche tracce con risposta. In concreto il suo margine è di 10 dB o più,
+ha almeno 30 tracce e meno del 25 % ha avuto risposta. È uno spunto da
+approfondire, non una diagnosi.
+</p>
+
+<p>
+Questa tabella mostra come le tratte di un path speculare si dividono tra
+collegamenti e radio locale. I due repeater sono indicati con l'hash.
+</p>
+
+<div class="scrollBox">
+<table>
+<tr><th scope="col">Tratta</th><th scope="col">Direzione</th><th scope="col">Che cosa è</th></tr>
+<tr><td>SRC→2559</td><td></td><td>Radio locale del Nodo: non è un collegamento</td></tr>
+<tr><td>2559→0940</td><td>A → B</td><td>Collegamento 2559 ↔ 0940</td></tr>
+<tr><td>0940→2559</td><td>B → A</td><td>Collegamento 2559 ↔ 0940</td></tr>
+<tr><td>2559→SRC</td><td></td><td>Radio locale del Nodo: non è un collegamento</td></tr>
+</table>
+</div>
+<p><i>Dati d'esempio.</i> Le tratte con SRC non sono collegamenti, ma contano nel margine del path (<a href="#analysis-q5" class="xref">sezione 6.14</a>).</p>
+
+<p>
+Un hop che non si associa a un repeater noto compare come «repeater
+sconosciuto (2559)», con l'hash tra parentesi. Succede quando l'hash è
+sconosciuto o ambiguo (<a href="#common-names" class="xref">sezione 2.6</a>). La tratta tra il Nodo e il primo
+repeater compare come «radio locale di» seguito dal nome del Nodo.
+</p>
+
+<p>
+L'analisi si legge dal generale al particolare, un pannello alla volta.
+</p>
+
+<ol>
+<li>Il pannello 1 dice su quali tracce poggia l'analisi: quante, di quali
+    Nodi e di quali mesi. Si guarda per primo (<a href="#analysis-q1" class="xref">sezione 6.10</a>).</li>
+<li>Il pannello 2 conta i collegamenti per simmetria e margine. Un clic
+    su un numero elenca quei collegamenti nel pannello 3 (<a href="#analysis-q2" class="xref">sezione
+    6.11</a>).</li>
+<li>Il pannello 3 elenca i collegamenti con SNR, simmetria e margine. Un
+    clic su una riga sceglie il collegamento per i pannelli 4 e 6
+    (<a href="#analysis-q3" class="xref">sezione 6.12</a>).</li>
+<li>Il pannello 4 mostra l'andamento nel tempo del collegamento scelto
+    (<a href="#analysis-q4" class="xref">sezione 6.13</a>).</li>
+<li>Il pannello 5 mostra i path eseguiti dai Nodi, con la loro
+    raggiungibilità e il loro margine (<a href="#analysis-q5" class="xref">sezione 6.14</a>).</li>
+<li>Il pannello 6 mostra come cambia il collegamento o il path scelto
+    nel corso della giornata e della settimana (<a href="#analysis-q6" class="xref">sezione 6.15</a>).</li>
+<li>Il pannello 7 confronta lo stesso collegamento misurato da Nodi
+    diversi (<a href="#analysis-q7" class="xref">sezione 6.16</a>).</li>
+</ol>
+
+<p>
+L'analisi descrive le tracce registrate: non indica interventi da fare
+sui repeater.
+</p>
+</div>
+</details>
+<details class="guideSub">
+<summary><h4 id="analysis-q1"><span class="secNum">6.10</span> Qualità, pannello 1: stato dei dati e copertura</h4></summary>
+<div class="guideBody">
+<p>
+Il pannello <b>1. Stato dei dati e copertura</b> dice su quali tracce
+poggia l'analisi: quali Nodi hanno contribuito, quante tracce hanno
+registrato e quante hanno avuto risposta. Conviene guardarlo prima degli
+altri.
+</p>
+
+<p>
+Il pannello contiene due tabelle, un elenco di note e un paragrafo con le
+soglie in uso.
+</p>
+
+<h5 id="analysis-q1-nodes">Tabella dei Nodi</h5>
+
+<div class="scrollBox">
+<table>
+<tr><th scope="col">Nodo</th><th scope="col">File corrente</th><th scope="col">Archivi</th><th scope="col">Tracce registrate</th><th scope="col">Con risposta</th><th scope="col">TIMEOUT</th><th scope="col">Non utilizzabili</th><th scope="col">Path</th><th scope="col">Periodo</th></tr>
+<tr><td>Nodo A</td><td>sì</td><td>2</td><td>1850</td><td>1620 (87.6 %)</td><td>230</td><td>35</td><td>12 (7 speculari, 3 non speculari, 2 diretti)</td><td>01/09/2026 00:03 → 22/10/2026 11:16</td></tr>
+<tr><td>Nodo B</td><td>sì</td><td>1</td><td>940</td><td>799 (85.0 %)</td><td>141</td><td>0</td><td>5 (5 speculari, 0 non speculari, 0 diretti)</td><td>01/09/2026 00:10 → 22/10/2026 11:10</td></tr>
+<tr><td>Totale</td><td></td><td></td><td>2790</td><td>2419 (86.7 %)</td><td>371</td><td>35</td><td></td><td></td></tr>
+</table>
+</div>
+<p><i>Dati d'esempio.</i></p>
+
+<ul>
+<li><b>Nodo</b>: il Nodo che ha eseguito le tracce. Sul Collettore c'è una
+    riga per ogni Nodo configurato. Una riga <b>Totale</b> somma i Nodi
+    quando sono più di uno.</li>
+<li><b>File corrente</b>: «sì» se il Nodo ha un file di tracce corrente,
+    «no» altrimenti.</li>
+<li><b>Archivi</b>: numero di file di tracce archiviati letti per il
+    periodo scelto.</li>
+<li><b>Tracce registrate</b>: numero di tracce nel periodo.</li>
+<li><b>Con risposta</b>: tracce che hanno avuto risposta, con la quota
+    sul totale tra parentesi.</li>
+<li><b>TIMEOUT</b>: tracce senza risposta.</li>
+<li><b>Non utilizzabili</b>: tracce con risposta il cui SNR non si può
+    attribuire alle singole tratte. Succede per esempio quando il path
+    passa due volte per la stessa tratta.</li>
+<li><b>Path</b>: numero di path diversi eseguiti. Tra parentesi dice
+    quanti sono speculari, non speculari e diretti.</li>
+<li><b>Periodo</b>: data e ora della prima e dell'ultima traccia.</li>
+</ul>
+
+<h5 id="analysis-q1-months">Tracce per mese (quota con risposta)</h5>
+
+<p>
+Una tabella con una riga per mese e una colonna per Nodo riporta le
+tracce registrate nel mese e, tra parentesi, la quota con risposta. Se un
+Nodo non ha tracce in un mese compare «nessun dato».
+</p>
+
+<div class="scrollBox">
+<table>
+<tr><th scope="col">Mese</th><th scope="col">Nodo A</th><th scope="col">Nodo B</th></tr>
+<tr><td>2026-08</td><td>nessun dato</td><td>150 (80.0 %)</td></tr>
+<tr><td>2026-09</td><td>1140 (88.1 %)</td><td>520 (84.0 %)</td></tr>
+<tr><td>2026-10</td><td>710 (86.8 %)</td><td>270 (89.6 %)</td></tr>
+</table>
+</div>
+<p><i>Dati d'esempio.</i></p>
+
+<p>
+Sotto la tabella compare la nota «Ogni cella: tracce registrate nel mese
+e, tra parentesi, la quota che ha avuto risposta.».
+</p>
+
+<h5 id="analysis-q1-notes">Note e soglie</h5>
+
+<p>
+Un elenco di note compare solo quando serve.
+</p>
+
+<ul>
+<li>Se un Nodo non ha un file di tracce, la nota dice che il nodo «non
+    ha ancora un file di tracce».</li>
+<li>Se una lettura fallisce, la nota riporta il nome del Nodo e il
+    motivo.</li>
+<li>Se alcuni path «passano due volte per la stessa tratta», la nota dice
+    quanti sono. Il loro SNR non è attribuito ai collegamenti.</li>
+<li>Se alcuni hop non si associano a un repeater noto, la nota dice
+    quanti sono: «hop non associati a un repeater noto». Compaiono con il
+    loro hash.</li>
+</ul>
+
+<p>
+In fondo al pannello un paragrafo riporta le soglie in uso. Sono i limiti
+di simmetria e di margine, la soglia di demodulazione e il numero minimo
+di campioni. Comprendono anche la durata della fascia oraria e il limite
+dell'anomalia (<a href="#analysis-quality" class="xref">sezione 6.9</a>).
+</p>
+</div>
+</details>
+<details class="guideSub">
+<summary><h4 id="analysis-q2"><span class="secNum">6.11</span> Qualità, pannello 2: simmetria e margine</h4></summary>
+<div class="guideBody">
+<p>
+Il pannello <b>2. Simmetria e margine</b> conta i collegamenti per
+simmetria e per margine. Il caso migliore è un collegamento simmetrico
+e con un buon margine (<a href="#analysis-quality" class="xref">sezione 6.9</a>).
+</p>
+
+<p>
+Due righe riassumono i collegamenti. La prima dice quanti collegamenti
+sono misurati in entrambe le direzioni con campioni sufficienti, su quanti
+in tutto. Dice anche quanti hanno pochi campioni o una sola direzione. La
+seconda dice quanti sono simmetrici e con buon margine.
+</p>
+
+<p>
+Sotto le righe c'è una tabella. Ogni riga è un giudizio di simmetria
+(<b>simmetrico</b>, <b>moderato</b>, <b>asimmetrico</b>) e ogni colonna
+è un giudizio di margine (<b>critico</b>, <b>sufficiente</b>,
+<b>buono</b>).
+</p>
+
+<p>
+L'intestazione riporta il badge e l'intervallo in dB. Ogni cella conta i
+collegamenti con quei due giudizi. Una riga e una colonna <b>Totale</b>
+sommano i valori.
+</p>
+
+<p>
+I collegamenti con <b>pochi campioni</b> o <b>una sola direzione</b> non
+hanno un giudizio di simmetria e non compaiono nella tabella. Li conta la
+prima riga di riepilogo.
+</p>
+
+<p>
+Un clic su un numero diverso da 0 imposta i filtri <b>Simmetria</b> e
+<b>Margine</b> del pannello 3, che elenca quei collegamenti. La cella
+scelta ha il bordo blu. Un nuovo clic sulla stessa cella toglie il
+filtro.
+</p>
+
+<p>
+<img src="images/guide_quality_1.png" width="920" height="1039" alt="Pannelli 2 e 3 dell'analisi Qualità: due righe di riepilogo, la tabella con la simmetria nelle righe e il margine nelle colonne con una cella scelta, i filtri, il conteggio e la tabella dei collegamenti con una riga evidenziata, l'SNR medio nelle due direzioni, la differenza e i badge di simmetria e margine. Undici numeri indicano gli elementi descritti nell'elenco sotto.">
+</p>
+
+<p>
+L'immagine mostra, nell'ordine indicato dai numeri, i pannelli 2 e 3:
+</p>
+
+<ol>
+<li>la riga di riepilogo, con i collegamenti misurati in entrambe le
+    direzioni, con pochi campioni e in una sola direzione;</li>
+<li>l'intestazione di una colonna, cioè un giudizio di margine con il suo
+    intervallo in dB;</li>
+<li>l'intestazione di una riga, cioè un giudizio di simmetria con il suo
+    intervallo di Δ;</li>
+<li>la cella scelta con un clic, con il bordo blu. È il caso migliore, con
+    lo sfondo verde. La tabella sotto è filtrata di conseguenza;</li>
+<li>i filtri <b>Simmetria</b>, <b>Margine</b>, <b>Ordine</b> e
+    <b>Nome / chiave</b> (<a href="#analysis-q3" class="xref">sezione 6.12</a>);</li>
+<li>il conteggio dei collegamenti mostrati, per esempio «7 collegamenti
+    su 44»;</li>
+<li>la riga del collegamento scelto per i pannelli 4 e 6, evidenziata;</li>
+<li>le colonne con l'SNR medio di ciascuna direzione e, tra parentesi, il
+    numero di campioni;</li>
+<li>la colonna della differenza Δ;</li>
+<li>la colonna <b>Simmetria</b>, con il badge;</li>
+<li>la colonna <b>Margine</b>, con il valore e il badge.</li>
+</ol>
+
+<p>
+<i>Schermata d'esempio.</i> La tabella dei collegamenti è tagliata in
+basso.
+</p>
+</div>
+</details>
+<details class="guideSub">
+<summary><h4 id="analysis-q3"><span class="secNum">6.12</span> Qualità, pannello 3: collegamenti</h4></summary>
+<div class="guideBody">
+<p>
+Il pannello <b>3. Collegamenti</b> ha una riga per ogni collegamento tra
+due repeater misurato in almeno una direzione. Dice quanto è forte ogni
+direzione, quanto le due direzioni differiscono e che margine ha il
+collegamento. Gli elementi da 5 a 11 dell'immagine della <a href="#analysis-q2" class="xref">sezione 6.11</a>
+mostrano il pannello.
+</p>
+
+<ul>
+<li><b>Simmetria</b>: <b>Tutti</b>, <b>simmetrico</b>, <b>moderato</b>,
+    <b>asimmetrico</b>, <b>pochi campioni</b> oppure <b>una sola
+    direzione</b>.</li>
+<li><b>Margine</b>: <b>Tutti</b>, <b>critico</b>, <b>sufficiente</b>
+    oppure <b>buono</b>.</li>
+<li><b>Ordine</b>: <b>Differenza maggiore prima</b>, <b>Margine minore
+    prima</b> oppure <b>Nome</b>. Il valore predefinito è
+    <b>Differenza maggiore prima</b>.</li>
+<li><b>Nome / chiave</b>: testo da cercare nei nomi mostrati.</li>
+</ul>
+
+<p>
+Sopra la tabella un conteggio dice quanti collegamenti sono mostrati
+rispetto al totale, per esempio «7 collegamenti su 44». Senza
+corrispondenze compare «Nessun collegamento corrisponde ai filtri.».
+</p>
+
+<div class="scrollBox">
+<table>
+<tr><th scope="col">Collegamento</th><th scope="col">Misurato da</th><th scope="col">A → B (SNR medio dB)</th><th scope="col">B → A (SNR medio dB)</th><th scope="col">Δ (dB)</th><th scope="col">Simmetria</th><th scope="col">Margine</th></tr>
+<tr><td>Repeater 1 ↔ Repeater 2</td><td>Nodo A</td><td>7.5 (n=637)</td><td>6.4 (n=637)</td><td>+1.1</td><td><b>simmetrico</b></td><td>16.4 dB <b>buono</b></td></tr>
+<tr><td>Repeater 1 ↔ Repeater 3</td><td>Nodo A, Nodo B</td><td>2.1 (n=212)</td><td>-6.8 (n=198)</td><td>+8.9</td><td><b>asimmetrico</b></td><td>3.2 dB <b>sufficiente</b></td></tr>
+<tr><td>Repeater 4 ↔ Repeater 2</td><td>Nodo B</td><td>3.0 (n=140)</td><td>-1.5 (n=135)</td><td>+4.5</td><td><b>moderato</b></td><td>8.5 dB <b>sufficiente</b></td></tr>
+</table>
+</div>
+<p><i>Dati d'esempio.</i></p>
+
+<ul>
+<li><b>Collegamento</b>: i nomi dei due repeater, scritti A ↔ B. Un
+    repeater non associato a un nome è «repeater sconosciuto» con il suo
+    hash tra parentesi (<a href="#analysis-quality" class="xref">sezione 6.9</a>).</li>
+<li><b>Misurato da</b>: i Nodi che hanno misurato il collegamento.</li>
+<li><b>A → B (SNR medio dB)</b> e <b>B → A (SNR medio dB)</b>: SNR medio
+    di ciascuna direzione, con il numero di campioni. Senza campioni
+    compare «nessun dato». Passando il mouse su un valore compare la
+    deviazione standard.</li>
+<li>La colonna Δ (dB) riporta A → B meno B → A. Per i collegamenti
+    misurati dai path speculari, passando il mouse compare anche la
+    differenza nella stessa traccia, con media, deviazione standard e
+    numero di tracce.</li>
+<li><b>Simmetria</b>: il badge di simmetria. Un collegamento senza
+    campioni sufficienti in una direzione ha <b>pochi campioni</b>. Uno
+    misurato in una sola direzione ha <b>una sola direzione</b>.</li>
+<li><b>Margine</b>: il margine, in dB, e il suo badge. È quello della
+    direzione più debole.</li>
+</ul>
+
+<p>
+Le righe sono ordinate così. Vengono prima i collegamenti misurati in
+entrambe le direzioni con campioni sufficienti, nell'ordine scelto con
+<b>Ordine</b>. Seguono quelli con <b>pochi campioni</b> e poi quelli con
+<b>una sola direzione</b>. Con <b>Nome</b> l'ordine è alfabetico.
+</p>
+
+<p>
+Un clic su una riga sceglie quel collegamento per i pannelli 4 e 6. La
+riga scelta è evidenziata.
+</p>
+</div>
+</details>
+<details class="guideSub">
+<summary><h4 id="analysis-q4"><span class="secNum">6.13</span> Qualità, pannello 4: andamento nel tempo</h4></summary>
+<div class="guideBody">
+<p>
+Il pannello <b>4. Andamento nel tempo</b> mostra l'SNR medio di un
+collegamento nel tempo, con una linea per direzione. Sono elencati solo i
+collegamenti con campioni sufficienti in entrambe le direzioni.
+</p>
+
+<ul>
+<li><b>Collegamento</b>: il collegamento da mostrare. Ogni voce riporta
+    il nome e il giudizio di simmetria. Anche un clic su una riga del
+    pannello 3 sceglie il collegamento.</li>
+<li><b>Raggruppa per</b>: <b>Giorno</b> o <b>Mese</b>. Il valore
+    iniziale è <b>Mese</b> se i dati del collegamento coprono più di 92
+    giorni, altrimenti <b>Giorno</b>.</li>
+<li><b>Mostra</b>: <b>SNR delle due direzioni</b> oppure <b>Differenza
+    Δ</b>.</li>
+</ul>
+
+<p>
+Con <b>SNR delle due direzioni</b> il grafico ha due linee, una blu e
+una arancione, con la legenda. L'asse verticale è «SNR medio (dB)». Con
+<b>Differenza Δ</b> il grafico ha una sola linea, con l'asse «Differenza
+tra le due direzioni Δ (dB)». Quattro linee tratteggiate segnano i
+limiti di simmetria: ±3 dB e ±6 dB.
+</p>
+
+<p>
+Un punto pieno ha campioni sufficienti, cioè almeno 30. Un punto vuoto
+ne ha meno ed è da leggere con cautela. Passando il mouse su un
+punto compaiono la data, il valore e il numero di campioni di ciascuna
+direzione.
+</p>
+
+<p>
+<img src="images/guide_quality_2.png" width="920" height="437" alt="Pannello 4: i selettori Collegamento, Raggruppa per e Mostra, la legenda e il grafico a linee dell'SNR medio nelle due direzioni giorno per giorno, con punti pieni e vuoti e una finestra con data, valori e numero di campioni. Otto numeri indicano gli elementi descritti nell'elenco sotto.">
+</p>
+
+<p>
+L'immagine mostra, nell'ordine indicato dai numeri:
+</p>
+
+<ol>
+<li>il selettore <b>Collegamento</b>;</li>
+<li>il selettore <b>Raggruppa per</b>, qui su <b>Giorno</b>;</li>
+<li>il selettore <b>Mostra</b>;</li>
+<li>la legenda con le due direzioni;</li>
+<li>un punto pieno, con campioni sufficienti;</li>
+<li>un punto vuoto, con meno di 30 campioni;</li>
+<li>la finestra che compare passando il mouse su un punto, con la data, il
+    valore di ciascuna direzione e il numero di campioni;</li>
+<li>l'asse verticale, <b>SNR medio (dB)</b>.</li>
+</ol>
+
+<p>
+<i>Schermata d'esempio.</i> Il periodo è <b>In tempo reale (file di
+tracce corrente)</b>.
+</p>
+
+<p>
+Se il collegamento scelto non ha una serie, compare «Questo collegamento
+non ha una serie giornaliera: servono campioni sufficienti in entrambe le
+direzioni.».
+</p>
+</div>
+</details>
+<details class="guideSub">
+<summary><h4 id="analysis-q5"><span class="secNum">6.14</span> Qualità, pannello 5: raggiungibilità e margine</h4></summary>
+<div class="guideBody">
+<p>
+Il pannello <b>5. Raggiungibilità e margine</b> ha un punto per ogni path
+eseguito da un Nodo. Confronta il margine della tratta più debole del
+path con la quota di tracce che hanno avuto risposta. Un path con un buon
+margine ma poche risposte è segnalato come anomalia (<a href="#analysis-quality" class="xref">sezione 6.9</a>).
+</p>
+
+<p>
+Il selettore <b>Nodo</b> sceglie un Nodo oppure <b>Tutti i nodi</b>. Sopra
+il grafico una riga conta i path, per esempio «12 path nel grafico, 15 in
+elenco, 2 segnalati come anomalia». Se alcuni path non hanno ancora un
+margine, la riga aggiunge quanti sono: non compaiono nel grafico, ma
+restano nell'elenco.
+</p>
+
+<p>
+Nel grafico l'asse orizzontale è il margine della tratta più debole,
+<b>Margine della tratta più debole (dB)</b>. L'asse verticale è
+<b>Tracce con risposta (%)</b>.
+</p>
+
+<p>
+Un punto blu è un path. Un punto rosso è un path segnalato come
+<b>anomalia</b>. Un punto vuoto ha meno di 30 tracce.
+</p>
+
+<p>
+Due linee tratteggiate mostrano le soglie dell'anomalia: «margine 10 dB»,
+verticale, e «25 % con risposta», orizzontale. Passando il mouse su un
+punto compaiono il Nodo, il path, il margine, la quota con risposta e il
+numero di tracce.
+</p>
+
+<p>
+<img src="images/guide_quality_3.png" width="920" height="703" alt="Pannello 5: il selettore Nodo, la riga di conteggio, il grafico a punti con il margine della tratta più debole in orizzontale e la quota di tracce con risposta in verticale, punti blu, rossi e vuoti, due linee tratteggiate, una finestra su un punto e l'inizio della tabella con il badge anomalia. Nove numeri indicano gli elementi descritti nell'elenco sotto.">
+</p>
+
+<p>
+L'immagine mostra, nell'ordine indicato dai numeri:
+</p>
+
+<ol>
+<li>il selettore <b>Nodo</b>;</li>
+<li>la riga che conta i path;</li>
+<li>un punto blu, cioè un path;</li>
+<li>un punto rosso, cioè un path segnalato come <b>anomalia</b>;</li>
+<li>un punto vuoto, cioè un path con meno di 30 tracce;</li>
+<li>la linea verticale tratteggiata «margine 10 dB»;</li>
+<li>la linea orizzontale tratteggiata «25 % con risposta»;</li>
+<li>la finestra di un punto, con Nodo, path, margine, quota con risposta
+    e numero di tracce;</li>
+<li>il badge <b>anomalia</b> nella prima riga della tabella.</li>
+</ol>
+
+<p>
+<i>Schermata d'esempio.</i> Il periodo è <b>Tutta la storia</b>. La
+tabella è tagliata in basso.
+</p>
+
+<p>
+Sotto il grafico una tabella elenca tutti i path del Nodo scelto.
+</p>
+
+<div class="scrollBox">
+<table>
+<tr><th scope="col">Nodo</th><th scope="col">Path</th><th scope="col">Tipo</th><th scope="col">Tracce</th><th scope="col">Con risposta</th><th scope="col">TIMEOUT</th><th scope="col">% Con risposta</th><th scope="col">Tratta più debole (SNR medio)</th><th scope="col">Margine</th></tr>
+<tr><td>Nodo A</td><td>Repeater 1 → Repeater 2 → Repeater 1 <b>anomalia</b></td><td>speculare</td><td>476</td><td>19</td><td>457</td><td>4.0</td><td>Repeater 2 → Repeater 1: 11.8 dB</td><td>21.8 dB <b>buono</b></td></tr>
+<tr><td>Nodo A</td><td>Repeater 5 → Repeater 6 → Repeater 5</td><td>speculare</td><td>12</td><td>9</td><td>3</td><td>75.0</td><td>—</td><td>—</td></tr>
+</table>
+</div>
+<p><i>Dati d'esempio.</i> La seconda riga non ha un margine: nessuna tratta ha almeno 30 campioni.</p>
+
+<ul>
+<li><b>Tipo</b>: <b>speculare</b>, <b>non speculare</b> o <b>diretto</b>
+    (<a href="#analysis-quality" class="xref">sezione 6.9</a>).</li>
+<li>La colonna % Con risposta è la quota delle tracce che hanno avuto
+    risposta.</li>
+<li><b>Tratta più debole (SNR medio)</b>: la tratta con l'SNR medio più
+    basso, tra quelle con campioni sufficienti. Le tratte che toccano SRC
+    contano qui. Se nessuna ha campioni sufficienti compare «—».</li>
+<li><b>Margine</b>: il margine della tratta più debole, con il suo
+    badge.</li>
+</ul>
+
+<p>
+I path segnalati come <b>anomalia</b> compaiono per primi, con lo sfondo
+rosato e il badge. Il badge <b>tratta ripetuta</b> indica che il path
+attraversa due volte la stessa tratta: il suo SNR non è attribuito ai
+collegamenti (<a href="#analysis-q1" class="xref">sezione 6.10</a>). Un clic su una riga mostra quel path nel
+pannello 6.
+</p>
+</div>
+</details>
+<details class="guideSub">
+<summary><h4 id="analysis-q6"><span class="secNum">6.15</span> Qualità, pannello 6: profilo per giorno e ora</h4></summary>
+<div class="guideBody">
+<p>
+Il pannello <b>6. Profilo per giorno e ora</b> mostra come si comporta
+il collegamento o il path scelto nel corso della giornata e della
+settimana. Le ore sono quelle dell'orologio del Nodo (<a href="#analysis-quality" class="xref">sezione 6.9</a>).
+</p>
+
+<ul>
+<li><b>Osserva</b>: <b>Collegamento (due repeater)</b> oppure <b>Path
+    (eseguito da un nodo)</b>.</li>
+<li><b>Collegamento / path</b>: il collegamento o il path da mostrare. Un
+    clic su una riga del pannello 3 sceglie un collegamento. Un clic su
+    una riga del pannello 5 sceglie un path.</li>
+<li><b>Mostra</b>: la grandezza da leggere nelle celle.
+    <ul>
+    <li>Per un collegamento: «A → B: SNR medio (dB)».</li>
+    <li>Per un collegamento: «B → A: SNR medio (dB)».</li>
+    <li>Per un collegamento: <b>Δ: prima → seconda meno seconda → prima
+        (dB)</b>.</li>
+    <li>Per un path: <b>Tracce con risposta (%)</b>.</li>
+    </ul>
+    </li>
+</ul>
+
+<p>
+Sotto i selettori ci sono tre tabelle: <b>Per fascia oraria</b>,
+<b>Per giorno della settimana</b> e <b>Giorno × fascia oraria</b>. La
+terza incrocia le prime due. Ogni fascia dura 3 ore. Passando il mouse su
+una cella compare il numero di campioni.
+</p>
+
+<p>
+Una cella con meno di 30 campioni non mostra un valore, ma «—». Con la
+differenza Δ si contano i campioni della direzione che ne ha meno.
+</p>
+
+<p>
+Le celle sono colorate. Con l'SNR e con la quota di tracce con risposta il
+blu è tanto più intenso quanto più il valore è alto. La scala dell'SNR va
+dal valore più basso al più alto mostrati. Quella delle risposte procede
+a passi del 20 %.
+</p>
+
+<p>
+Con la differenza Δ la cella è verde se Δ è sotto il limite di simmetria,
+ambra se è moderata e rossa se è asimmetrica. Una legenda sotto le
+tabelle ripete questi significati.
+</p>
+
+<p>
+<img src="images/guide_quality_4.png" width="920" height="696" alt="Pannello 6: i selettori Osserva, Collegamento / path e Mostra e le tre tabelle per fascia oraria, per giorno della settimana e giorno per fascia oraria, con celle colorate secondo la differenza Δ, celle con un trattino e la legenda. Nove numeri indicano gli elementi descritti nell'elenco sotto.">
+</p>
+
+<p>
+L'immagine mostra, nell'ordine indicato dai numeri:
+</p>
+
+<ol>
+<li>il selettore <b>Osserva</b>;</li>
+<li>il selettore <b>Collegamento / path</b>;</li>
+<li>il selettore <b>Mostra</b>, qui sulla differenza Δ;</li>
+<li>la tabella <b>Per fascia oraria</b>;</li>
+<li>la tabella <b>Per giorno della settimana</b>;</li>
+<li>la tabella <b>Giorno × fascia oraria</b>;</li>
+<li>una cella colorata con il suo valore, qui rossa perché Δ è
+    asimmetrica;</li>
+<li>una cella con «—», cioè con meno di 30 campioni;</li>
+<li>la legenda sotto le tabelle.</li>
+</ol>
+
+<p>
+<i>Schermata d'esempio.</i> Il periodo è <b>Tutta la storia</b>.
+</p>
+
+<p>
+Per un collegamento senza campioni sufficienti in entrambe le direzioni
+compare «Nessun dato per giorno e ora per questa scelta».
+</p>
+</div>
+</details>
+<details class="guideSub">
+<summary><h4 id="analysis-q7"><span class="secNum">6.16</span> Qualità, pannello 7: confronto tra nodi</h4></summary>
+<div class="guideBody">
+<p>
+Il pannello <b>7. Confronto tra nodi</b> mostra lo stesso collegamento
+misurato da più di un Nodo. Una grande dispersione tra i Nodi significa
+che il valore dipende dalle tracce che hanno attraversato il collegamento,
+non solo dal collegamento stesso.
+</p>
+
+<p>
+Il Collettore vede le tracce di tutti i Nodi, quindi può confrontarli.
+</p>
+
+<div class="scrollBox">
+<table>
+<tr><th scope="col">Collegamento</th><th scope="col">Nodo</th><th scope="col">A → B (SNR medio dB)</th><th scope="col">B → A (SNR medio dB)</th><th scope="col">Δ (dB)</th><th scope="col">Dispersione di Δ tra i nodi (dB)</th></tr>
+<tr><td rowspan="2">Repeater 1 ↔ Repeater 2</td><td>Nodo A</td><td>7.5 (n=637)</td><td>6.4 (n=637)</td><td>+1.1</td><td rowspan="2">3.2</td></tr>
+<tr><td>Nodo B</td><td>4.2 (n=410)</td><td>6.3 (n=395)</td><td>-2.1</td></tr>
+<tr><td rowspan="2">Repeater 3 ↔ Repeater 4</td><td>Nodo A</td><td>5.0 (n=120)</td><td>4.5 (n=118)</td><td>+0.5</td><td rowspan="2">—</td></tr>
+<tr><td>Nodo B <b>pochi</b></td><td>3.1 (n=8)</td><td>2.0 (n=40)</td><td>+1.1</td></tr>
+</table>
+</div>
+<p><i>Dati d'esempio.</i></p>
+
+<p>
+La tabella ha un gruppo di righe per collegamento, con una riga per Nodo.
+La colonna <b>Dispersione di Δ tra i nodi (dB)</b> riporta la differenza
+tra il Δ più alto e il Δ più basso misurati dai Nodi. I gruppi con la
+dispersione maggiore compaiono per primi.
+</p>
+
+<p>
+Il badge <b>pochi</b> indica che il Nodo ha meno di 30 campioni in una
+direzione: quel Nodo non conta nella dispersione. Se meno di due Nodi
+hanno campioni sufficienti, la dispersione è «—». Se nessun collegamento
+è misurato da più di un Nodo compare «Nessun collegamento è stato
+misurato da più di un nodo in questo periodo.».
 </p>
 </div>
 </details>
@@ -3768,7 +4514,7 @@ Scelta:</pre>
 <tr><td><b>6) Servizi</b></td><td>I moduli attivi.</td><td><a href="#admin-config-services" class="xref">8.10</a></td></tr>
 <tr><td><b>7) Logging</b></td><td>Il livello di dettaglio del registro.</td><td><a href="#admin-config-logging" class="xref">8.11</a></td></tr>
 <tr><td><b>8) Telegram (notifiche al gestore del nodo)</b></td><td>Le notifiche verso il proprio account Telegram.</td><td><a href="#admin-config-telegram" class="xref">8.12</a></td></tr>
-<tr><td><b>9) Allinea al template (aggiungi parametri mancanti)</b></td><td>I parametri nuovi del modello di configurazione.</td><td><a href="#admin-config-align" class="xref">8.13</a></td></tr>
+<tr><td><b>9) Allinea al template (parametri mancanti e nuovi default)</b></td><td>I parametri nuovi del modello di configurazione e i nuovi valori predefiniti.</td><td><a href="#admin-config-align" class="xref">8.13</a></td></tr>
 <tr><td><b>10) Sonar (canale dedicato per l'acquisizione dei path)</b></td><td>Il canale e la trasmissione del Sonar.</td><td><a href="#admin-config-sonar" class="xref">8.14</a></td></tr>
 </table>
 </div>
@@ -4065,18 +4811,20 @@ arrivano sono nelle sezioni <a href="#telegram-enable" class="xref">7.2</a> e <a
 <summary><h4 id="admin-config-align"><span class="secNum">8.13</span> Allinea al template</h4></summary>
 <div class="guideBody">
 <p>
-La voce <b>9) Allinea al template (aggiungi parametri mancanti)</b>
+La voce <b>9) Allinea al template (parametri mancanti e nuovi default)</b>
 confronta <code>config.yaml</code> con il modello di configurazione.
-Aggiunge i parametri mancanti e toglie quelli che il modello non
-contiene più. Il nome della voce parla solo di parametri mancanti, ma la
-voce toglie anche quelli dismessi. Serve dopo un aggiornamento del
-software che ha introdotto o tolto parametri.
+Aggiunge i parametri mancanti, toglie quelli che il modello non contiene
+più e aggiorna un parametro il cui valore predefinito è cambiato. Il nome
+della voce non cita i parametri tolti, ma la voce toglie anche quelli
+dismessi. Serve dopo un aggiornamento del software che ha introdotto o
+tolto parametri.
 </p>
 
 <div class="scrollBox">
 <table>
 <tr><th scope="col">Che cosa fa</th><th scope="col">Messaggio</th></tr>
 <tr><td>Aggiunge i parametri che il modello ha e il file no, con il valore del modello.</td><td>«AGGIUNTA:»</td></tr>
+<tr><td>Porta al nuovo valore predefinito un parametro che ha ancora il vecchio.</td><td>«AGGIORNATA (vecchio default):»</td></tr>
 <tr><td>Toglie i parametri che il modello non contiene più.</td><td>«RIMOSSA (non più nel template):»</td></tr>
 <tr><td>Non trova differenze: non cambia nulla e non fa copie.</td><td>«config.yaml già allineato al template — nessuna modifica necessaria.»</td></tr>
 </table>
@@ -4084,8 +4832,19 @@ software che ha introdotto o tolto parametri.
 
 <p>
 Un valore già presente non cambia mai. Le liste, cioè path, repeater,
-regioni e moduli, non vengono toccate. L'unica eccezione è la chiave del
-canale Sonar: se manca, viene copiata dal modello e non è mai mostrata.
+regioni e moduli, non vengono toccate. Le eccezioni sono due.
+</p>
+
+<ul>
+<li>La chiave del canale Sonar: se manca, o è vuota, viene copiata dal
+    modello e non è mai mostrata.</li>
+<li>Il parametro <code>heartbeat_timeout</code>: il suo valore
+    predefinito è passato da 5 a 10. Se il file ha ancora 5, viene
+    portato a 10. Un valore diverso resta com'è e viene solo
+    segnalato.</li>
+</ul>
+
+<p>
 Le modifiche hanno effetto dopo il riavvio del servizio del Nodo.
 </p>
 
@@ -4093,7 +4852,7 @@ Le modifiche hanno effetto dopo il riavvio del servizio del Nodo.
 <i>Attenzione:</i> i parametri tolti non tornano da soli. Prima di
 modificare <code>config.yaml</code>, <code>config.sh</code> ne fa una copia
 in <code>config/backup</code>. La voce stampa un riepilogo con il totale
-dei parametri aggiunti e tolti.
+dei parametri aggiunti, aggiornati e tolti.
 </p>
 </div>
 </details>
@@ -4114,7 +4873,7 @@ ricezione e trasmissione sono già attive.
 <tr><td><b>1) Imposta la chiave del canale (32 caratteri esadecimali)</b></td><td>Chiede la <i>chiave del canale</i> Sonar, uguale su tutti i Nodi della rete Sonar. Mentre la si scrive non è mostrata. Con un valore che non ha 32 caratteri esadecimali non cambia nulla.</td></tr>
 <tr><td><b>2) Abilita la trasmissione</b></td><td>Il Nodo trasmette i messaggi Sonar quando il crontab lo chiede.</td></tr>
 <tr><td><b>3) Disabilita la trasmissione</b></td><td>Il Nodo non trasmette più. La ricezione dipende solo dal modulo <code>sonar</code> (<a href="#admin-config-services" class="xref">sezione 8.10</a>).</td></tr>
-<tr><td><b>4) Imposta lo scope di trasmissione</b></td><td>L'ambito dei messaggi trasmessi (<a href="#analysis-terms" class="xref">sezione 6.1</a>). * o U: nessuna regione. D: la regione predefinita del companion, impostata nell'app MeshCore (<code>INSTALL.md</code>, sezione «Default region»). Oppure il nome di una regione, per esempio it. Il valore predefinito è D.</td></tr>
+<tr><td><b>4) Imposta lo scope di trasmissione</b></td><td>L'ambito dei messaggi trasmessi (<a href="#analysis-terms" class="xref">sezione 6.2</a>). * o U: nessuna regione. D: la regione predefinita del companion, impostata nell'app MeshCore (<code>INSTALL.md</code>, sezione «Default region»). Oppure il nome di una regione, per esempio it. Il valore predefinito è D.</td></tr>
 <tr><td><b>5) Imposta l'intervallo minimo tra due invii</b></td><td>I secondi minimi tra due trasmissioni. Con 0 non c'è controllo. Il valore predefinito è 600.</td></tr>
 <tr><td><b>6) Verifica/crea il canale sul companion</b></td><td>Cerca il canale sul companion e, se manca, chiede se crearlo: crearlo aggiunge il canale al companion. Chiede poi se mostrare la chiave e se salvarla in <code>config.yaml</code> quando non è impostata.</td></tr>
 </table>
@@ -4152,6 +4911,11 @@ Include i termini MeshCore che la guida richiama. La terza colonna indica
 dove il termine è spiegato.
 </p>
 
+<p>
+<i>Solo Collettore:</i> i termini spiegati nella <a href="#analysis" class="xref">sezione 6</a> riguardano la
+scheda Analisi, che c'è solo nel Collettore.
+</p>
+
 <div class="scrollBox">
 <table>
 <tr><th scope="col">Termine</th><th scope="col">Significato</th><th scope="col">Sezione</th></tr>
@@ -4159,52 +4923,59 @@ dove il termine è spiegato.
 <tr><td>Advert</td><td>Messaggio con cui un nodo annuncia la propria presenza.</td><td><a href="#intro-what" class="xref">1.1</a>, <a href="#nodes-known" class="xref">4.2</a></td></tr>
 <tr><td>Airtime</td><td>Tempo che un repeater passa a trasmettere e a ricevere pacchetti.</td><td><a href="#nodes-device" class="xref">4.1</a>, <a href="#repeaters-status" class="xref">5.1</a></td></tr>
 <tr><td>Ambiguo</td><td>Detto di un hash con cui inizia la chiave pubblica di più repeater noti. Il nome non si può stabilire.</td><td><a href="#common-names" class="xref">2.6</a></td></tr>
-<tr><td>Ambito, scope</td><td>Indica se un pacchetto in flood è senza regione (FLOOD) o con regione (TC_FLOOD). Nel riepilogo del pannello 1 la riga <b>Ambito</b> ha un altro significato.</td><td><a href="#analysis-terms" class="xref">6.1</a>, <a href="#analysis-p1" class="xref">6.3</a></td></tr>
+<tr><td>Ambito, scope</td><td>Indica se un pacchetto in flood è senza regione (FLOOD) o con regione (TC_FLOOD). Nel riepilogo del pannello 1 la riga <b>Ambito</b> ha un altro significato.</td><td><a href="#analysis-terms" class="xref">6.2</a>, <a href="#analysis-p1" class="xref">6.3</a></td></tr>
+<tr><td>Anomalia</td><td>Nell'analisi Qualità, path con un buon margine ma poche tracce con risposta. È uno spunto da approfondire, non una diagnosi.</td><td><a href="#analysis-quality" class="xref">6.9</a>, <a href="#analysis-q5" class="xref">6.14</a></td></tr>
 <tr><td>Archivio</td><td>Dati di un mese concluso, consultabili in sola lettura.</td><td><a href="#common-period" class="xref">2.3</a></td></tr>
+<tr><td>Campione</td><td>Nell'analisi Qualità, un valore di SNR di una tratta letto in una traccia con risposta. Servono almeno 30 campioni per mostrare un valore.</td><td><a href="#analysis-quality" class="xref">6.9</a></td></tr>
 <tr><td>Chat</td><td>Tipo di nodo MeshCore nell'elenco dei nodi conosciuti: un companion.</td><td><a href="#nodes-known" class="xref">4.2</a></td></tr>
 <tr><td>Chiave del canale</td><td>Chiave con cui si decifrano i messaggi del canale Sonar. Ha 32 caratteri esadecimali ed è uguale su tutti i Nodi della rete Sonar.</td><td><a href="#admin-config-sonar" class="xref">8.14</a></td></tr>
+<tr><td>Collegamento</td><td>Nell'analisi Qualità, coppia di due repeater misurata nelle due direzioni e scritta A ↔ B.</td><td><a href="#analysis-quality" class="xref">6.9</a>, <a href="#analysis-q3" class="xref">6.12</a></td></tr>
 <tr><td>Collettore</td><td>Server centrale che riceve e aggrega i dati di più Nodi.</td><td><a href="#intro-parts" class="xref">1.2</a></td></tr>
 <tr><td>Companion</td><td>Dispositivo MeshCore con cui un Nodo riceve e trasmette. Quello collegato al Nodo è SRC. L'interfaccia lo chiama anche device.</td><td><a href="#intro-parts" class="xref">1.2</a></td></tr>
-<tr><td>Copia</td><td>Ogni ricezione di una trasmissione da parte di un tracciatore. Nel dettaglio di un nodo la stessa ricezione è un'osservazione.</td><td><a href="#analysis-terms" class="xref">6.1</a></td></tr>
+<tr><td>Copia</td><td>Ogni ricezione di una trasmissione da parte di un tracciatore. Nel dettaglio di un nodo la stessa ricezione è un'osservazione.</td><td><a href="#analysis-terms" class="xref">6.2</a></td></tr>
 <tr><td>CRC</td><td>Controllo che verifica che il contenuto di un pacchetto non sia alterato.</td><td><a href="#nodes-device" class="xref">4.1</a></td></tr>
 <tr><td>Crontab</td><td>Elenco delle attività che il computer esegue a orari fissi.</td><td><a href="#intro-cadence" class="xref">1.4</a></td></tr>
 <tr><td>Device</td><td>Il companion collegato al Nodo, come lo chiama l'interfaccia.</td><td><a href="#intro-parts" class="xref">1.2</a>, <a href="#nodes-device" class="xref">4.1</a></td></tr>
-<tr><td>Diretto</td><td>Detto di un pacchetto ricevuto con 0 hop, cioè senza repeater di mezzo. Non è la modalità direct.</td><td><a href="#common-path" class="xref">2.5</a></td></tr>
+<tr><td>Diretto</td><td>Detto di un pacchetto ricevuto con 0 hop, cioè senza repeater di mezzo. Non è la modalità direct. Nell'analisi Qualità un path diretto ha un solo repeater.</td><td><a href="#common-path" class="xref">2.5</a>, <a href="#analysis-quality" class="xref">6.9</a></td></tr>
 <tr><td>Duty Cycle</td><td>Limite di trasmissione che un repeater si impone. Dopo ogni trasmissione resta in silenzio per un tempo proporzionale.</td><td><a href="#repeaters-config" class="xref">5.3</a></td></tr>
 <tr><td>Flood e direct</td><td>Modalità di instradamento. Un pacchetto flood è rilanciato da tutti i nodi che lo sentono. Un pacchetto direct è instradato lungo un path specifico.</td><td><a href="#nodes-device" class="xref">4.1</a></td></tr>
-<tr><td>FLOOD, TC_FLOOD, Unscoped</td><td>FLOOD è un pacchetto flood senza regione. <i>Unscoped</i> è lo stesso ambito, nei nomi delle impostazioni del repeater. TC_FLOOD è un pacchetto flood con regione: TC sta per transport code.</td><td><a href="#repeaters-config" class="xref">5.3</a>, <a href="#analysis-terms" class="xref">6.1</a></td></tr>
-<tr><td>Gateway</td><td>Ultimo repeater del path, accanto al tracciatore.</td><td><a href="#analysis-terms" class="xref">6.1</a></td></tr>
+<tr><td>FLOOD, TC_FLOOD, Unscoped</td><td>FLOOD è un pacchetto flood senza regione. <i>Unscoped</i> è lo stesso ambito, nei nomi delle impostazioni del repeater. TC_FLOOD è un pacchetto flood con regione: TC sta per transport code.</td><td><a href="#repeaters-config" class="xref">5.3</a>, <a href="#analysis-terms" class="xref">6.2</a></td></tr>
+<tr><td>Gateway</td><td>Ultimo repeater del path, accanto al tracciatore.</td><td><a href="#analysis-terms" class="xref">6.2</a></td></tr>
 <tr><td>Hash</td><td>Inizio della chiave pubblica di un repeater, di 1, 2 o 3 byte. Indica il repeater in un path.</td><td><a href="#common-path" class="xref">2.5</a></td></tr>
 <tr><td>Hop</td><td>Repeater attraversato da un pacchetto.</td><td><a href="#intro-what" class="xref">1.1</a>, <a href="#common-path" class="xref">2.5</a></td></tr>
 <tr><td>Indicazione</td><td>Stato del pannello 5: il repeater è stato visto lontano in 1 o 2 trasmissioni di advert, o da una sola sorgente.</td><td><a href="#analysis-p5" class="xref">6.7</a></td></tr>
 <tr><td>Limite di hop</td><td>Numero massimo di hop fino al quale un repeater ritrasmette un pacchetto in flood.</td><td><a href="#repeaters-config" class="xref">5.3</a>, <a href="#analysis-p6" class="xref">6.8</a></td></tr>
+<tr><td>Margine</td><td>Nell'analisi Qualità, di quanto l'SNR medio della direzione più debole supera la soglia di demodulazione.</td><td><a href="#analysis-quality" class="xref">6.9</a></td></tr>
 <tr><td>Modello di configurazione</td><td>File con i valori iniziali della configurazione. <code>setup.sh</code> lo usa per creare la configurazione, la voce 9 di <code>config.sh</code> per aggiornarla. I menu e i messaggi di <code>config.sh</code> lo chiamano template.</td><td><a href="#admin-setup" class="xref">8.2</a>, <a href="#admin-config-align" class="xref">8.13</a></td></tr>
 <tr><td>Modulo</td><td>Ciascuna delle sette parti del software del Nodo, per esempio quella delle tracce. Il menu di <code>config.sh</code> la chiama servizio.</td><td><a href="#admin-tools" class="xref">8.1</a>, <a href="#admin-config-services" class="xref">8.10</a></td></tr>
 <tr><td>Node ID</td><td>Identificativo del Nodo sul Collettore, comunicato dall'amministratore del Collettore.</td><td><a href="#telegram-link" class="xref">7.1</a>, <a href="#admin-setup" class="xref">8.2</a></td></tr>
 <tr><td>Nodo, nodo</td><td>Nodo, con la maiuscola, è un'installazione di trace-mon. Nodo con la minuscola è un nodo MeshCore. A inizio frase la guida scrive <i>Nodo trace-mon</i> o <i>nodo MeshCore</i>.</td><td><a href="#intro-parts" class="xref">1.2</a></td></tr>
 <tr><td>Noto</td><td>Un repeater è noto se compare tra i nodi conosciuti del Nodo.</td><td><a href="#common-names" class="xref">2.6</a>, <a href="#nodes-known" class="xref">4.2</a></td></tr>
-<tr><td>Osservazione</td><td>Nella scheda Tracce, un'esecuzione di un path. Nel dettaglio di un nodo, una ricezione dell'advert di quel nodo, che la scheda Analisi chiama copia.</td><td><a href="#trace" class="xref">3</a>, <a href="#nodes-detail" class="xref">4.3</a></td></tr>
+<tr><td>Osservazione</td><td>Nella scheda Tracce, un'esecuzione di un path. Nel dettaglio di un nodo, una ricezione dell'advert di quel nodo, che l'analisi Propagazione chiama copia.</td><td><a href="#trace" class="xref">3</a>, <a href="#nodes-detail" class="xref">4.3</a></td></tr>
 <tr><td>Path</td><td>Sequenza di repeater che un pacchetto attraversa.</td><td><a href="#intro-what" class="xref">1.1</a>, <a href="#common-path" class="xref">2.5</a></td></tr>
 <tr><td>Periodo</td><td>Insieme di dati mostrato: il mese in corso, detto in tempo reale, oppure un mese archiviato.</td><td><a href="#common-period" class="xref">2.3</a></td></tr>
-<tr><td>Posizione</td><td>Come termine, il numero d'ordine di un repeater nel path, contato dalla sorgente. Come etichetta <b>Posizione</b> indica le coordinate di un nodo e, tra i tracciatori, se le coordinate sono utilizzabili.</td><td><a href="#nodes-detail" class="xref">4.3</a>, <a href="#analysis-terms" class="xref">6.1</a>, <a href="#analysis-p1" class="xref">6.3</a></td></tr>
+<tr><td>Posizione</td><td>Come termine, il numero d'ordine di un repeater nel path, contato dalla sorgente. Come etichetta <b>Posizione</b> indica le coordinate di un nodo e, tra i tracciatori, se le coordinate sono utilizzabili.</td><td><a href="#nodes-detail" class="xref">4.3</a>, <a href="#analysis-terms" class="xref">6.2</a>, <a href="#analysis-p1" class="xref">6.3</a></td></tr>
 <tr><td>Prefisso</td><td>Primi caratteri della chiave pubblica di un nodo, in esadecimale.</td><td><a href="#nodes-sonar" class="xref">4.4</a>, <a href="#repeaters-neighbours" class="xref">5.5</a></td></tr>
 <tr><td>Provato</td><td>Stato del pannello 5, scritto <b>Provato ≥ 9 hop</b>: il repeater è stato visto lontano in almeno 3 trasmissioni di advert da almeno 2 sorgenti. Descrive ciò che è stato osservato e non assegna un limite.</td><td><a href="#analysis-p5" class="xref">6.7</a></td></tr>
 <tr><td>Regione</td><td>Ambito regionale indicato in un pacchetto flood con regione. Un repeater fa transitare i pacchetti delle regioni che supporta.</td><td><a href="#repeaters-region" class="xref">5.4</a></td></tr>
 <tr><td>Repeater</td><td>Nodo MeshCore che ritrasmette i pacchetti degli altri nodi.</td><td><a href="#repeaters" class="xref">5</a></td></tr>
-<tr><td>Repeater gestito da trace-mon</td><td>Repeater che il Nodo interroga, quelli della scheda Repeater. Solo per questi sono noti i limiti di hop.</td><td><a href="#repeaters" class="xref">5</a>, <a href="#analysis-terms" class="xref">6.1</a></td></tr>
+<tr><td>Repeater gestito da trace-mon</td><td>Repeater che il Nodo interroga, quelli della scheda Repeater. Solo per questi sono noti i limiti di hop.</td><td><a href="#repeaters" class="xref">5</a>, <a href="#analysis-terms" class="xref">6.2</a></td></tr>
 <tr><td>Room server</td><td>Nodo MeshCore che ospita una stanza di messaggi.</td><td><a href="#intro-parts" class="xref">1.2</a></td></tr>
 <tr><td>RSSI</td><td>Potenza del segnale ricevuto, in dBm. Riguarda la ricezione di un dispositivo.</td><td><a href="#common-snr" class="xref">2.7</a></td></tr>
 <tr><td>Servizio del Nodo</td><td>Programma che resta in esecuzione sul computer del Nodo e carica i moduli. Si chiama <code>trace-mon.service</code>. La dashboard ha un servizio a parte, <code>trace-web.service</code>. Molte modifiche della configurazione hanno effetto dopo il riavvio del servizio del Nodo.</td><td><a href="#telegram-enable" class="xref">7.2</a>, <a href="#admin-tools" class="xref">8.1</a></td></tr>
+<tr><td>Simmetria</td><td>Nell'analisi Qualità, la differenza Δ tra l'SNR medio delle due direzioni di un collegamento: simmetrico, moderato o asimmetrico.</td><td><a href="#analysis-quality" class="xref">6.9</a>, <a href="#analysis-q2" class="xref">6.11</a></td></tr>
 <tr><td>SNR</td><td>Rapporto tra segnale e rumore, in dB. Riguarda la ricezione di un dispositivo.</td><td><a href="#common-snr" class="xref">2.7</a></td></tr>
 <tr><td>Sonar</td><td>Messaggio breve con un numero progressivo, trasmesso dai Nodi a intervalli regolari su un canale pubblico dedicato.</td><td><a href="#intro-what" class="xref">1.1</a>, <a href="#nodes-sonar" class="xref">4.4</a></td></tr>
-<tr><td>Sorgente</td><td>Ruolo del nodo che ha inviato un pacchetto. Un Nodo è sorgente dei pacchetti che trasmette e tracciatore di quelli che riceve. Nelle tracce la sorgente si chiama SRC.</td><td><a href="#intro-parts" class="xref">1.2</a>, <a href="#analysis-terms" class="xref">6.1</a></td></tr>
+<tr><td>Sorgente</td><td>Ruolo del nodo che ha inviato un pacchetto. Un Nodo è sorgente dei pacchetti che trasmette e tracciatore di quelli che riceve. Nelle tracce la sorgente si chiama SRC.</td><td><a href="#intro-parts" class="xref">1.2</a>, <a href="#analysis-terms" class="xref">6.2</a></td></tr>
 <tr><td>Sorgente dati</td><td>Selettore della scheda Tracce: <b>In tempo reale</b> o un mese archiviato. Nelle altre schede si sceglie con <b>Periodo</b>.</td><td><a href="#common-period" class="xref">2.3</a>, <a href="#trace-controls" class="xref">3.1</a></td></tr>
-<tr><td>SRC</td><td>Il companion collegato al Nodo, dall'inglese <i>source</i>. Nelle tracce è la sorgente: il pacchetto parte da lì e il path torna lì. È anche il punto in cui trace-mon registra i pacchetti e il riferimento per le distanze.</td><td><a href="#intro-parts" class="xref">1.2</a>, <a href="#trace" class="xref">3</a>, <a href="#analysis-terms" class="xref">6.1</a></td></tr>
+<tr><td>Speculare</td><td>Detto di un path in cui il ritorno ripercorre l'andata, come SRC→2559→0940→2559→SRC. Ogni collegamento è misurato nelle due direzioni dalla stessa traccia.</td><td><a href="#analysis-quality" class="xref">6.9</a></td></tr>
+<tr><td>SRC</td><td>Il companion collegato al Nodo, dall'inglese <i>source</i>. Nelle tracce è la sorgente: il pacchetto parte da lì e il path torna lì. È anche il punto in cui trace-mon registra i pacchetti e il riferimento per le distanze.</td><td><a href="#intro-parts" class="xref">1.2</a>, <a href="#trace" class="xref">3</a>, <a href="#analysis-terms" class="xref">6.2</a></td></tr>
 <tr><td>TIMEOUT</td><td>Traccia che non ha ricevuto risposta entro il tempo di attesa.</td><td><a href="#trace-chart" class="xref">3.2</a></td></tr>
 <tr><td>Traccia</td><td>Pacchetto di prova che percorre un path all'andata e al ritorno e dà l'SNR di ogni passaggio.</td><td><a href="#trace" class="xref">3</a></td></tr>
-<tr><td>Tracciatore</td><td>Ruolo del Nodo che registra i path dei pacchetti ricevuti dal suo companion. Lo stesso Nodo è sorgente dei pacchetti che trasmette.</td><td><a href="#analysis-terms" class="xref">6.1</a></td></tr>
+<tr><td>Tracciatore</td><td>Ruolo del Nodo che registra i path dei pacchetti ricevuti dal suo companion. Lo stesso Nodo è sorgente dei pacchetti che trasmette.</td><td><a href="#analysis-terms" class="xref">6.2</a></td></tr>
 <tr><td>Trace-Path</td><td>Nei titoli dell'interfaccia, la traccia di un path configurato. <i>Pianificati</i> indica tracce eseguite a intervalli regolari.</td><td><a href="#trace" class="xref">3</a></td></tr>
-<tr><td>Trasmissione</td><td>Pacchetto inviato una volta. Può dare più copie.</td><td><a href="#analysis-terms" class="xref">6.1</a></td></tr>
+<tr><td>Trasmissione</td><td>Pacchetto inviato una volta. Può dare più copie.</td><td><a href="#analysis-terms" class="xref">6.2</a></td></tr>
+<tr><td>Tratta</td><td>Nell'analisi Qualità, passaggio tra due elementi del path di una traccia. È ciò che la scheda Tracce chiama tratto.</td><td><a href="#trace-chart" class="xref">3.2</a>, <a href="#analysis-quality" class="xref">6.9</a></td></tr>
 </table>
 </div>
 </div>
@@ -4228,10 +4999,10 @@ numero. Il documento è scritto solo in italiano.
 <table>
 <tr><th scope="col">Titolo della sezione</th><th scope="col">Serve per</th><th scope="col">Citata in</th></tr>
 <tr><td>Permessi ACL sul repeater (per il servizio Repeaters)</td><td>Dare al companion il permesso admin sui repeater da interrogare.</td><td><a href="#repeaters" class="xref">5</a>, <a href="#admin-config-repeaters" class="xref">8.9</a></td></tr>
-<tr><td>Crontab</td><td>Conoscere e cambiare le attività periodiche e le loro cadenze.</td><td><a href="#intro-cadence" class="xref">1.4</a>, <a href="#nodes-known" class="xref">4.2</a>, <a href="#analysis-controls" class="xref">6.2</a>, <a href="#admin-setup" class="xref">8.2</a></td></tr>
+<tr><td>Crontab</td><td>Conoscere e cambiare le attività periodiche e le loro cadenze.</td><td><a href="#intro-cadence" class="xref">1.4</a>, <a href="#nodes-known" class="xref">4.2</a>, <a href="#admin-setup" class="xref">8.2</a></td></tr>
 <tr><td>Collegarsi alla Dashboard locale</td><td>Aprire la dashboard di un Nodo.</td><td><a href="#intro-parts" class="xref">1.2</a></td></tr>
 <tr><td>Collegarsi al server Collector</td><td>Collegare un Nodo al Collettore con la chiave SSH e il bot Telegram.</td><td><a href="#intro-parts" class="xref">1.2</a>, <a href="#telegram-link" class="xref">7.1</a>, <a href="#admin-setup" class="xref">8.2</a>, <a href="#admin-setup-rerun" class="xref">8.3</a></td></tr>
-<tr><td>Modificare la configurazione in seguito (config.sh)</td><td>Cambiare la configurazione di un Nodo con il menu di <code>config.sh</code>: path da tracciare e repeater da interrogare.</td><td><a href="#intro-cadence" class="xref">1.4</a>, <a href="#trace" class="xref">3</a>, <a href="#repeaters" class="xref">5</a>, <a href="#analysis-controls" class="xref">6.2</a>, <a href="#admin-config" class="xref">8.4</a></td></tr>
+<tr><td>Modificare la configurazione in seguito (config.sh)</td><td>Cambiare la configurazione di un Nodo con il menu di <code>config.sh</code>: path da tracciare e repeater da interrogare.</td><td><a href="#intro-cadence" class="xref">1.4</a>, <a href="#trace" class="xref">3</a>, <a href="#repeaters" class="xref">5</a>, <a href="#analysis-terms" class="xref">6.2</a>, <a href="#admin-config" class="xref">8.4</a></td></tr>
 <tr><td>Impostazioni contatti (per il servizio Nodes)</td><td>Impostare il companion perché aggiunga ai contatti i repeater e gli altri nodi che riceve.</td><td><a href="#common-names" class="xref">2.6</a></td></tr>
 <tr><td>Notifiche Telegram (opzionale)</td><td>Attivare gli avvisi Telegram.</td><td><a href="#telegram-enable" class="xref">7.2</a>, <a href="#admin-config-telegram" class="xref">8.12</a></td></tr>
 <tr><td>Generare i file specifici della tua installazione (setup.sh)</td><td>Creare gli script di manutenzione, la configurazione e il file di servizio della dashboard con <code>setup.sh</code>.</td><td><a href="#admin-setup" class="xref">8.2</a></td></tr>

@@ -531,7 +531,6 @@ Esempio di configurazione, con cadenze di partenza ragionevoli:
 5 */2 * * * /home/meshcore/trace-mon/neighbor_monitor.sh > /dev/null 2>&1
 5 3,9,15,21 * * * /home/meshcore/trace-mon/cron_delay.sh floodadv.sh > /dev/null 2>&1
 35 3,9,15,21 * * * /home/meshcore/trace-mon/cron_delay.sh sonar.sh > /dev/null 2>&1
-53 */2 * * * /usr/bin/node /home/meshcore/trace-mon/frontend/analysis_job.js > /dev/null 2>&1
 #
 # Maintenance
 #
@@ -541,9 +540,6 @@ Esempio di configurazione, con cadenze di partenza ragionevoli:
 7 1 1 * * /home/meshcore/trace-mon/cron_delay.sh --window 240 rotate_contacts.sh > /dev/null 2>&1
 10 3 * * 0 /usr/sbin/logrotate --state /home/meshcore/trace-mon/run/logrotate.status /home/meshcore/trace-mon/config/logrotate.conf
 ```
-
-Nella riga di `analysis_job.js` usa il percorso di Node.js verificato
-al §4 (`which node`; qui `/usr/bin/node`).
 
 Cosa fa ciascuna riga:
 - **`trace.sh`** (ogni 30 minuti) — traccia il path configurato e
@@ -557,8 +553,6 @@ Cosa fa ciascuna riga:
   21:05) — invia un advertisement flood.
 - **`sonar.sh`** (quattro volte al giorno: 3:35, 9:35, 15:35 e 21:35)
   — trasmette il messaggio del Sonar.
-- **`analysis_job.js`** (ogni 2 ore, al minuto 53) — calcola i dati
-  della scheda Analysis.
 - **`contact_sync.sh`** (ogni 5 minuti dalle 0:00 alle 5:59, ogni 10
   minuti dalle 6:00 alle 23:59) — sincronizza un'istantanea di
   `contacts.db` verso il Collettore.
@@ -576,8 +570,8 @@ prescritto: ogni interrogazione e ogni flood passa per lo stesso
 canale radio condiviso con il resto della mesh — cadenze più strette
 aumentano il traffico che generi sulla rete. Osserva il comportamento
 della tua rete e stringi o allarga questi intervalli di conseguenza;
-le voci che non generano traffico radio (`analysis_job.js`,
-`contact_sync.sh`, backup/rotate, logrotate) hanno una cadenza che va
+le voci che non generano traffico radio (`contact_sync.sh`,
+backup/rotate, logrotate) hanno una cadenza che va
 bene praticamente sempre.
 
 **Dove finiscono i log**: nessuno di questi script scrive messaggi

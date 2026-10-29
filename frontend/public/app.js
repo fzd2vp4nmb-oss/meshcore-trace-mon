@@ -759,6 +759,110 @@ function buildPathTooltipHtml(
 }
 
 //
+// Info Path (tab Trace, box sotto il selettore del path): legenda che
+// elenca in chiaro, senza tooltip, ogni hash del path selezionato con il
+// nome del repeater. Gli hash sono quelli UNICI del path (andata e
+// ritorno ripetono gli stessi: ciascuno compare una volta, nell'ordine
+// della prima occorrenza); "SRC" non è un hash e non compare. Il nome
+// viene da resolveNodeName(), la stessa funzione dei tooltip di Trace:
+// stessi criteri per prefisso ambiguo ("Ambiguous") e nodo sconosciuto
+// ("Unknown"). Box aggiuntivo: non sostituisce nessun tooltip. Il nome
+// arriva dalla rete: sempre escapeHtml().
+//
+function pathInfoHashes(pathKey) {
+
+    const seen =
+        new Set();
+
+    const hashes =
+        [];
+
+    String(
+        pathKey ||
+        ""
+    )
+        .split("→")
+        .map(
+            p =>
+                p.trim()
+        )
+        .forEach(
+            p => {
+
+                if (
+                    p === "" ||
+                    p === "SRC"
+                ) {
+
+                    return;
+                }
+
+                const id =
+                    p.toLowerCase();
+
+                if (
+                    seen.has(id)
+                ) {
+
+                    return;
+                }
+
+                seen.add(id);
+
+                hashes.push(p);
+            }
+        );
+
+    return hashes;
+}
+
+function renderPathInfo(pathKey) {
+
+    const box =
+        document.getElementById(
+            "pathInfoBox"
+        );
+
+    if (
+        !box
+    ) {
+
+        return;
+    }
+
+    const hashes =
+        pathInfoHashes(
+            pathKey
+        );
+
+    if (
+        hashes.length === 0
+    ) {
+
+        box.innerHTML = "";
+
+        box.style.display = "none";
+
+        return;
+    }
+
+    const items =
+        hashes
+            .map(
+                h =>
+                    `<li>${escapeHtml(h)} - ${escapeHtml(resolveNodeName(h))}</li>`
+            )
+            .join("");
+
+    box.innerHTML =
+        `<div class="pathInfoTitle">${tle("trace.pathInfoTitle")}</div>` +
+        `<p>${tle("trace.pathInfoText")}</p>` +
+        `<ul>${items}</ul>`;
+
+    box.style.display = "";
+}
+
+//
 // Motore del tooltip per gli span data-tooltip (Trace/Nodes) —
 // sostituisce l'attributo title nativo, che sui dispositivi mobili
 // non ha alcun equivalente (nessun concetto di hover). Event
@@ -969,6 +1073,8 @@ function updateView() {
         document.getElementById(
             "pathSelector"
         ).value;
+
+    renderPathInfo(key);
 
     const data =
         dataCache.paths[key];

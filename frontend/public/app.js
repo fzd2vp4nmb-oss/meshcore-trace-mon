@@ -9967,6 +9967,52 @@ function buildDeviceTelemetryRowsHtml(
     ).join("\n        ");
 }
 
+//
+// Riga «Dati dell'ultima interrogazione che li ha ricevuti: <data>» sopra le
+// tabelle Telemetry e Neighbours (docs/ARCHITECTURE.md §113). Il writer non
+// scrive nulla per una richiesta senza risposta, quindi in un giro in cui lo
+// status riesce ma i neighbours (o la telemetria) no, la API restituisce
+// l'ultimo giro che ha righe: quando non è quello dello status la pagina dice
+// da quando sono i dati. Nascosta se i due giri coincidono, se non ci sono
+// dati o se la API non porta il campo (undefined == null). Con un mese
+// archiviato (renderNeighboursTable() senza il secondo argomento) la riga
+// resta nascosta: lo scatto scelto ha la sua etichetta nel selettore.
+//
+function setSnapshotNote(
+    elementId,
+    snapshotQueriedAt,
+    statusQueriedAt
+) {
+
+    const el =
+        document.getElementById(
+            elementId
+        );
+
+    if (
+        !el
+    ) {
+
+        return;
+    }
+
+    if (
+        snapshotQueriedAt == null ||
+        snapshotQueriedAt === statusQueriedAt
+    ) {
+
+        el.textContent = "";
+        el.style.display = "none";
+
+        return;
+    }
+
+    el.textContent =
+        tl("rep.snapshotFrom", { t: formatUnixTime(snapshotQueriedAt) });
+
+    el.style.display = "";
+}
+
 function renderNeighborData(
     data
 ) {
@@ -10059,6 +10105,12 @@ function renderNeighborData(
     telemetryTable.innerHTML =
         telemetryHtml;
 
+    setSnapshotNote(
+        "neighborTelemetryNote",
+        data.telemetry_queried_at,
+        status ? status.queried_at : null
+    );
+
     const configTable =
         document.getElementById(
             "neighborConfigTable"
@@ -10116,13 +10168,23 @@ function renderNeighborData(
         data.region || tl("rep.noRegion");
 
     renderNeighboursTable(
-        data.neighbours || []
+        data.neighbours || [],
+        data.neighbours_queried_at,
+        status ? status.queried_at : null
     );
 }
 
 function renderNeighboursTable(
-    neighbours
+    neighbours,
+    snapshotQueriedAt,
+    statusQueriedAt
 ) {
+
+    setSnapshotNote(
+        "neighborsNote",
+        snapshotQueriedAt,
+        statusQueriedAt
+    );
 
     const heading =
         document.getElementById(

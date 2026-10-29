@@ -1085,6 +1085,10 @@
             en: "No neighbours data available.",
             it: "Nessun dato sui vicini disponibile."
         },
+        "rep.snapshotFrom": {
+            en: "Data from the last query that received it: {t}",
+            it: "Dati dell'ultima interrogazione che li ha ricevuti: {t}"
+        },
 
         // ---- app.js: parti presenti solo nel Collettore ----
         "nodes.noDataForNode": {

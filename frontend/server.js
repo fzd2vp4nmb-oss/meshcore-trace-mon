@@ -1597,11 +1597,48 @@ app.get(
                         ? statusRows[0]
                         : null;
 
+                //
+                // Neighbours e telemetria: l'ULTIMO giro che ha righe per
+                // questo repeater, NON il giro dell'ultimo status
+                // (ARCHITECTURE.md §113, 2026-10-29). Il writer non scrive
+                // nulla per una richiesta senza risposta: se in un giro lo
+                // status riesce ma i neighbours (o la telemetria) no,
+                // correlarli a status.queried_at dava una tabella vuota
+                // fino al giro successivo, mentre i dati dell'ultimo giro
+                // riuscito erano ancora nel DB (NEIGHBOR_MONITORING.md §8:
+                // «il frontend mostrerà l'ultima query riuscita con il suo
+                // timestamp»). Stesso principio di region/config/clock, più
+                // sotto. La risposta porta il queried_at di ciascuna
+                // tabella (neighbours_queried_at, telemetry_queried_at,
+                // null se non ci sono righe) così la pagina può dire da
+                // quando sono i dati quando non coincidono con lo status.
+                // Indipendenti anche dal fatto che esista una riga di
+                // status (caso status fallito e neighbours riusciti).
+                //
+                // Limite noto: un repeater che davvero non ha vicini
+                // produce zero righe come un fallimento, quindi l'ultimo
+                // elenco non vuoto resta visibile, con la sua data.
+                //
+                const neighbourSnapshotRows =
+                    db.prepare(
+                        `SELECT queried_at
+                        FROM repeater_neighbours
+                        WHERE public_key = ?
+                        ORDER BY queried_at DESC
+                        LIMIT 1`
+                    ).all(
+                        publicKey
+                    );
+
+                const neighboursQueriedAt =
+                    neighbourSnapshotRows.length > 0
+                        ? neighbourSnapshotRows[0].queried_at
+                        : null;
+
                 let neighbours = [];
-                let telemetry = [];
 
                 if (
-                    status
+                    neighboursQueriedAt !== null
                 ) {
 
                     neighbours =
@@ -1620,20 +1657,32 @@ app.get(
                             ORDER BY rn.secs_ago ASC`
                         ).all(
                             publicKey,
-                            status.queried_at
+                            neighboursQueriedAt
                         );
+                }
 
-                    //
-                    // Stesso pattern di neighbours: correlata a
-                    // status.queried_at, non a un proprio MAX() —
-                    // coerente con la logica già in produzione, non
-                    // introduce un comportamento diverso in questo
-                    // aggiornamento. Limite noto: se status fallisse
-                    // ma telemetry riuscisse nello stesso giro,
-                    // questa riga non verrebbe trovata (caso raro,
-                    // stesso gate ACL condivide di norma lo stesso
-                    // esito).
-                    //
+                const telemetrySnapshotRows =
+                    db.prepare(
+                        `SELECT queried_at
+                        FROM repeater_telemetry
+                        WHERE public_key = ?
+                        ORDER BY queried_at DESC
+                        LIMIT 1`
+                    ).all(
+                        publicKey
+                    );
+
+                const telemetryQueriedAt =
+                    telemetrySnapshotRows.length > 0
+                        ? telemetrySnapshotRows[0].queried_at
+                        : null;
+
+                let telemetry = [];
+
+                if (
+                    telemetryQueriedAt !== null
+                ) {
+
                     telemetry =
                         db.prepare(
                             `SELECT channel, type, value
@@ -1642,7 +1691,7 @@ app.get(
                             ORDER BY channel ASC, type ASC`
                         ).all(
                             publicKey,
-                            status.queried_at
+                            telemetryQueriedAt
                         );
                 }
 
@@ -1716,7 +1765,9 @@ app.get(
                         adv_name: nodeRows[0].adv_name,
                         status: status,
                         neighbours: neighbours,
+                        neighbours_queried_at: neighboursQueriedAt,
                         telemetry: telemetry,
+                        telemetry_queried_at: telemetryQueriedAt,
                         region: region,
                         clock: clock,
                         config: config

@@ -5,10 +5,10 @@ __pycache__/
 frontend/node_modules/
 
 # Dati runtime — ogni installazione ha i propri
-data/analysis/*
-!data/analysis/.gitkeep
 backup/*
 !backup/.gitkeep
+data/*
+!data/.gitkeep
 config/backup/*
 !config/backup/.gitkeep
 logs/*

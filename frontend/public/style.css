@@ -293,6 +293,18 @@ tr:nth-child(odd) td {
     overflow-y: auto;
 }
 
+/*
+   Riga «dati di HH:MM» sopra le tabelle Telemetry e Neighbours della scheda
+   Repeaters, mostrata solo quando i dati sono di un giro diverso da quello
+   dello status (docs/ARCHITECTURE.md §113).
+*/
+.snapshotNote {
+
+    font-style: italic;
+
+    margin: 4px 0;
+}
+
 /* =====================================
    DARK MODE
 ===================================== */
